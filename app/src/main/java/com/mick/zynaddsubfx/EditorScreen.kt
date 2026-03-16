@@ -6,6 +6,7 @@ import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -43,7 +44,7 @@ data class EditorUiState(
 )
 
 @Composable
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 fun PresetEditorScreen(
     uiState: EditorUiState,
     heldNote: Int?,
@@ -175,6 +176,7 @@ private fun KeyboardOverlayCard(
 }
 
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
 private fun PartEditorCard(
     part: SynthEngine.PartInspector,
     expanded: Boolean,

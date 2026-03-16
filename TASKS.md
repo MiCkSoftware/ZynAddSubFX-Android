@@ -126,6 +126,8 @@ Le support MIDI est differe apres le MVP sans MIDI.
 - [ ] CI Android + builds beta/release
 - [ ] Definir matrice ABI release (ex: `arm64-v8a` obligatoire, `x86_64` dev/emulateur, `armeabi-v7a`/`x86` selon besoin)
 - [ ] Checklist de publication
+- [ ] Pour l'alpha experimentale Play, ajouter la mention d'engagement a respecter les regles pour les contenus familiaux si applicable
+- [ ] Pour l'alpha experimentale Play, exposer les licences et un lien vers le code source correspondant
 - [ ] Ajouter un ecran `About / Licences` dans l'app avec notice GPL adaptee Android (copyright, absence de garantie, lien vers licence et code source), au lieu de reprendre tel quel le bloc interactif type `show w` / `show c`
 - [ ] Definir strategie audio release: conserver AAudio direct ou migrer vers Oboe apres profiling/stress tests
 

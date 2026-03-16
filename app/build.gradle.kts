@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -14,8 +16,8 @@ android {
         applicationId = "com.mick.zynaddsubfx"
         minSdk = 29
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = getVersionCode()
+        versionName = "0.1_alpha"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -55,6 +57,38 @@ android {
         cmake {
             path = file("src/main/cpp/CMakeLists.txt")
         }
+    }
+}
+
+fun getVersionCode(): Int {
+    val isRelease = gradle.startParameter.taskNames.any { it.contains("release", ignoreCase = true) }
+    val versionFile = file("version.properties")
+    val props = Properties()
+
+    if (!versionFile.exists()) {
+        versionFile.writeText("versionCode=1\n")
+    }
+
+    versionFile.inputStream().use { props.load(it) }
+    val code = props.getProperty("versionCode").toIntOrNull() ?: 1
+
+    if (!isRelease) {
+        return code
+    }
+
+    props.setProperty("versionCode", (code + 1).toString())
+    versionFile.outputStream().use { props.store(it, null) }
+
+    return code
+}
+
+tasks.register("printVersionInfo") {
+    group = "versioning"
+    description = "Print the current Android versionCode and versionName."
+
+    doLast {
+        println("versionCode=${getVersionCode()}")
+        println("versionName=${android.defaultConfig.versionName}")
     }
 }
 

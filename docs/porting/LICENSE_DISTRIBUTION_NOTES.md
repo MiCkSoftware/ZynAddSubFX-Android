@@ -102,11 +102,20 @@ Il faut fournir **de quoi reconstruire exactement** le code distribue:
 ## Checklist release GPL (APK/AAB)
 
 - [ ] Le code source correspondant du binaire distribue est public et accessible
+- [ ] La fiche Play / la description de diffusion mentionne explicitement l'engagement a respecter les regles Play pour les contenus familiaux, si l'alpha experimentale est publiee dans ce cadre
 - [ ] `third_party/zynaddsubfx/COPYING` est inclus
 - [ ] Les autres licences tierces sont preservees/mentionnees
+- [ ] Les licences/notices et le lien public vers le depot source sont visibles depuis la fiche de publication et/ou l'ecran `About / Licences`
 - [ ] Le commit/tag de la release est identifie
 - [ ] Les instructions de build sont documentees (meme si elles sont "best effort")
 - [ ] Aucun secret (keystore/API keys) n'est publie
+
+## Rappel specifique pour une alpha experimentale Play
+
+Avant publication, verifier au minimum:
+- mention explicite de l'engagement a respecter les regles Play pour les contenus familiaux, si cette categorisation est retenue
+- presence des licences tierces et de la notice GPL dans l'app et/ou la fiche de publication
+- lien clair vers le code source correspondant de la build publiee (repo public + tag/commit associe)
 
 ---
 
