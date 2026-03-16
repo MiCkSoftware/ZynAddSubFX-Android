@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   viewBox="0 0 512 512"
+   version="1.1"
+   id="svg2"
+   sodipodi:docname="icon.svg"
+   inkscape:version="1.4.3 (0d15f75, 2025-12-25)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <defs
+     id="defs2" />
+  <sodipodi:namedview
+     id="namedview2"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:zoom="1.7070312"
+     inkscape:cx="256"
+     inkscape:cy="255.70709"
+     inkscape:window-width="1880"
+     inkscape:window-height="1179"
+     inkscape:window-x="51"
+     inkscape:window-y="55"
+     inkscape:window-maximized="0"
+     inkscape:current-layer="svg2" />
+  <!-- fond -->
+  <circle
+     cx="256"
+     cy="256"
+     r="240"
+     fill="#000"
+     id="circle1" />
+  <!-- triangle bas -->
+  <path
+     id="polygon1"
+     style="fill:#5fcdbb"
+     d="M 407.65675,369.95881 155.01602,237.83982 87.656751,369.95881 Z"
+     sodipodi:nodetypes="cccc" />
+  <!-- triangle haut (symétrie du bas) -->
+  <path
+     id="polygon2"
+     style="fill:#5cc3cf"
+     d="m 442.50343,140.50343 -74.38902,136 -245.61098,-136 z"
+     sodipodi:nodetypes="cccc" />
+</svg>
