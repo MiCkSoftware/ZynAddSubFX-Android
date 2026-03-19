@@ -8,6 +8,10 @@ This repository contains:
 - the vendored upstream synth source under `third_party/zynaddsubfx/`
 - local third-party dependencies required to build the app
 
+## Release
+
+application available on play store https://play.google.com/store/apps/details?id=com.mick.zynaddsubfx
+
 ## Status
 
 - Standalone Android app, no VST host integration
