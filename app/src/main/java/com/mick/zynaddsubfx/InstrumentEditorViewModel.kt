@@ -93,7 +93,7 @@ class InstrumentEditorViewModel(private val engine: SynthEngine) : ViewModel() {
 
     companion object {
         fun tabsFor(engineName: String): List<String> = when (engineName) {
-            "ADD" -> listOf("Global", "Amp", "Frequency", "Filter", "Voices", "Oscillator", "Resonance")
+            "ADD" -> listOf("Amp", "Frequency", "Filter", "Voices", "Oscillator", "Resonance")
             "SUB" -> listOf("Global", "Amp", "Frequency", "Filter", "Harmonics")
             "PAD" -> listOf("Global", "Amp", "Frequency", "Filter", "Profile", "Spectrum", "Quality")
             "FX" -> listOf("Routing", "FX 1", "FX 2", "FX 3")

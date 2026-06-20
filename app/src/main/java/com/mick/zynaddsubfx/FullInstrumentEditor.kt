@@ -572,6 +572,7 @@ private fun parametersFor(
 ): List<SynthEngine.ParameterValue> = all.filter { parameter ->
     val group = parameter.descriptor.group
     if (!group.startsWith(module, ignoreCase = true)) return@filter false
+    if (module == "ADD" && parameter.descriptor.path == "add/stereo") return@filter false
     when (tab) {
         "Global" -> group.endsWith("Global") || !group.contains("/")
         "Amp" -> group.contains("Amplitude")

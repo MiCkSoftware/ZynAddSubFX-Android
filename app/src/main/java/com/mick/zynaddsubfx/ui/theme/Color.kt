@@ -17,3 +17,30 @@ val OnPrimary = Color(0xFF001F24)
 val OnBackground = Color(0xFFD8F6F6)
 val OnSurface = Color(0xFFD8F6F6)
 val OnSurfaceVariant = Color(0xFF9AB9BF)
+
+const val LedDefaultHue = 180f
+const val LedFxHue = 42f
+const val LedStereoHue = 32f
+
+data class LedColors(
+    val surface: Color,
+    val border: Color,
+    val glow: Color,
+    val content: Color,
+)
+
+fun ledColors(enabled: Boolean, hue: Float = LedDefaultHue): LedColors = if (enabled) {
+    LedColors(
+        surface = Color.hsv(hue, .76f, .27f),
+        border = Color.hsv(hue, .72f, .82f),
+        glow = Color.hsv(hue, .68f, .92f),
+        content = Color.hsv(hue, .10f, 1f),
+    )
+} else {
+    LedColors(
+        surface = Color.hsv(hue, .12f, .20f),
+        border = Color.hsv(hue, .18f, .38f),
+        glow = Color.hsv(hue, .14f, .36f),
+        content = Color.hsv(hue, .10f, .74f),
+    )
+}

@@ -339,15 +339,26 @@ private fun PartEditorCard(
             ZynValueChip("Mode", structural("part/polyMode", if (part.poly) "ON" else "OFF"), true) {
                 edit("part/polyMode")
             }
-            ZynValueChip("Stereo", structural("add/stereo", if (part.stereoEnabled) "ON" else "OFF"), true) {
-                edit("add/stereo")
-            }
             ZynValueChip("RndGrp", structural("add/randomGrouping", if (part.rndGroupingEnabled) "ON" else "OFF"), true) {
                 edit("add/randomGrouping")
             }
         }
         Spacer(modifier = Modifier.height(6.dp))
-        EngineKitSection("ADD", "kit/addEnabled", kitSnapshots, ::bool, { onOpenModule("ADD", it) }, ::writeKit) {
+        EngineKitSection(
+            "ADD",
+            "kit/addEnabled",
+            kitSnapshots,
+            ::bool,
+            { onOpenModule("ADD", it) },
+            ::writeKit,
+            kitControl = { kit ->
+                val stereo = bool(kit, "add/stereo")
+                StudioStereoSelector(
+                    stereo = stereo,
+                    onStereoChange = { writeKit(kit.kitIndex, "add/stereo", it) },
+                )
+            },
+        ) {
             addKitEngine("kit/addEnabled")
         }
         editedStructuralParameter?.let { parameter ->
@@ -394,6 +405,7 @@ private fun EngineKitSection(
     bool: (SynthEngine.ParameterSnapshot, String) -> Boolean,
     onOpen: (Int) -> Unit,
     onWrite: (Int, String, Boolean) -> Unit,
+    kitControl: (@Composable (SynthEngine.ParameterSnapshot) -> Unit)? = null,
     onAdd: () -> Unit,
 ) {
     val active = kits.filter { bool(it, "kit/enabled") && bool(it, enginePath) }
@@ -416,6 +428,7 @@ private fun EngineKitSection(
                     muted = muted,
                     onOpen = { onOpen(kit.kitIndex) },
                     onMute = { onWrite(kit.kitIndex, "kit/muted", !muted) },
+                    middleContent = kitControl?.let { content -> { content(kit) } },
                 )
             }
         }
