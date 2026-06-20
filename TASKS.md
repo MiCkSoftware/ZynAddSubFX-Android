@@ -66,17 +66,17 @@ Le support MIDI est differe apres le MVP sans MIDI.
 - [x] Ajouter seam natif `render(...)` + `noteOn/noteOff` (stub, pret pour Zyn)
 - [x] Brancher un backend de rendu `zyn-master` experimental dans `ZynAndroidEngine` (fallback sinus conserve)
 - [x] Gerer lifecycle audio (pause/resume) (auto-stop/auto-resume de base)
-- [ ] Valider stabilite start/stop repetee
+- [x] Valider stabilite start/stop repetee
 
 ### M3 - Jouabilite sans MIDI
 - [x] Brancher `noteOn/noteOff` reels vers moteur (backend `zyn-master` experimental)
 - [x] Clavier virtuel Compose (mini clavier tactile 1 octave + release)
-- [ ] Preset de test embarque
+- [x] Preset de test embarque
 - [x] Presets de demo embarques (.xmz assets) + chargement local via `Master::loadXML`
 - [x] Parametre de base: volume master (slider UI -> moteur)
 - [x] Ajouter un bouton `Panic` (reset voix/FX) pour recuperer des notes fantomes / etats bloques
 - [x] Parametres de jeu de base (velocity clavier + octave shift)
-- [ ] Demo jouable tactile stable
+- [x] Demo jouable tactile stable
 
 ### M4 - Architecture propre moteur/UI
 - [x] Creer facade Kotlin `SynthEngine`
@@ -90,6 +90,7 @@ Le support MIDI est differe apres le MVP sans MIDI.
 - [ ] Composants synth (knobs/sliders/enveloppes)
 - [ ] Gestion etat via `ViewModel`
 - [ ] Portrait/paysage + tablette
+- [ ] Mode clavier plein ecran avec UX audio minimale
 - [ ] UX de sauvegarde/restauration d’etat
 
 ### M6 - Presets historiques (compatibilite)

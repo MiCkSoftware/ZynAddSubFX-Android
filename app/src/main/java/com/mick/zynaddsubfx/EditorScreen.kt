@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
@@ -41,6 +43,8 @@ import java.util.Locale
 data class EditorUiState(
     val parts: List<SynthEngine.PartInspector>,
     val selectedPartIndex: Int,
+    val activeFxSlots: List<SynthEngine.ActiveFxSlot>,
+    val mixer: SynthEngine.MixerInspector,
 )
 
 @Composable
@@ -79,6 +83,7 @@ fun PresetEditorScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .verticalScroll(rememberScrollState())
                 .padding(8.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
@@ -94,7 +99,9 @@ fun PresetEditorScreen(
                     onSetPartAddEnabled = onSetPartAddEnabled,
                     onSetPartSubEnabled = onSetPartSubEnabled,
                     onSetPartPadEnabled = onSetPartPadEnabled,
-                    onSoloPart = onSoloPart
+                    onSoloPart = onSoloPart,
+                    activeFxSlots = uiState.activeFxSlots,
+                    mixer = uiState.mixer
                 )
             } else {
                 Text(
@@ -186,6 +193,8 @@ private fun PartEditorCard(
     onSetPartSubEnabled: (Int, Boolean) -> Unit,
     onSetPartPadEnabled: (Int, Boolean) -> Unit,
     onSoloPart: (Int) -> Unit,
+    activeFxSlots: List<SynthEngine.ActiveFxSlot>,
+    mixer: SynthEngine.MixerInspector,
 ) {
     var addSectionExpanded by rememberSaveable(part.partIndex) { mutableStateOf(false) }
     var subSectionExpanded by rememberSaveable(part.partIndex) { mutableStateOf(false) }
@@ -365,10 +374,130 @@ private fun PartEditorCard(
                 EditorStatChip("Stereo", if (part.stereoEnabled) "ON" else "OFF")
                 EditorStatChip("Peak", String.format(Locale.US, "%.3f", part.outputPeak))
             }
+            PartFxRouting(
+                part = part,
+                activeFxSlots = activeFxSlots,
+                mixer = mixer
+            )
+        }
+    }
+}
+
+@Composable
+private fun PartFxRouting(
+    part: SynthEngine.PartInspector,
+    activeFxSlots: List<SynthEngine.ActiveFxSlot>,
+    mixer: SynthEngine.MixerInspector,
+) {
+    val fxByScopeAndSlot = remember(activeFxSlots) {
+        activeFxSlots.associateBy { it.scope.lowercase(Locale.US) to it.slotId }
+    }
+    val insertRoutes = remember(mixer.insertRoutings, part.partIndex) {
+        mixer.insertRoutings.filter { it.assignedPart == part.partIndex }
+    }
+    val systemSends = remember(mixer.systemSends, part.partIndex) {
+        mixer.systemSends.filter { it.partIndex == part.partIndex && it.sendValue > 0 }
+    }
+    val instrumentFx = remember(activeFxSlots, part.partFxActiveCount) {
+        if (part.partFxActiveCount <= 0) {
+            emptyList()
+        } else {
+            activeFxSlots.filter { it.scope.equals("Instrument", ignoreCase = true) }
+                .take(part.partFxActiveCount)
+        }
+    }
+
+    FxRouteGroup(title = "INSERT", empty = insertRoutes.isEmpty()) {
+        insertRoutes.forEach { route ->
+            FxRouteRow(
+                slot = route.slotId,
+                name = route.typeName,
+                detail = "direct"
+            )
+        }
+    }
+    FxRouteGroup(title = "SYSTEM SEND", empty = systemSends.isEmpty()) {
+        systemSends.forEach { send ->
+            val fx = fxByScopeAndSlot["system" to send.systemFxSlot]
+            FxRouteRow(
+                slot = send.systemFxSlot,
+                name = fx?.typeName ?: "System FX",
+                detail = "send ${send.sendValue}"
+            )
+        }
+    }
+    FxRouteGroup(
+        title = "PART FX",
+        empty = part.partFxActiveCount <= 0
+    ) {
+        if (instrumentFx.isEmpty()) {
+            repeat(part.partFxActiveCount) { slot ->
+                FxRouteRow(slot = slot, name = "Active FX", detail = "part")
+            }
+        } else {
+            instrumentFx.forEach { fx ->
+                FxRouteRow(slot = fx.slotId, name = fx.typeName, detail = "part")
+            }
+        }
+    }
+}
+
+@Composable
+private fun FxRouteGroup(
+    title: String,
+    empty: Boolean,
+    content: @Composable () -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(
+            text = title,
+            color = Color(0xFF66F0E9),
+            style = MaterialTheme.typography.labelSmall
+        )
+        if (empty) {
             Text(
-                text = "Routing and effect types available in Debug > Inspector.",
+                text = "No active routing",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodySmall
+            )
+        } else {
+            content()
+        }
+    }
+}
+
+@Composable
+private fun FxRouteRow(
+    slot: Int,
+    name: String,
+    detail: String,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(7.dp),
+        color = Color(0xFF172B31),
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF274B54))
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 9.dp, vertical = 7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = "#${slot + 1}",
+                color = Color(0xFF66F0E9),
+                style = MaterialTheme.typography.labelMedium
+            )
+            Text(
+                text = name,
+                color = MaterialTheme.colorScheme.onSurface,
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.weight(1f)
+            )
+            Text(
+                text = detail,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.labelSmall
             )
         }
     }

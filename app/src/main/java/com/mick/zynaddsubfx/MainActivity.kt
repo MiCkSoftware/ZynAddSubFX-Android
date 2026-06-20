@@ -499,7 +499,9 @@ fun ZynAddSubFXApp(nativeStatus: NativeSmokeStatus = NativeSmokeStatus.preview()
             PresetEditorScreen(
                 uiState = EditorUiState(
                     parts = partInspectors,
-                    selectedPartIndex = selectedPlayPartIndex
+                    selectedPartIndex = selectedPlayPartIndex,
+                    activeFxSlots = activeFxSlots,
+                    mixer = mixerInspector
                 ),
                 heldNote = heldNote,
                 heldNotes = heldNotes.toSet(),
