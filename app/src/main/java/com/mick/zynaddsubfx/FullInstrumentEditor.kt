@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -54,6 +55,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.io.File
@@ -600,7 +602,7 @@ private fun DenseParameterGrid(
 ) {
     BoxWithConstraints {
         val columns = when {
-            verticalLabels -> 3
+            verticalLabels -> 4
             maxWidth >= 900.dp -> 6
             maxWidth >= 650.dp -> 5
             maxWidth >= 420.dp -> 4
@@ -645,7 +647,11 @@ private fun DenseParameterControl(
                     onWrite(parameter, if (parameter.value >= .5) 0.0 else 1.0)
                 }
             },
-            onLongClick = { onLongPress(parameter) },
+            onLongClick = {
+                if (!verticalLabel || descriptor.type != SynthEngine.ParameterType.ENUM) {
+                    onLongPress(parameter)
+                }
+            },
         ),
         color = Color(0xFF162D33),
         shape = RoundedCornerShape(7.dp),
@@ -658,15 +664,16 @@ private fun DenseParameterControl(
             if (verticalLabel) {
                 Surface(
                     modifier = Modifier.width(28.dp).fillMaxHeight(),
-                    color = Color(0xFF0D242A),
+                    color = addLabelColor(descriptor),
                     shape = RoundedCornerShape(topStart = 7.dp, bottomStart = 7.dp),
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Text(
                             compactAddLabel(descriptor),
-                            modifier = Modifier.rotate(-90f),
+                            modifier = Modifier.rotate(-90f).requiredWidth(72.dp),
                             style = MaterialTheme.typography.labelSmall,
                             fontSize = 9.sp,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                             maxLines = 1,
                         )
                     }
@@ -681,12 +688,31 @@ private fun DenseParameterControl(
                     checked = parameter.value >= .5,
                     onCheckedChange = { onWrite(parameter, if (it) 1.0 else 0.0) },
                 )
-                SynthEngine.ParameterType.ENUM -> CompactSelector(
-                    label = "",
-                    value = descriptor.options.getOrNull(parameter.value.roundToInt())
-                        ?: parameter.value.roundToInt().toString(),
-                    onClick = { onLongPress(parameter) },
-                )
+                SynthEngine.ParameterType.ENUM -> if (verticalLabel) {
+                    TinyKnob(
+                        label = "",
+                        value = parameter.value.toFloat(),
+                        min = descriptor.minimum.toFloat(),
+                        max = descriptor.maximum.toFloat(),
+                        dragRangePx = 28f * (descriptor.maximum - descriptor.minimum)
+                            .toFloat().coerceAtLeast(1f),
+                        onValueChange = { onWrite(parameter, it.roundToInt().toDouble()) },
+                    )
+                    Text(
+                        descriptor.options.getOrNull(parameter.value.roundToInt())
+                            ?: parameter.value.roundToInt().toString(),
+                        fontSize = 8.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                } else {
+                    CompactSelector(
+                        label = "",
+                        value = descriptor.options.getOrNull(parameter.value.roundToInt())
+                            ?: parameter.value.roundToInt().toString(),
+                        onClick = { onLongPress(parameter) },
+                    )
+                }
                 SynthEngine.ParameterType.INTEGER -> TinyKnob(
                     label = "",
                     value = parameter.value.toFloat(),
@@ -707,35 +733,55 @@ private fun DenseParameterControl(
     }
 }
 
+private fun addLabelColor(descriptor: SynthEngine.ParameterDescriptor): Color {
+    val hue = when {
+        descriptor.path.startsWith("add/punch") -> 24f
+        descriptor.path.startsWith("add/ampEnvelope") -> 205f
+        descriptor.path.startsWith("add/ampLfo") -> 270f
+        descriptor.path.startsWith("add/freqEnvelope") -> 165f
+        descriptor.path.startsWith("add/freqLfo") -> 235f
+        descriptor.path.startsWith("add/filterEnvelope") -> 325f
+        descriptor.path.startsWith("add/filterLfo") -> 290f
+        descriptor.path.startsWith("add/filter/") ||
+            descriptor.path.startsWith("add/filterVelocity") -> 48f
+        descriptor.path in setOf(
+            "add/bandwidth", "add/detune", "add/coarseDetune", "add/coarse",
+            "add/octave", "add/detuneType",
+        ) -> 140f
+        else -> 188f
+    }
+    return Color.hsv(hue, saturation = .52f, value = .22f)
+}
+
 private fun compactAddLabel(descriptor: SynthEngine.ParameterDescriptor): String = when {
     descriptor.path == "add/stereo" -> "Stereo"
-    descriptor.path == "add/volume" -> "Vol."
-    descriptor.path == "add/panning" -> "Pan."
-    descriptor.path == "add/velocity" -> "V.Sns."
-    descriptor.path == "add/fadeIn" -> "Fade"
-    descriptor.path == "add/punchStrength" -> "P.Str."
-    descriptor.path == "add/punchTime" -> "P.t."
-    descriptor.path == "add/punchStretch" -> "P.Stc."
-    descriptor.path == "add/punchVelocity" -> "P.Vel."
-    descriptor.path == "add/octave" -> "Oct."
-    descriptor.path == "add/coarse" -> "C.det."
-    descriptor.path.endsWith("/attackValue") -> "A.val"
-    descriptor.path.endsWith("/attackTime") -> "A.dt"
-    descriptor.path.endsWith("/decayValue") -> "D.val"
-    descriptor.path.endsWith("/decayTime") -> "D.dt"
-    descriptor.path.endsWith("/sustain") -> "S.val"
-    descriptor.path.endsWith("/releaseTime") -> "R.dt"
-    descriptor.path.endsWith("/releaseValue") -> "R.val"
+    descriptor.path == "add/volume" -> "Volume"
+    descriptor.path == "add/panning" -> "Panning"
+    descriptor.path == "add/velocity" -> "Velocity"
+    descriptor.path == "add/fadeIn" -> "Fade-in"
+    descriptor.path == "add/punchStrength" -> "Punch Str."
+    descriptor.path == "add/punchTime" -> "Punch Time"
+    descriptor.path == "add/punchStretch" -> "Punch Stret."
+    descriptor.path == "add/punchVelocity" -> "Punch Vel."
+    descriptor.path == "add/octave" -> "Octave"
+    descriptor.path == "add/coarse" -> "Coarse Det."
+    descriptor.path.endsWith("/attackValue") -> "Attack Val."
+    descriptor.path.endsWith("/attackTime") -> "Attack Time"
+    descriptor.path.endsWith("/decayValue") -> "Decay Val."
+    descriptor.path.endsWith("/decayTime") -> "Decay Time"
+    descriptor.path.endsWith("/sustain") -> "Sustain"
+    descriptor.path.endsWith("/releaseTime") -> "Release Time"
+    descriptor.path.endsWith("/releaseValue") -> "Release Val."
     descriptor.path.endsWith("/stretch") -> "Stretch"
-    descriptor.path.endsWith("/loop") -> "L"
-    descriptor.path.endsWith("/forceRelease") -> "frcR"
-    descriptor.path.endsWith("/frequency") -> "Freq."
+    descriptor.path.endsWith("/loop") -> "Loop"
+    descriptor.path.endsWith("/forceRelease") -> "Force Rel."
+    descriptor.path.endsWith("/frequency") -> "Frequency"
     descriptor.path.endsWith("/depth") -> "Depth"
     descriptor.path.endsWith("/start") -> "Start"
     descriptor.path.endsWith("/delay") -> "Delay"
-    descriptor.path.endsWith("/random") -> "RND"
-    descriptor.path.endsWith("/continuous") -> "Cnt."
-    descriptor.path.endsWith("/waveform") -> "Wave"
+    descriptor.path.endsWith("/random") -> "Random"
+    descriptor.path.endsWith("/continuous") -> "Continuous"
+    descriptor.path.endsWith("/waveform") -> "Waveform"
     descriptor.path.endsWith("/type") -> "Type"
     else -> descriptor.label
 }

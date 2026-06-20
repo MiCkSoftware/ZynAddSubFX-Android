@@ -41,6 +41,7 @@ fun TinyKnob(
     value: Float,
     min: Float,
     max: Float,
+    dragRangePx: Float = 600f,
     onValueChange: (Float) -> Unit,
 ) {
     val safeRange = (max - min).coerceAtLeast(1f)
@@ -58,7 +59,7 @@ fun TinyKnob(
         Box(
             modifier = Modifier
                 .size(43.dp)
-                .pointerInput(min, max) {
+                .pointerInput(min, max, dragRangePx) {
                     detectDragGestures(
                         onDragStart = {
                             isDragging = true
@@ -68,7 +69,7 @@ fun TinyKnob(
                         onDragCancel = { isDragging = false }
                     ) { change, dragAmount ->
                         change.consume()
-                        val deltaRaw = ((-dragAmount.y) + (dragAmount.x * 0.2f)) / 600f
+                        val deltaRaw = ((-dragAmount.y) + (dragAmount.x * 0.2f)) / dragRangePx
                         val delta = deltaRaw.coerceIn(-0.03f, 0.03f)
                         dragNormalized = (dragNormalized + delta).coerceIn(0f, 1f)
                         onValueChange(min + dragNormalized * safeRange)
