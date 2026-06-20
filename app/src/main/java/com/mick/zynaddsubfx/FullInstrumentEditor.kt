@@ -8,8 +8,10 @@ package com.mick.zynaddsubfx
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -21,6 +23,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
@@ -47,10 +50,12 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import java.io.File
 import kotlin.math.roundToInt
+import kotlin.math.pow
 import kotlinx.coroutines.launch
 
 @Composable
@@ -72,6 +77,7 @@ fun FullInstrumentEditor(
     val model = remember(engine) { InstrumentEditorViewModel(engine) }
     val state = model.state
     var selector by remember { mutableStateOf<String?>(null) }
+    var specializedScreen by remember { mutableStateOf<String?>(null) }
     var editedParameter by remember { mutableStateOf<SynthEngine.ParameterValue?>(null) }
     var exportedFile by remember { mutableStateOf<File?>(null) }
     var exportedRevision by remember { mutableStateOf(0L) }
@@ -95,6 +101,15 @@ fun FullInstrumentEditor(
     LaunchedEffect(partIndex, kitIndex, module) {
         model.open(partIndex, kitIndex)
         model.selectEngine(module)
+    }
+
+    if (specializedScreen == "oscillator") {
+        AddOscillatorEditorScreen(model = model, onBack = { specializedScreen = null })
+        return
+    }
+    if (specializedScreen == "voiceDetail") {
+        AddVoiceDetailScreen(model = model, onBack = { specializedScreen = null })
+        return
     }
 
     BoxWithConstraints(modifier.fillMaxSize()) {
@@ -172,7 +187,7 @@ fun FullInstrumentEditor(
                             module,
                             section,
                             state.selectedVoice,
-                        )
+                        ).let { if (section == "Voices") emptyList() else it }
                         ZynEditorSection(
                             title = section,
                             parameters = parameters,
@@ -180,10 +195,23 @@ fun FullInstrumentEditor(
                                 (module == "FX" && section != "Routing"),
                             onComplex = {
                                 model.selectTab(section)
-                                selector = "complex"
+                                specializedScreen = if (section == "Oscillator") "oscillator" else null
+                                if (specializedScreen == null) selector = "complex"
                             },
                             onWrite = model::write,
                             onEdit = { editedParameter = it },
+                            leadingContent = if (section == "Voices") {
+                                {
+                                    VoiceMatrix(
+                                        values = state.snapshot?.values.orEmpty(),
+                                        onWrite = model::write,
+                                        onOpenDetail = {
+                                            model.selectVoice(it)
+                                            specializedScreen = "voiceDetail"
+                                        },
+                                    )
+                                }
+                            } else null,
                         )
                     }
                 }
@@ -247,6 +275,230 @@ fun FullInstrumentEditor(
     }
 }
 
+@Composable
+private fun VoiceMatrix(
+    values: List<SynthEngine.ParameterValue>,
+    onWrite: (SynthEngine.ParameterValue, Double) -> Unit,
+    onOpenDetail: (Int) -> Unit,
+) {
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 6.dp)) {
+            Text("No.", style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(34.dp))
+            Text("Vol", style = MaterialTheme.typography.labelSmall, modifier = Modifier.weight(1f))
+            Text("Pan", style = MaterialTheme.typography.labelSmall, modifier = Modifier.weight(1f))
+            Text("Res", style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(48.dp))
+            Text("Detune", style = MaterialTheme.typography.labelSmall, modifier = Modifier.weight(1f))
+            Text("Vibrato", style = MaterialTheme.typography.labelSmall, modifier = Modifier.weight(1f))
+            Spacer(Modifier.width(28.dp))
+        }
+        repeat(8) { voice ->
+            val voiceValues = values.filter { it.descriptor.group.endsWith("Voice ${voice + 1}") }
+            fun value(suffix: String) = voiceValues.firstOrNull { it.descriptor.path.endsWith("/$suffix") }
+            val enabled = value("enabled")
+            val resonance = value("resonance")
+            Surface(
+                color = Color(0xFF10262C),
+                border = BorderStroke(1.dp, Color(0xFF2E6973)),
+                shape = RoundedCornerShape(6.dp),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 5.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text("${voice + 1}", modifier = Modifier.width(24.dp))
+                    enabled?.let { parameter ->
+                        androidx.compose.material3.Checkbox(
+                            checked = parameter.value >= .5,
+                            onCheckedChange = { onWrite(parameter, if (it) 1.0 else 0.0) },
+                            modifier = Modifier.width(34.dp),
+                        )
+                    }
+                    VoiceMatrixKnob(value("volume"), onWrite, Modifier.weight(1f))
+                    VoiceMatrixKnob(value("panning"), onWrite, Modifier.weight(1f))
+                    resonance?.let { parameter ->
+                        androidx.compose.material3.Checkbox(
+                            checked = parameter.value >= .5,
+                            onCheckedChange = { onWrite(parameter, if (it) 1.0 else 0.0) },
+                            modifier = Modifier.width(48.dp),
+                        )
+                    } ?: Spacer(Modifier.width(48.dp))
+                    VoiceMatrixKnob(value("detune"), onWrite, Modifier.weight(1f))
+                    VoiceMatrixKnob(value("vibrato"), onWrite, Modifier.weight(1f))
+                    Text(
+                        "›",
+                        color = Color(0xFF66F0E9),
+                        modifier = Modifier.width(28.dp).clickable { onOpenDetail(voice) }.padding(5.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun VoiceMatrixKnob(
+    parameter: SynthEngine.ParameterValue?,
+    onWrite: (SynthEngine.ParameterValue, Double) -> Unit,
+    modifier: Modifier,
+) {
+    Box(modifier, contentAlignment = Alignment.Center) {
+        if (parameter != null) {
+                TinyKnob(
+                label = "",
+                value = parameter.value.toFloat(),
+                min = parameter.descriptor.minimum.toFloat(),
+                max = parameter.descriptor.maximum.toFloat(),
+                onValueChange = { onWrite(parameter, it.toDouble()) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun AddVoiceDetailScreen(model: InstrumentEditorViewModel, onBack: () -> Unit) {
+    val state = model.state
+    val values = state.snapshot?.values.orEmpty().filter {
+        it.descriptor.group.endsWith("Voice ${state.selectedVoice + 1}")
+    }
+    Column(Modifier.fillMaxSize()) {
+        EditorSubScreenHeader("Voice ${state.selectedVoice + 1} details", onBack)
+        Column(
+            Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(7.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            listOf("Voice", "Frequency", "Amplitude", "Filter", "Modulation").forEach { section ->
+                val selected = values.filter { value ->
+                    when (section) {
+                        "Voice" -> value.descriptor.path.substringAfterLast('/') in setOf(
+                            "unison", "spread", "phaseRandom", "stereoSpread", "vibratoSpeed"
+                        )
+                        "Frequency" -> value.descriptor.path.endsWith("/fixedFreq") ||
+                            value.descriptor.path.endsWith("/detune")
+                        "Amplitude" -> value.descriptor.path.endsWith("/volume") ||
+                            value.descriptor.path.endsWith("/panning")
+                        "Filter" -> value.descriptor.path.endsWith("/filter") ||
+                            value.descriptor.path.endsWith("/resonance")
+                        else -> value.descriptor.path.endsWith("/fmType")
+                    }
+                }
+                if (selected.isNotEmpty()) {
+                    Text(section.uppercase(), color = Color(0xFF66F0E9), style = MaterialTheme.typography.labelSmall)
+                    DenseParameterGrid(selected, model::write) { model.reset(it) }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AddOscillatorEditorScreen(model: InstrumentEditorViewModel, onBack: () -> Unit) {
+    val values = model.state.snapshot?.values.orEmpty()
+    val controls = values.filter { it.descriptor.group == "ADD / Oscillator" }
+    val magnitudes = values.filter { it.descriptor.group == "ADD / Oscillator harmonics" }
+    val phases = values.filter { it.descriptor.group == "ADD / Oscillator phases" }
+    Column(Modifier.fillMaxSize()) {
+        EditorSubScreenHeader("ADsynth Oscillator", onBack)
+        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(7.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                OscillatorPreview(magnitudes, phases, Modifier.weight(1f).height(150.dp))
+                BaseFunctionPreview(controls, Modifier.weight(1f).height(150.dp))
+            }
+            Spacer(Modifier.height(6.dp))
+            DenseParameterGrid(controls, model::write) { model.reset(it) }
+            Text("HARMONICS", color = Color(0xFF66F0E9), modifier = Modifier.padding(vertical = 5.dp))
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                magnitudes.forEachIndexed { index, magnitude ->
+                    val phase = phases.getOrNull(index)
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        androidx.compose.material3.Slider(
+                            value = magnitude.value.toFloat(),
+                            onValueChange = { model.write(magnitude, it.toDouble()) },
+                            valueRange = 0f..127f,
+                            modifier = Modifier.width(76.dp),
+                        )
+                        phase?.let {
+                            androidx.compose.material3.Slider(
+                                value = it.value.toFloat(),
+                                onValueChange = { v -> model.write(it, v.toDouble()) },
+                                valueRange = 0f..127f,
+                                modifier = Modifier.width(76.dp),
+                            )
+                        }
+                        Text("${index + 1}", style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun EditorSubScreenHeader(title: String, onBack: () -> Unit) {
+    Surface(color = Color(0xFF102329)) {
+        Row(Modifier.fillMaxWidth().padding(6.dp), verticalAlignment = Alignment.CenterVertically) {
+            TextButton(onClick = onBack) { Text("‹ Back") }
+            Text(title, color = Color(0xFF8EF5EE), style = MaterialTheme.typography.titleMedium)
+        }
+    }
+}
+
+@Composable
+private fun VoiceMiniWave(seed: Int, modifier: Modifier) {
+    Canvas(modifier) {
+        val path = Path()
+        repeat(32) { x ->
+            val px = size.width * x / 31f
+            val py = size.height * (.5f + .35f * kotlin.math.sin((x + seed * 3) * .55f))
+            if (x == 0) path.moveTo(px, py) else path.lineTo(px, py)
+        }
+        drawPath(path, Color(0xFF65F55D), style = androidx.compose.ui.graphics.drawscope.Stroke(2f))
+    }
+}
+
+@Composable
+private fun OscillatorPreview(
+    magnitudes: List<SynthEngine.ParameterValue>,
+    phases: List<SynthEngine.ParameterValue>,
+    modifier: Modifier,
+) {
+    Canvas(modifier) {
+        drawRect(Color.Black)
+        val path = Path()
+        repeat(128) { x ->
+            var sample = 0.0
+            magnitudes.take(32).forEachIndexed { h, value ->
+                val amplitude = (value.value - 64.0) / 63.0
+                val phase = phases.getOrNull(h)?.value?.div(127.0)?.times(Math.PI * 2) ?: 0.0
+                sample += amplitude * kotlin.math.sin((h + 1) * x / 128.0 * Math.PI * 2 + phase)
+            }
+            val px = size.width * x / 127f
+            val py = size.height * (.5f - (sample / 8.0).coerceIn(-.45, .45)).toFloat()
+            if (x == 0) path.moveTo(px, py) else path.lineTo(px, py)
+        }
+        drawPath(path, Color.Green, style = androidx.compose.ui.graphics.drawscope.Stroke(2f))
+    }
+}
+
+@Composable
+private fun BaseFunctionPreview(controls: List<SynthEngine.ParameterValue>, modifier: Modifier) {
+    val shape = controls.firstOrNull { it.descriptor.path == "add/osc/baseShape" }?.value ?: 64.0
+    Canvas(modifier) {
+        drawRect(Color.Black)
+        val path = Path()
+        repeat(128) { x ->
+            val px = size.width * x / 127f
+            val power = .5 + shape / 64.0
+            val y = kotlin.math.sin(x / 127.0 * Math.PI * 2)
+            val shaped = kotlin.math.sign(y) * kotlin.math.abs(y).pow(power)
+            val py = size.height * (.5f - shaped.toFloat() * .42f)
+            if (x == 0) path.moveTo(px, py) else path.lineTo(px, py)
+        }
+        drawPath(path, Color.Green, style = androidx.compose.ui.graphics.drawscope.Stroke(2f))
+    }
+}
+
 private fun populatedSections(
     all: List<SynthEngine.ParameterValue>,
     module: String,
@@ -272,31 +524,33 @@ private fun ZynEditorSection(
     onComplex: () -> Unit,
     onWrite: (SynthEngine.ParameterValue, Double) -> Unit,
     onEdit: (SynthEngine.ParameterValue) -> Unit,
+    leadingContent: (@Composable () -> Unit)? = null,
 ) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-        Surface(
-            modifier = Modifier.width(34.dp),
-            color = Color(0xFF102A31),
-            shape = RoundedCornerShape(6.dp),
-            border = BorderStroke(1.dp, Color(0xFF2E6973)),
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 3.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
                 title.uppercase(),
                 color = Color(0xFF66F0E9),
                 style = MaterialTheme.typography.labelSmall,
-                modifier = Modifier.padding(horizontal = 7.dp, vertical = 12.dp),
+                modifier = Modifier.padding(vertical = 2.dp),
             )
+            Spacer(Modifier.width(7.dp))
+            Surface(
+                modifier = Modifier.weight(1f),
+                color = Color(0xFF234A53),
+                shape = RoundedCornerShape(99.dp),
+            ) { Spacer(Modifier.fillMaxWidth().height(1.dp)) }
         }
-        Surface(
-            modifier = Modifier.weight(1f),
-            color = Color(0xFF0E2228),
-            shape = RoundedCornerShape(7.dp),
-            border = BorderStroke(1.dp, Color(0xFF234A53)),
-        ) {
-            Column(Modifier.padding(5.dp)) {
-                if (complex) ComplexEditorLauncher(title, onComplex)
-                if (parameters.isNotEmpty()) DenseParameterGrid(parameters, onWrite, onEdit)
-            }
+        Column(Modifier.fillMaxWidth().padding(horizontal = 2.dp)) {
+            leadingContent?.invoke()
+            if (complex) ComplexEditorLauncher(title, onComplex)
+            if (parameters.isNotEmpty()) DenseParameterGrid(parameters, onWrite, onEdit)
         }
     }
 }

@@ -32,6 +32,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.dp
 
 @Composable
@@ -93,7 +94,14 @@ fun TinyKnob(
                 text = value.toInt().toString(),
                 modifier = Modifier.align(Alignment.Center),
                 color = MaterialTheme.colorScheme.onSurface,
-                textAlign = TextAlign.Center
+                textAlign = TextAlign.Center,
+                fontSize = when {
+                    kotlin.math.abs(value) >= 10000f -> 9.sp
+                    kotlin.math.abs(value) >= 1000f -> 11.sp
+                    kotlin.math.abs(value) >= 100f -> 13.sp
+                    else -> 14.sp
+                },
+                maxLines = 1,
             )
         }
         if (label.isNotBlank()) Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant)
