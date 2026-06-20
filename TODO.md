@@ -82,4 +82,3 @@
 | Frequency | Frequency LFO | Cnt. | Continuous LFO | Checkbox | off |
 | Frequency | Frequency LFO | Waveform | LFO waveform | Combo | SINE |
 | Frequency | Frequency LFO | Type | LFO type | Combo | — |
-| Voice | - | - | - | Screen | — |

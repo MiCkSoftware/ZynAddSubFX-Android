@@ -16,6 +16,8 @@
 #include "Misc/Part.h"
 #include "Effects/EffectMgr.h"
 #include "Params/ADnoteParameters.h"
+#include "Params/EnvelopeParams.h"
+#include "Params/LFOParams.h"
 #include "Params/SUBnoteParameters.h"
 #include "Params/PADnoteParameters.h"
 #include "Synth/OscilGen.h"
@@ -506,6 +508,41 @@ std::string ZynAndroidEngine::parameterSnapshot(int partIndex, int kitIndex) con
         out << path << '|' << label << '|' << group << '|' << type << '|'
             << value << '|' << min << '|' << max << '|' << def << '|' << options << '\n';
     };
+    auto envelopeValue = [&](const char *prefix, const char *group, const zyn::EnvelopeParams &env,
+                             bool decay, bool sustain) {
+        auto time127 = [](float seconds) {
+            return std::clamp(static_cast<int>(std::lround(
+                std::log2(1.0f + 100.0f * seconds) * 127.0f / 12.0f)), 0, 127);
+        };
+        add((std::string(prefix) + "/attackValue").c_str(), "Attack value", group, "int", env.PA_val, 0, 127, 64);
+        add((std::string(prefix) + "/attackTime").c_str(), "Attack duration", group, "int", time127(env.A_dt), 0, 127, 0);
+        if (decay) {
+            add((std::string(prefix) + "/decayValue").c_str(), "Decay value", group, "int", env.PD_val, 0, 127, 64);
+            add((std::string(prefix) + "/decayTime").c_str(), "Decay duration", group, "int", time127(env.D_dt), 0, 127, 0);
+        }
+        if (sustain)
+            add((std::string(prefix) + "/sustain").c_str(), "Sustain value", group, "int", env.PS_val, 0, 127, 127);
+        add((std::string(prefix) + "/releaseTime").c_str(), "Release duration", group, "int", time127(env.R_dt), 0, 127, 0);
+        add((std::string(prefix) + "/releaseValue").c_str(), "Release value", group, "int", env.PR_val, 0, 127, 64);
+        add((std::string(prefix) + "/stretch").c_str(), "Envelope stretch", group, "int", env.Penvstretch, 0, 127, 64);
+        add((std::string(prefix) + "/loop").c_str(), "Envelope loop", group, "bool", env.Prepeating, 0, 1, 0);
+        add((std::string(prefix) + "/forceRelease").c_str(), "Force release", group, "bool", env.Pforcedrelease, 0, 1, 0);
+    };
+    auto lfoValue = [&](const char *prefix, const char *group, const zyn::LFOParams &lfo) {
+        const int frequency = std::clamp(static_cast<int>(std::lround(
+            127.0f * std::log2(12.0f * lfo.freq + 1.0f) / 10.0f)), 0, 127);
+        const int delay = std::clamp(static_cast<int>(std::lround(127.0f * lfo.delay / 4.0f)), 0, 127);
+        add((std::string(prefix) + "/frequency").c_str(), "LFO frequency", group, "int", frequency, 0, 127, 64);
+        add((std::string(prefix) + "/depth").c_str(), "LFO depth", group, "int", lfo.Pintensity, 0, 127, 0);
+        add((std::string(prefix) + "/start").c_str(), "LFO start phase", group, "int", lfo.Pstartphase, 0, 127, 64);
+        add((std::string(prefix) + "/delay").c_str(), "LFO delay", group, "int", delay, 0, 127, 0);
+        add((std::string(prefix) + "/random").c_str(), "LFO random amount", group, "int", lfo.Prandomness, 0, 127, 0);
+        add((std::string(prefix) + "/continuous").c_str(), "Continuous LFO", group, "bool", lfo.Pcontinous, 0, 1, 0);
+        add((std::string(prefix) + "/waveform").c_str(), "LFO waveform", group, "enum", lfo.PLFOtype, 0, 7, 0,
+            "Sine,Triangle,Square,Ramp up,Ramp down,Exp down 1,Exp down 2,Random");
+        add((std::string(prefix) + "/type").c_str(), "LFO type", group, "enum",
+            static_cast<int>(lfo.fel), 0, 2, static_cast<int>(lfo.fel), "Frequency,Amplitude,Filter");
+    };
     add("part/enabled", "Enabled", "Part", "bool", part->Penabled, 0, 1, 1);
     add("part/volume", "Volume", "Part", "int", std::clamp(
         static_cast<int>(std::lround(96.0f * part->Volume / 40.0f + 96.0f)), 0, 127), 0, 127, 96);
@@ -532,6 +569,9 @@ std::string ZynAndroidEngine::parameterSnapshot(int partIndex, int kitIndex) con
     if (kit.adpars) {
         const auto &g = kit.adpars->GlobalPar;
         add("add/stereo", "Stereo", "ADD / Global", "bool", g.PStereo, 0, 1, 1);
+        add("add/volume", "Volume", "ADD / Amplitude / Global", "int", std::clamp(
+            static_cast<int>(std::lround(96.0f * (1.0f + (g.Volume - 12.0412f) / 60.0f))), 0, 127),
+            0, 127, 96);
         add("add/panning", "Panning", "ADD / Amplitude", "int", g.PPanning, 0, 127, 64);
         add("add/bandwidth", "Bandwidth", "ADD / Frequency", "int", g.PBandwidth, 0, 127, 64);
         add("add/detune", "Fine detune", "ADD / Frequency", "int", g.PDetune, 0, 16383, 8192);
@@ -543,7 +583,45 @@ std::string ZynAndroidEngine::parameterSnapshot(int partIndex, int kitIndex) con
         add("add/punchStrength", "Punch strength", "ADD / Amplitude", "int", g.PPunchStrength, 0, 127, 0);
         add("add/punchTime", "Punch time", "ADD / Amplitude", "int", g.PPunchTime, 0, 127, 60);
         add("add/punchStretch", "Punch stretch", "ADD / Amplitude", "int", g.PPunchStretch, 0, 127, 64);
+        add("add/punchVelocity", "Punch velocity", "ADD / Amplitude", "int",
+            g.PPunchVelocitySensing, 0, 127, 72);
         add("add/filterVelocity", "Filter velocity", "ADD / Filter", "int", g.PFilterVelocityScale, 0, 127, 64);
+        add("add/filterVelocitySense", "Filter velocity sensitivity", "ADD / Filter / Parameters", "int",
+            g.PFilterVelocityScaleFunction, 0, 127, 64);
+        if (g.AmpEnvelope)
+            envelopeValue("add/ampEnvelope", "ADD / Amplitude / Envelope", *g.AmpEnvelope, true, true);
+        if (g.AmpLfo)
+            lfoValue("add/ampLfo", "ADD / Amplitude / LFO", *g.AmpLfo);
+        if (g.FreqEnvelope)
+            envelopeValue("add/freqEnvelope", "ADD / Frequency / Envelope", *g.FreqEnvelope, false, false);
+        if (g.FreqLfo)
+            lfoValue("add/freqLfo", "ADD / Frequency / LFO", *g.FreqLfo);
+        const int octave = g.PCoarseDetune / 1024 >= 8 ? g.PCoarseDetune / 1024 - 16 : g.PCoarseDetune / 1024;
+        const int coarse = g.PCoarseDetune % 1024 >= 512 ? g.PCoarseDetune % 1024 - 1024 : g.PCoarseDetune % 1024;
+        add("add/octave", "Octave", "ADD / Frequency / Global", "int", octave, -8, 7, 0);
+        add("add/coarse", "Coarse detune", "ADD / Frequency / Global", "int", coarse, -64, 63, 0);
+        if (g.GlobalFilter) {
+            const auto &filter = *g.GlobalFilter;
+            const int cutoff = std::clamp(static_cast<int>(std::lround(
+                ((std::log2(filter.basefreq) - 9.96578428f) / 5.0f + 1.0f) * 64.0f)), 0, 127);
+            const int q = std::clamp(static_cast<int>(std::lround(
+                127.0f * std::sqrt(std::log(0.9f + filter.baseq) / std::log(1000.0f)))), 0, 127);
+            const int tracking = std::clamp(static_cast<int>(std::lround(filter.freqtracking / 100.0f * 64.0f + 64.0f)), 0, 127);
+            const int gain = std::clamp(static_cast<int>(std::lround((filter.gain / 30.0f + 1.0f) * 64.0f)), 0, 127);
+            add("add/filter/category", "Filter category", "ADD / Filter / Parameters", "enum",
+                filter.Pcategory, 0, 4, 0, "Analog,Formant,State variable,Moog,Comb");
+            add("add/filter/type", "Filter type", "ADD / Filter / Parameters", "enum",
+                filter.Ptype, 0, 8, 0, "LPF1,HPF1,LPF2,HPF2,BPF1,Notch1,Peak1,Low shelf,High shelf");
+            add("add/filter/cutoff", "Cutoff frequency", "ADD / Filter / Parameters", "int", cutoff, 0, 127, 94);
+            add("add/filter/q", "Q", "ADD / Filter / Parameters", "int", q, 0, 127, 40);
+            add("add/filter/tracking", "Frequency tracking", "ADD / Filter / Parameters", "int", tracking, 0, 127, 64);
+            add("add/filter/gain", "Filter gain", "ADD / Filter / Parameters", "int", gain, 0, 127, 64);
+            add("add/filter/stages", "Filter stages", "ADD / Filter / Parameters", "int", filter.Pstages + 1, 1, 6, 1);
+        }
+        if (g.FilterEnvelope)
+            envelopeValue("add/filterEnvelope", "ADD / Filter / Envelope", *g.FilterEnvelope, true, false);
+        if (g.FilterLfo)
+            lfoValue("add/filterLfo", "ADD / Filter / LFO", *g.FilterLfo);
         add("add/randomGrouping", "Random grouping", "ADD / Oscillator", "bool", g.Hrandgrouping, 0, 1, 0);
         for (int voice = 0; voice < NUM_VOICES; ++voice) {
             const auto &v = kit.adpars->VoicePar[voice];
@@ -632,6 +710,34 @@ bool ZynAndroidEngine::setParameter(int partIndex, int kitIndex, const std::stri
     auto &kit = part->kit[kitIndex];
     auto i = [&](int min, int max) { return std::clamp(static_cast<int>(std::lround(value)), min, max); };
     auto b = [&]() { return value >= 0.5; };
+    auto writeEnvelope = [&](zyn::EnvelopeParams &env, const std::string &field) {
+        auto seconds = [&](int raw) { return (std::pow(2.0f, raw / 127.0f * 12.0f) - 1.0f) / 100.0f; };
+        if (field == "attackValue") env.PA_val = i(0, 127);
+        else if (field == "attackTime") env.A_dt = seconds(i(0, 127));
+        else if (field == "decayValue") env.PD_val = i(0, 127);
+        else if (field == "decayTime") env.D_dt = seconds(i(0, 127));
+        else if (field == "sustain") env.PS_val = i(0, 127);
+        else if (field == "releaseTime") env.R_dt = seconds(i(0, 127));
+        else if (field == "releaseValue") env.PR_val = i(0, 127);
+        else if (field == "stretch") env.Penvstretch = i(0, 127);
+        else if (field == "loop") env.Prepeating = b();
+        else if (field == "forceRelease") env.Pforcedrelease = b();
+        else return false;
+        env.converttofree();
+        return true;
+    };
+    auto writeLfo = [&](zyn::LFOParams &lfo, const std::string &field) {
+        if (field == "frequency") lfo.freq = (std::pow(2.0f, 10.0f * i(0, 127) / 127.0f) - 1.0f) / 12.0f;
+        else if (field == "depth") lfo.Pintensity = i(0, 127);
+        else if (field == "start") lfo.Pstartphase = i(0, 127);
+        else if (field == "delay") lfo.delay = 4.0f * i(0, 127) / 127.0f;
+        else if (field == "random") lfo.Prandomness = i(0, 127);
+        else if (field == "continuous") lfo.Pcontinous = b();
+        else if (field == "waveform") lfo.PLFOtype = i(0, 7);
+        else if (field == "type") lfo.fel = static_cast<zyn::consumer_location_type_t>(i(0, 2));
+        else return false;
+        return true;
+    };
     if (path == "part/enabled") return setPartEnabled(partIndex, b());
     if (path == "part/volume") return setPartVolume127(partIndex, i(0, 127));
     if (path == "part/panning") return setPartPanning(partIndex, i(0, 127));
@@ -656,6 +762,7 @@ bool ZynAndroidEngine::setParameter(int partIndex, int kitIndex, const std::stri
     else if (path.rfind("add/", 0) == 0 && kit.adpars) {
         auto &g = kit.adpars->GlobalPar;
         if (path == "add/stereo") g.PStereo = b();
+        else if (path == "add/volume") g.Volume = 12.0412f - 60.0f * (1.0f - i(0, 127) / 96.0f);
         else if (path == "add/panning") g.PPanning = i(0, 127);
         else if (path == "add/bandwidth") g.PBandwidth = i(0, 127);
         else if (path == "add/detune") g.PDetune = i(0, 16383);
@@ -666,7 +773,42 @@ bool ZynAndroidEngine::setParameter(int partIndex, int kitIndex, const std::stri
         else if (path == "add/punchStrength") g.PPunchStrength = i(0, 127);
         else if (path == "add/punchTime") g.PPunchTime = i(0, 127);
         else if (path == "add/punchStretch") g.PPunchStretch = i(0, 127);
+        else if (path == "add/punchVelocity") g.PPunchVelocitySensing = i(0, 127);
         else if (path == "add/filterVelocity") g.PFilterVelocityScale = i(0, 127);
+        else if (path == "add/filterVelocitySense") g.PFilterVelocityScaleFunction = i(0, 127);
+        else if (path == "add/octave") {
+            int octave = i(-8, 7);
+            if (octave < 0) octave += 16;
+            g.PCoarseDetune = octave * 1024 + g.PCoarseDetune % 1024;
+        } else if (path == "add/coarse") {
+            int coarse = i(-64, 63);
+            if (coarse < 0) coarse += 1024;
+            g.PCoarseDetune = coarse + (g.PCoarseDetune / 1024) * 1024;
+        } else if (path.rfind("add/ampEnvelope/", 0) == 0 && g.AmpEnvelope) {
+            if (!writeEnvelope(*g.AmpEnvelope, path.substr(17))) return false;
+        } else if (path.rfind("add/freqEnvelope/", 0) == 0 && g.FreqEnvelope) {
+            if (!writeEnvelope(*g.FreqEnvelope, path.substr(18))) return false;
+        } else if (path.rfind("add/filterEnvelope/", 0) == 0 && g.FilterEnvelope) {
+            if (!writeEnvelope(*g.FilterEnvelope, path.substr(20))) return false;
+        } else if (path.rfind("add/ampLfo/", 0) == 0 && g.AmpLfo) {
+            if (!writeLfo(*g.AmpLfo, path.substr(11))) return false;
+        } else if (path.rfind("add/freqLfo/", 0) == 0 && g.FreqLfo) {
+            if (!writeLfo(*g.FreqLfo, path.substr(12))) return false;
+        } else if (path.rfind("add/filterLfo/", 0) == 0 && g.FilterLfo) {
+            if (!writeLfo(*g.FilterLfo, path.substr(14))) return false;
+        } else if (path.rfind("add/filter/", 0) == 0 && g.GlobalFilter) {
+            auto &filter = *g.GlobalFilter;
+            const auto field = path.substr(11);
+            if (field == "category") filter.Pcategory = i(0, 4);
+            else if (field == "type") filter.Ptype = i(0, 8);
+            else if (field == "cutoff") filter.basefreq = zyn::FilterParams::basefreqFromOldPreq(i(0, 127));
+            else if (field == "q") filter.baseq = zyn::FilterParams::baseqFromOldPq(i(0, 127));
+            else if (field == "tracking") filter.freqtracking = 100.0f * (i(0, 127) - 64.0f) / 64.0f;
+            else if (field == "gain") filter.gain = zyn::FilterParams::gainFromOldPgain(i(0, 127));
+            else if (field == "stages") filter.Pstages = i(1, 6) - 1;
+            else return false;
+            filter.changed = true;
+        }
         else if (path == "add/randomGrouping") g.Hrandgrouping = b();
         else if (path.rfind("add/voice/", 0) == 0) {
             const auto rest = path.substr(10);

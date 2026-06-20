@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -51,8 +52,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import java.io.File
 import kotlin.math.roundToInt
 import kotlin.math.pow
@@ -200,6 +203,7 @@ fun FullInstrumentEditor(
                             },
                             onWrite = model::write,
                             onEdit = { editedParameter = it },
+                            verticalLabels = module == "ADD",
                             leadingContent = if (section == "Voices") {
                                 {
                                     VoiceMatrix(
@@ -524,6 +528,7 @@ private fun ZynEditorSection(
     onComplex: () -> Unit,
     onWrite: (SynthEngine.ParameterValue, Double) -> Unit,
     onEdit: (SynthEngine.ParameterValue) -> Unit,
+    verticalLabels: Boolean = false,
     leadingContent: (@Composable () -> Unit)? = null,
 ) {
     Column(
@@ -550,7 +555,9 @@ private fun ZynEditorSection(
         Column(Modifier.fillMaxWidth().padding(horizontal = 2.dp)) {
             leadingContent?.invoke()
             if (complex) ComplexEditorLauncher(title, onComplex)
-            if (parameters.isNotEmpty()) DenseParameterGrid(parameters, onWrite, onEdit)
+            if (parameters.isNotEmpty()) {
+                DenseParameterGrid(parameters, onWrite, verticalLabels, onEdit)
+            }
         }
     }
 }
@@ -588,24 +595,34 @@ private fun emptyMessage(module: String, tab: String): String = when {
 private fun DenseParameterGrid(
     parameters: List<SynthEngine.ParameterValue>,
     onWrite: (SynthEngine.ParameterValue, Double) -> Unit,
+    verticalLabels: Boolean = false,
     onLongPress: (SynthEngine.ParameterValue) -> Unit,
 ) {
     BoxWithConstraints {
         val columns = when {
+            verticalLabels -> 3
             maxWidth >= 900.dp -> 6
             maxWidth >= 650.dp -> 5
             maxWidth >= 420.dp -> 4
             else -> 3
         }
-        FlowRow(
+        Column(
             modifier = Modifier.fillMaxWidth(),
-            maxItemsInEachRow = columns,
-            horizontalArrangement = Arrangement.spacedBy(5.dp),
             verticalArrangement = Arrangement.spacedBy(5.dp),
         ) {
-            parameters.forEach { parameter ->
-                Box(Modifier.fillMaxWidth(1f / columns)) {
-                    DenseParameterControl(parameter, onWrite, onLongPress)
+            parameters.chunked(columns).forEach { rowParameters ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                ) {
+                    rowParameters.forEach { parameter ->
+                        Box(Modifier.weight(1f)) {
+                            DenseParameterControl(parameter, onWrite, onLongPress, verticalLabels)
+                        }
+                    }
+                    repeat(columns - rowParameters.size) {
+                        Spacer(Modifier.weight(1f))
+                    }
                 }
             }
         }
@@ -618,6 +635,7 @@ private fun DenseParameterControl(
     parameter: SynthEngine.ParameterValue,
     onWrite: (SynthEngine.ParameterValue, Double) -> Unit,
     onLongPress: (SynthEngine.ParameterValue) -> Unit,
+    verticalLabel: Boolean = false,
 ) {
     val descriptor = parameter.descriptor
     Surface(
@@ -633,10 +651,31 @@ private fun DenseParameterControl(
         shape = RoundedCornerShape(7.dp),
         border = BorderStroke(1.dp, Color(0xFF274B54)),
     ) {
-        Column(
-            Modifier.padding(horizontal = 4.dp, vertical = 5.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
+        Row(
+            Modifier.fillMaxWidth().height(if (verticalLabel) 78.dp else 86.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
+            if (verticalLabel) {
+                Surface(
+                    modifier = Modifier.width(28.dp).fillMaxHeight(),
+                    color = Color(0xFF0D242A),
+                    shape = RoundedCornerShape(topStart = 7.dp, bottomStart = 7.dp),
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(
+                            compactAddLabel(descriptor),
+                            modifier = Modifier.rotate(-90f),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontSize = 9.sp,
+                            maxLines = 1,
+                        )
+                    }
+                }
+            }
+            Column(
+                Modifier.weight(1f).padding(horizontal = 3.dp, vertical = 4.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
             when (descriptor.type) {
                 SynthEngine.ParameterType.BOOLEAN -> Switch(
                     checked = parameter.value >= .5,
@@ -656,13 +695,49 @@ private fun DenseParameterControl(
                     onValueChange = { onWrite(parameter, it.roundToInt().toDouble()) },
                 )
             }
-            Text(
-                descriptor.label,
-                style = MaterialTheme.typography.labelSmall,
-                maxLines = 2,
-            )
+                if (!verticalLabel) {
+                    Text(
+                        descriptor.label,
+                        style = MaterialTheme.typography.labelSmall,
+                        maxLines = 2,
+                    )
+                }
+            }
         }
     }
+}
+
+private fun compactAddLabel(descriptor: SynthEngine.ParameterDescriptor): String = when {
+    descriptor.path == "add/stereo" -> "Stereo"
+    descriptor.path == "add/volume" -> "Vol."
+    descriptor.path == "add/panning" -> "Pan."
+    descriptor.path == "add/velocity" -> "V.Sns."
+    descriptor.path == "add/fadeIn" -> "Fade"
+    descriptor.path == "add/punchStrength" -> "P.Str."
+    descriptor.path == "add/punchTime" -> "P.t."
+    descriptor.path == "add/punchStretch" -> "P.Stc."
+    descriptor.path == "add/punchVelocity" -> "P.Vel."
+    descriptor.path == "add/octave" -> "Oct."
+    descriptor.path == "add/coarse" -> "C.det."
+    descriptor.path.endsWith("/attackValue") -> "A.val"
+    descriptor.path.endsWith("/attackTime") -> "A.dt"
+    descriptor.path.endsWith("/decayValue") -> "D.val"
+    descriptor.path.endsWith("/decayTime") -> "D.dt"
+    descriptor.path.endsWith("/sustain") -> "S.val"
+    descriptor.path.endsWith("/releaseTime") -> "R.dt"
+    descriptor.path.endsWith("/releaseValue") -> "R.val"
+    descriptor.path.endsWith("/stretch") -> "Stretch"
+    descriptor.path.endsWith("/loop") -> "L"
+    descriptor.path.endsWith("/forceRelease") -> "frcR"
+    descriptor.path.endsWith("/frequency") -> "Freq."
+    descriptor.path.endsWith("/depth") -> "Depth"
+    descriptor.path.endsWith("/start") -> "Start"
+    descriptor.path.endsWith("/delay") -> "Delay"
+    descriptor.path.endsWith("/random") -> "RND"
+    descriptor.path.endsWith("/continuous") -> "Cnt."
+    descriptor.path.endsWith("/waveform") -> "Wave"
+    descriptor.path.endsWith("/type") -> "Type"
+    else -> descriptor.label
 }
 
 @Composable
