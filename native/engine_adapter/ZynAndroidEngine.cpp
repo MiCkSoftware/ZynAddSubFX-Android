@@ -494,6 +494,217 @@ std::string ZynAndroidEngine::mixerSummary() const {
     return oss.str();
 }
 
+std::string ZynAndroidEngine::parameterSnapshot(int partIndex, int kitIndex) const {
+    if (!zynReady_.load() || !master_ || partIndex < 0 || partIndex >= NUM_MIDI_PARTS ||
+        kitIndex < 0 || kitIndex >= NUM_KIT_ITEMS || !master_->part[partIndex]) return {};
+    const auto *part = master_->part[partIndex];
+    const auto &kit = part->kit[kitIndex];
+    std::ostringstream out;
+    auto add = [&](const char *path, const char *label, const char *group, const char *type,
+                   double value, double min, double max, double def, const char *options = "") {
+        out << path << '|' << label << '|' << group << '|' << type << '|'
+            << value << '|' << min << '|' << max << '|' << def << '|' << options << '\n';
+    };
+    add("part/enabled", "Enabled", "Part", "bool", part->Penabled, 0, 1, 1);
+    add("part/volume", "Volume", "Part", "int", std::clamp(
+        static_cast<int>(std::lround(96.0f * part->Volume / 40.0f + 96.0f)), 0, 127), 0, 127, 96);
+    add("part/panning", "Panning", "Part", "int", part->Ppanning, 0, 127, 64);
+    add("part/minKey", "Minimum key", "Part", "int", part->Pminkey, 0, 127, 0);
+    add("part/maxKey", "Maximum key", "Part", "int", part->Pmaxkey, 0, 127, 127);
+    add("part/keyShift", "Key shift", "Part", "int", static_cast<int>(part->Pkeyshift) - 64, -64, 63, 0);
+    add("part/channel", "Receive channel", "Part", "enum", part->Prcvchn, 0, 15, partIndex % 16,
+        "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16");
+    add("part/velocitySense", "Velocity sense", "Part", "int", part->Pvelsns, 0, 127, 64);
+    add("part/velocityOffset", "Velocity offset", "Part", "int", part->Pveloffs, 0, 127, 64);
+    add("part/kitMode", "Kit mode", "Part", "enum", part->Pkitmode, 0, 2, 0, "Off,Multi,Single");
+    add("part/polyMode", "Polyphonic", "Part", "bool", part->Ppolymode, 0, 1, 1);
+    add("part/legatoMode", "Legato", "Part", "bool", part->Plegatomode, 0, 1, 0);
+    add("part/drumMode", "Drum mode", "Part", "bool", part->Pdrummode, 0, 1, 0);
+    add("kit/enabled", "Enabled", "Kit", "bool", kit.Penabled, 0, 1, kitIndex == 0);
+    add("kit/muted", "Muted", "Kit", "bool", kit.Pmuted, 0, 1, 0);
+    add("kit/minKey", "Minimum key", "Kit", "int", kit.Pminkey, 0, 127, 0);
+    add("kit/maxKey", "Maximum key", "Kit", "int", kit.Pmaxkey, 0, 127, 127);
+    add("kit/sendFx", "Send to effect", "Kit", "enum", kit.Psendtoparteffect, 0, 3, 0, "FX 1,FX 2,FX 3,Off");
+    add("kit/addEnabled", "ADsynth enabled", "Kit", "bool", kit.Padenabled, 0, 1, kitIndex == 0);
+    add("kit/subEnabled", "SUBsynth enabled", "Kit", "bool", kit.Psubenabled, 0, 1, 0);
+    add("kit/padEnabled", "PADsynth enabled", "Kit", "bool", kit.Ppadenabled, 0, 1, 0);
+    if (kit.adpars) {
+        const auto &g = kit.adpars->GlobalPar;
+        add("add/stereo", "Stereo", "ADD / Global", "bool", g.PStereo, 0, 1, 1);
+        add("add/panning", "Panning", "ADD / Amplitude", "int", g.PPanning, 0, 127, 64);
+        add("add/bandwidth", "Bandwidth", "ADD / Frequency", "int", g.PBandwidth, 0, 127, 64);
+        add("add/detune", "Fine detune", "ADD / Frequency", "int", g.PDetune, 0, 16383, 8192);
+        add("add/coarseDetune", "Coarse detune", "ADD / Frequency", "int", g.PCoarseDetune, 0, 16383, 0);
+        add("add/detuneType", "Detune type", "ADD / Frequency", "enum", g.PDetuneType, 0, 3, 1,
+            "L35,L10E,L100E,E1200");
+        add("add/velocity", "Velocity curve", "ADD / Amplitude", "int", g.PAmpVelocityScaleFunction, 0, 127, 64);
+        add("add/fadeIn", "Fade-in adjustment", "ADD / Amplitude", "int", g.Fadein_adjustment, 0, 127, 64);
+        add("add/punchStrength", "Punch strength", "ADD / Amplitude", "int", g.PPunchStrength, 0, 127, 0);
+        add("add/punchTime", "Punch time", "ADD / Amplitude", "int", g.PPunchTime, 0, 127, 60);
+        add("add/punchStretch", "Punch stretch", "ADD / Amplitude", "int", g.PPunchStretch, 0, 127, 64);
+        add("add/filterVelocity", "Filter velocity", "ADD / Filter", "int", g.PFilterVelocityScale, 0, 127, 64);
+        add("add/randomGrouping", "Random grouping", "ADD / Oscillator", "bool", g.Hrandgrouping, 0, 1, 0);
+        for (int voice = 0; voice < NUM_VOICES; ++voice) {
+            const auto &v = kit.adpars->VoicePar[voice];
+            const std::string prefix = "add/voice/" + std::to_string(voice) + "/";
+            const std::string group = "ADD / Voice " + std::to_string(voice + 1);
+            add((prefix + "enabled").c_str(), "Enabled", group.c_str(), "bool", v.Enabled, 0, 1, voice == 0);
+            add((prefix + "unison").c_str(), "Unison voices", group.c_str(), "int", v.Unison_size, 1, 50, 1);
+            add((prefix + "spread").c_str(), "Unison spread", group.c_str(), "int", v.Unison_frequency_spread, 0, 127, 60);
+            add((prefix + "phaseRandom").c_str(), "Phase randomness", group.c_str(), "int", v.Unison_phase_randomness, 0, 127, 127);
+            add((prefix + "stereoSpread").c_str(), "Stereo spread", group.c_str(), "int", v.Unison_stereo_spread, 0, 127, 64);
+            add((prefix + "panning").c_str(), "Panning", group.c_str(), "int", v.PPanning, 0, 127, 64);
+            add((prefix + "fixedFreq").c_str(), "Fixed frequency", group.c_str(), "bool", v.Pfixedfreq, 0, 1, 0);
+            add((prefix + "resonance").c_str(), "Resonance", group.c_str(), "bool", v.Presonance, 0, 1, 1);
+            add((prefix + "filter").c_str(), "Voice filter", group.c_str(), "bool", v.PFilterEnabled, 0, 1, 0);
+            add((prefix + "fmType").c_str(), "Modulation", group.c_str(), "enum",
+                static_cast<int>(v.PFMEnabled), 0, 5, 0, "Off,Mix,Ring,Phase,Frequency,PWM");
+        }
+    }
+    if (kit.subpars) {
+        const auto &s = *kit.subpars;
+        add("sub/stereo", "Stereo", "SUB / Global", "bool", s.Pstereo, 0, 1, 1);
+        add("sub/panning", "Panning", "SUB / Amplitude", "int", s.PPanning, 0, 127, 64);
+        add("sub/bandwidth", "Bandwidth", "SUB / Harmonics", "int", s.Pbandwidth, 0, 127, 64);
+        add("sub/bandwidthScale", "Bandwidth scale", "SUB / Harmonics", "int", s.Pbwscale, 0, 127, 64);
+        add("sub/stages", "Filter stages", "SUB / Harmonics", "int", s.Pnumstages, 1, 5, 2);
+        add("sub/start", "Harmonic start", "SUB / Harmonics", "enum", s.Pstart, 0, 2, 1, "Zero,Random,Positive");
+        add("sub/fixedFreq", "Fixed frequency", "SUB / Frequency", "bool", s.Pfixedfreq, 0, 1, 0);
+        add("sub/filterEnabled", "Global filter", "SUB / Filter", "bool", s.PGlobalFilterEnabled, 0, 1, 0);
+        for (int h = 0; h < MAX_SUB_HARMONICS; ++h) {
+            const std::string group = "SUB / Harmonic " + std::to_string(h + 1);
+            add(("sub/harmonic/" + std::to_string(h) + "/magnitude").c_str(), "Magnitude", group.c_str(), "int", s.Phmag[h], 0, 127, h == 0 ? 127 : 0);
+            add(("sub/harmonic/" + std::to_string(h) + "/bandwidth").c_str(), "Relative bandwidth", group.c_str(), "int", s.Phrelbw[h], 0, 127, 64);
+        }
+    }
+    if (kit.padpars) {
+        const auto &p = *kit.padpars;
+        add("pad/stereo", "Stereo", "PAD / Global", "bool", p.PStereo, 0, 1, 1);
+        add("pad/panning", "Panning", "PAD / Amplitude", "int", p.PPanning, 0, 127, 64);
+        add("pad/volume", "Volume", "PAD / Amplitude", "int", p.PVolume, 0, 127, 90);
+        add("pad/bandwidth", "Bandwidth", "PAD / Harmonics", "int", p.Pbandwidth, 0, 1000, 500);
+        add("pad/bandwidthScale", "Bandwidth scale", "PAD / Harmonics", "int", p.Pbwscale, 0, 127, 64);
+        add("pad/mode", "Synthesis mode", "PAD / Harmonics", "enum", static_cast<int>(p.Pmode), 0, 2, 0, "Bandwidth,Discrete,Continuous");
+        add("pad/profileWidth", "Profile width", "PAD / Profile", "int", p.Php.width, 0, 127, 127);
+        add("pad/profileAutoScale", "Profile auto-scale", "PAD / Profile", "bool", p.Php.autoscale, 0, 1, 1);
+        add("pad/qualitySize", "Sample size", "PAD / Quality", "int", p.Pquality.samplesize, 0, 6, 3);
+        add("pad/qualityOctaves", "Octaves", "PAD / Quality", "int", p.Pquality.oct, 0, 7, 3);
+        add("pad/qualitySamplesPerOctave", "Samples per octave", "PAD / Quality", "int", p.Pquality.smpoct, 0, 6, 2);
+        add("pad/fixedFreq", "Fixed frequency", "PAD / Frequency", "bool", p.Pfixedfreq, 0, 1, 0);
+    }
+    return out.str();
+}
+
+bool ZynAndroidEngine::setParameter(int partIndex, int kitIndex, const std::string &path, double value) {
+    if (!zynReady_.load() || !master_ || partIndex < 0 || partIndex >= NUM_MIDI_PARTS ||
+        kitIndex < 0 || kitIndex >= NUM_KIT_ITEMS || !master_->part[partIndex]) return false;
+    auto *part = master_->part[partIndex];
+    auto &kit = part->kit[kitIndex];
+    auto i = [&](int min, int max) { return std::clamp(static_cast<int>(std::lround(value)), min, max); };
+    auto b = [&]() { return value >= 0.5; };
+    if (path == "part/enabled") return setPartEnabled(partIndex, b());
+    if (path == "part/volume") return setPartVolume127(partIndex, i(0, 127));
+    if (path == "part/panning") return setPartPanning(partIndex, i(0, 127));
+    if (path == "part/minKey") part->Pminkey = i(0, 127);
+    else if (path == "part/maxKey") part->Pmaxkey = i(0, 127);
+    else if (path == "part/keyShift") part->Pkeyshift = i(-64, 63) + 64;
+    else if (path == "part/channel") part->Prcvchn = i(0, 15);
+    else if (path == "part/velocitySense") part->Pvelsns = i(0, 127);
+    else if (path == "part/velocityOffset") part->Pveloffs = i(0, 127);
+    else if (path == "part/kitMode") part->Pkitmode = i(0, 2);
+    else if (path == "part/polyMode") part->Ppolymode = b();
+    else if (path == "part/legatoMode") part->Plegatomode = b();
+    else if (path == "part/drumMode") part->Pdrummode = b();
+    else if (path == "kit/enabled") part->setkititemstatus(kitIndex, b());
+    else if (path == "kit/muted") kit.Pmuted = b();
+    else if (path == "kit/minKey") kit.Pminkey = i(0, 127);
+    else if (path == "kit/maxKey") kit.Pmaxkey = i(0, 127);
+    else if (path == "kit/sendFx") kit.Psendtoparteffect = i(0, 3);
+    else if (path == "kit/addEnabled") kit.Padenabled = b();
+    else if (path == "kit/subEnabled") kit.Psubenabled = b();
+    else if (path == "kit/padEnabled") kit.Ppadenabled = b();
+    else if (path.rfind("add/", 0) == 0 && kit.adpars) {
+        auto &g = kit.adpars->GlobalPar;
+        if (path == "add/stereo") g.PStereo = b();
+        else if (path == "add/panning") g.PPanning = i(0, 127);
+        else if (path == "add/bandwidth") g.PBandwidth = i(0, 127);
+        else if (path == "add/detune") g.PDetune = i(0, 16383);
+        else if (path == "add/coarseDetune") g.PCoarseDetune = i(0, 16383);
+        else if (path == "add/detuneType") g.PDetuneType = i(0, 3);
+        else if (path == "add/velocity") g.PAmpVelocityScaleFunction = i(0, 127);
+        else if (path == "add/fadeIn") g.Fadein_adjustment = i(0, 127);
+        else if (path == "add/punchStrength") g.PPunchStrength = i(0, 127);
+        else if (path == "add/punchTime") g.PPunchTime = i(0, 127);
+        else if (path == "add/punchStretch") g.PPunchStretch = i(0, 127);
+        else if (path == "add/filterVelocity") g.PFilterVelocityScale = i(0, 127);
+        else if (path == "add/randomGrouping") g.Hrandgrouping = b();
+        else if (path.rfind("add/voice/", 0) == 0) {
+            const auto rest = path.substr(10);
+            const auto slash = rest.find('/');
+            if (slash == std::string::npos) return false;
+            const int voice = std::atoi(rest.substr(0, slash).c_str());
+            if (voice < 0 || voice >= NUM_VOICES) return false;
+            auto &v = kit.adpars->VoicePar[voice];
+            const auto field = rest.substr(slash + 1);
+            if (field == "enabled") v.Enabled = b();
+            else if (field == "unison") v.Unison_size = i(1, 50);
+            else if (field == "spread") v.Unison_frequency_spread = i(0, 127);
+            else if (field == "phaseRandom") v.Unison_phase_randomness = i(0, 127);
+            else if (field == "stereoSpread") v.Unison_stereo_spread = i(0, 127);
+            else if (field == "panning") v.PPanning = i(0, 127);
+            else if (field == "fixedFreq") v.Pfixedfreq = b();
+            else if (field == "resonance") v.Presonance = b();
+            else if (field == "filter") v.PFilterEnabled = b();
+            else if (field == "fmType") v.PFMEnabled = static_cast<zyn::FMTYPE>(i(0, 5));
+            else return false;
+        } else return false;
+    } else if (path.rfind("sub/", 0) == 0 && kit.subpars) {
+        auto &s = *kit.subpars;
+        if (path == "sub/stereo") s.Pstereo = b();
+        else if (path == "sub/panning") s.PPanning = i(0, 127);
+        else if (path == "sub/bandwidth") s.Pbandwidth = i(0, 127);
+        else if (path == "sub/bandwidthScale") s.Pbwscale = i(0, 127);
+        else if (path == "sub/stages") s.Pnumstages = i(1, 5);
+        else if (path == "sub/start") s.Pstart = i(0, 2);
+        else if (path == "sub/fixedFreq") s.Pfixedfreq = b();
+        else if (path == "sub/filterEnabled") s.PGlobalFilterEnabled = b();
+        else if (path.rfind("sub/harmonic/", 0) == 0) {
+            const auto rest = path.substr(13);
+            const auto slash = rest.find('/');
+            if (slash == std::string::npos) return false;
+            const int h = std::atoi(rest.substr(0, slash).c_str());
+            if (h < 0 || h >= MAX_SUB_HARMONICS) return false;
+            const auto field = rest.substr(slash + 1);
+            if (field == "magnitude") s.Phmag[h] = i(0, 127);
+            else if (field == "bandwidth") s.Phrelbw[h] = i(0, 127);
+            else return false;
+        } else return false;
+        s.updateFrequencyMultipliers();
+    } else if (path.rfind("pad/", 0) == 0 && kit.padpars) {
+        auto &p = *kit.padpars;
+        if (path == "pad/stereo") p.PStereo = b();
+        else if (path == "pad/panning") p.PPanning = i(0, 127);
+        else if (path == "pad/volume") p.PVolume = i(0, 127);
+        else if (path == "pad/bandwidth") p.Pbandwidth = i(0, 1000);
+        else if (path == "pad/bandwidthScale") p.Pbwscale = i(0, 127);
+        else if (path == "pad/mode") p.Pmode = static_cast<zyn::PADnoteParameters::pad_mode>(i(0, 2));
+        else if (path == "pad/profileWidth") p.Php.width = i(0, 127);
+        else if (path == "pad/profileAutoScale") p.Php.autoscale = b();
+        else if (path == "pad/qualitySize") p.Pquality.samplesize = i(0, 6);
+        else if (path == "pad/qualityOctaves") p.Pquality.oct = i(0, 7);
+        else if (path == "pad/qualitySamplesPerOctave") p.Pquality.smpoct = i(0, 6);
+        else if (path == "pad/fixedFreq") p.Pfixedfreq = b();
+        else return false;
+    } else return false;
+    return true;
+}
+
+bool ZynAndroidEngine::exportInstrument(int partIndex, const std::string &path) {
+    if (!zynReady_.load() || !master_ || partIndex < 0 || partIndex >= NUM_MIDI_PARTS ||
+        !master_->part[partIndex] || path.empty()) return false;
+    return master_->part[partIndex]->saveXML(path.c_str()) == 0;
+}
+
 bool ZynAndroidEngine::setPart0Enabled(bool enabled) {
     if (!zynReady_.load() || !master_ || !master_->part[0]) return false;
     auto *part0 = master_->part[0];
@@ -696,11 +907,11 @@ float ZynAndroidEngine::testToneFrequencyHz() const {
     return testToneFrequencyHz_.load();
 }
 
-void ZynAndroidEngine::noteOn(int /* channel */, int note, int velocity) {
+void ZynAndroidEngine::noteOn(int channel, int note, int velocity) {
     if (note < 0 || note > 127) return;
     Command cmd{
         CommandType::NoteOn,
-        0,
+        std::clamp(channel, 0, 15),
         note,
         velocity < 0 ? 0 : (velocity > 127 ? 127 : velocity),
     };
@@ -717,11 +928,11 @@ void ZynAndroidEngine::panic() {
     (void) pushCommand(cmd);
 }
 
-void ZynAndroidEngine::noteOff(int /* channel */, int note) {
+void ZynAndroidEngine::noteOff(int channel, int note) {
     if (note < 0 || note > 127) return;
     Command cmd{
         CommandType::NoteOff,
-        0,
+        std::clamp(channel, 0, 15),
         note,
         0,
     };

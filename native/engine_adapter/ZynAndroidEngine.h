@@ -40,6 +40,9 @@ public:
     std::string activeFxSummary() const;
     std::string partsSummary() const;
     std::string mixerSummary() const;
+    std::string parameterSnapshot(int partIndex, int kitIndex) const;
+    bool setParameter(int partIndex, int kitIndex, const std::string &path, double value);
+    bool exportInstrument(int partIndex, const std::string &path);
     bool setPart0Enabled(bool enabled);
     bool setPartEnabled(int partIndex, bool enabled);
     bool setPartReceiveChannel(int partIndex, int channel);

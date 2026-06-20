@@ -5,12 +5,17 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -51,7 +56,7 @@ fun TinyKnob(
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Box(
             modifier = Modifier
-                .size(50.dp)
+                .size(43.dp)
                 .pointerInput(min, max) {
                     detectDragGestures(
                         onDragStart = {
@@ -91,7 +96,119 @@ fun TinyKnob(
                 textAlign = TextAlign.Center
             )
         }
-        Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (label.isNotBlank()) Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+fun ZynValueChip(
+    label: String,
+    value: String,
+    editable: Boolean = false,
+    onClick: () -> Unit = {},
+) {
+    Surface(
+        modifier = Modifier.clickable(enabled = editable, onClick = onClick),
+        shape = RoundedCornerShape(999.dp),
+        color = Color(0xFF1A353D),
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF2E5F68)),
+    ) {
+        Text(
+            "$label $value",
+            color = Color(0xFFA7F4F0),
+            style = MaterialTheme.typography.labelSmall,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+        )
+    }
+}
+
+@Composable
+fun ZynModuleRow(
+    title: String,
+    count: Int,
+    active: Boolean,
+    onOpen: () -> Unit,
+    onToggle: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        color = Color(0xFF122229),
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF234A53)),
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 9.dp, vertical = 7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(title, color = Color(0xFF66F0E9), modifier = Modifier.weight(1f).clickable(onClick = onOpen))
+            ZynValueChip("", count.toString())
+            Text(
+                if (active) "ON" else "+",
+                color = if (active) Color(0xFF79E08D) else Color(0xFF66F0E9),
+                modifier = Modifier.clickable(onClick = onToggle).padding(6.dp),
+            )
+            Text("›", modifier = Modifier.clickable(onClick = onOpen), color = Color(0xFFA7F4F0))
+        }
+    }
+}
+
+@Composable
+fun ZynKitItemRow(
+    label: String,
+    muted: Boolean,
+    onOpen: () -> Unit,
+    onMute: () -> Unit,
+) {
+    Row(
+        Modifier.fillMaxWidth().padding(start = 12.dp, top = 3.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(7.dp),
+    ) {
+        Text(label, modifier = Modifier.weight(1f).clickable(onClick = onOpen), color = Color(0xFFA7F4F0))
+        Surface(
+            shape = RoundedCornerShape(6.dp),
+            color = if (muted) Color(0xFF64343A) else Color(0xFF18383E),
+            modifier = Modifier.clickable(onClick = onMute),
+        ) {
+            Text(if (muted) "MUTED" else "MUTE", modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
+        }
+        Text("›", modifier = Modifier.clickable(onClick = onOpen).padding(5.dp))
+    }
+}
+
+@Composable
+fun ZynClassicKeyboardStrip(
+    heldNotes: Set<Int>,
+    octaveShift: Int,
+    onPress: (Int) -> Unit,
+    onRelease: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(modifier.height(68.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+        listOf(60, 62, 64, 65, 67, 69, 71).forEach { note ->
+            val effective = (note + octaveShift * 12).coerceIn(0, 127)
+            Surface(
+                modifier = Modifier.weight(1f).fillMaxSize().pointerInput(note) {
+                    detectTapGestures(onPress = {
+                        onPress(note)
+                        tryAwaitRelease()
+                        onRelease(note)
+                    })
+                },
+                color = if (effective in heldNotes) Color(0xFF1E6C73) else Color(0xFFE3ECEE),
+                shape = RoundedCornerShape(bottomStart = 5.dp, bottomEnd = 5.dp),
+            ) {
+                Box(contentAlignment = Alignment.BottomCenter) {
+                    Text(
+                        noteName(effective),
+                        color = if (effective in heldNotes) Color.White else Color(0xFF26373C),
+                        style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier.padding(bottom = 5.dp),
+                    )
+                }
+            }
+        }
     }
 }
 

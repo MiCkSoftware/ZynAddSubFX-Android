@@ -365,14 +365,21 @@ fun PlayScreen(
                         }
                     }
                 }
-                JankoHexKeyboard(
-                    heldNotes = uiState.heldNotes,
-                    octaveShift = uiState.keyboardOctaveShift,
-                    onPressKeyboardNote = onPressKeyboardNote,
-                    onReleaseKeyboardNote = onReleaseKeyboardNote,
-                    modifier = Modifier.padding(0.dp).fillMaxWidth()
-                )
             }
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(10.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+        ) {
+            JankoHexKeyboard(
+                heldNotes = uiState.heldNotes,
+                octaveShift = uiState.keyboardOctaveShift,
+                onPressKeyboardNote = onPressKeyboardNote,
+                onReleaseKeyboardNote = onReleaseKeyboardNote,
+                modifier = Modifier.padding(4.dp).fillMaxWidth()
+            )
         }
         Spacer(modifier = Modifier.height(20.dp))
     }

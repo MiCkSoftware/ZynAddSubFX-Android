@@ -224,15 +224,21 @@ fun ZynAddSubFXApp(nativeStatus: NativeSmokeStatus = NativeSmokeStatus.preview()
     var shouldResumeToneAfterPause by rememberSaveable { mutableStateOf(false) }
 
     fun pressNote(effectiveNote: Int) {
+        val channel = engine.parameterSnapshot(selectedPlayPartIndex, 0).values
+            .firstOrNull { it.descriptor.path == "part/channel" }
+            ?.value?.toInt()?.coerceIn(0, 15) ?: 0
         if (!heldNotes.contains(effectiveNote)) {
             heldNotes.add(effectiveNote)
-            runCatching { engine.noteOn(0, effectiveNote, keyboardVelocity) }
+            runCatching { engine.noteOn(channel, effectiveNote, keyboardVelocity) }
         }
         heldNote = effectiveNote
     }
 
     fun releaseNote(effectiveNote: Int) {
-        runCatching { engine.noteOff(0, effectiveNote) }
+        val channel = engine.parameterSnapshot(selectedPlayPartIndex, 0).values
+            .firstOrNull { it.descriptor.path == "part/channel" }
+            ?.value?.toInt()?.coerceIn(0, 15) ?: 0
+        runCatching { engine.noteOff(channel, effectiveNote) }
         heldNotes.removeAll { it == effectiveNote }
         if (heldNote == effectiveNote) {
             heldNote = heldNotes.lastOrNull()
@@ -240,8 +246,11 @@ fun ZynAddSubFXApp(nativeStatus: NativeSmokeStatus = NativeSmokeStatus.preview()
     }
 
     fun releaseAllHeldNotes() {
+        val channel = engine.parameterSnapshot(selectedPlayPartIndex, 0).values
+            .firstOrNull { it.descriptor.path == "part/channel" }
+            ?.value?.toInt()?.coerceIn(0, 15) ?: 0
         heldNotes.distinct().forEach { note ->
-            runCatching { engine.noteOff(0, note) }
+            runCatching { engine.noteOff(channel, note) }
         }
         heldNotes.clear()
         heldNote = null
@@ -497,6 +506,7 @@ fun ZynAddSubFXApp(nativeStatus: NativeSmokeStatus = NativeSmokeStatus.preview()
     if (currentDestination == AppDestinations.EDITOR) {
         Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
             PresetEditorScreen(
+                engine = engine,
                 uiState = EditorUiState(
                     parts = partInspectors,
                     selectedPartIndex = selectedPlayPartIndex,

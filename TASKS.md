@@ -92,6 +92,7 @@ Le support MIDI est differe apres le MVP sans MIDI.
 - [ ] Portrait/paysage + tablette
 - [ ] Mode clavier plein ecran avec UX audio minimale
 - [ ] UX de sauvegarde/restauration d’etat
+- [ ] UX master controls, insertion/system effects, sends, microtonal configuration, MIDI mapping, and full bank management.
 
 ### M6 - Presets historiques (compatibilite)
 - [ ] Inventorier formats historiques supportes upstream

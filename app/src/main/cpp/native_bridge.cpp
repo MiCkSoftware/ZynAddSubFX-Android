@@ -355,6 +355,35 @@ Java_com_mick_zynaddsubfx_NativeSynthBridge_nativeGetCurrentMixerSummary(
     return env->NewStringUTF(s.c_str());
 }
 
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_mick_zynaddsubfx_NativeSynthBridge_nativeGetParameterSnapshot(
+        JNIEnv *env, jobject, jint partIndex, jint kitIndex) {
+    const std::string value = gEngine.parameterSnapshot(partIndex, kitIndex);
+    return env->NewStringUTF(value.c_str());
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_mick_zynaddsubfx_NativeSynthBridge_nativeSetParameter(
+        JNIEnv *env, jobject, jint partIndex, jint kitIndex, jstring path, jdouble value) {
+    if (!path) return JNI_FALSE;
+    const char *raw = env->GetStringUTFChars(path, nullptr);
+    if (!raw) return JNI_FALSE;
+    const std::string pathValue(raw);
+    env->ReleaseStringUTFChars(path, raw);
+    return gEngine.setParameter(partIndex, kitIndex, pathValue, value) ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_mick_zynaddsubfx_NativeSynthBridge_nativeExportInstrument(
+        JNIEnv *env, jobject, jint partIndex, jstring path) {
+    if (!path) return JNI_FALSE;
+    const char *raw = env->GetStringUTFChars(path, nullptr);
+    if (!raw) return JNI_FALSE;
+    const std::string pathValue(raw);
+    env->ReleaseStringUTFChars(path, raw);
+    return gEngine.exportInstrument(partIndex, pathValue) ? JNI_TRUE : JNI_FALSE;
+}
+
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_mick_zynaddsubfx_NativeSynthBridge_nativeSetPart0Enabled(
         JNIEnv * /* env */,

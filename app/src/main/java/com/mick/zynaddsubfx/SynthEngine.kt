@@ -119,6 +119,38 @@ class SynthEngine(private val context: Context) {
         val timedOut: Boolean,
     )
 
+    enum class ParameterType { BOOLEAN, INTEGER, ENUM }
+    enum class PreferredControl { TOGGLE, KNOB, ENUM, STEPPER }
+
+    data class ParameterDescriptor(
+        val path: String,
+        val label: String,
+        val group: String,
+        val type: ParameterType,
+        val minimum: Double,
+        val maximum: Double,
+        val defaultValue: Double,
+        val options: List<String>,
+        val preferredControl: PreferredControl,
+        val unit: String = "",
+        val precision: Int = 0,
+        val centerValue: Double? = null,
+    )
+
+    data class ParameterValue(val descriptor: ParameterDescriptor, val value: Double)
+    data class ParameterSnapshot(
+        val partIndex: Int,
+        val kitIndex: Int,
+        val values: List<ParameterValue>,
+    )
+    data class ParameterWrite(val path: String, val value: Double)
+    sealed interface OperationState {
+        data object Idle : OperationState
+        data object Running : OperationState
+        data class Failed(val message: String) : OperationState
+        data object Succeeded : OperationState
+    }
+
     fun startAudio(): Boolean = NativeSynthBridge.nativeStartAudio()
 
     fun stopAudio() = NativeSynthBridge.nativeStopAudio()
@@ -247,6 +279,53 @@ class SynthEngine(private val context: Context) {
 
     fun soloPart(partIndex: Int): Boolean =
         runCatching { NativeSynthBridge.nativeSoloPart(partIndex) }.getOrDefault(false)
+
+    fun parameterSnapshot(partIndex: Int, kitIndex: Int): ParameterSnapshot {
+        val values = runCatching {
+            NativeSynthBridge.nativeGetParameterSnapshot(partIndex, kitIndex)
+        }.getOrDefault("").lineSequence().mapNotNull { line ->
+            val fields = line.split('|')
+            if (fields.size < 9) return@mapNotNull null
+            val type = when (fields[3]) {
+                "bool" -> ParameterType.BOOLEAN
+                "enum" -> ParameterType.ENUM
+                else -> ParameterType.INTEGER
+            }
+            val descriptor = ParameterDescriptor(
+                path = fields[0],
+                label = fields[1],
+                group = fields[2],
+                type = type,
+                minimum = fields[5].toDoubleOrNull() ?: 0.0,
+                maximum = fields[6].toDoubleOrNull() ?: 127.0,
+                defaultValue = fields[7].toDoubleOrNull() ?: 0.0,
+                options = fields[8].split(',').filter { it.isNotBlank() },
+                preferredControl = when (type) {
+                    ParameterType.BOOLEAN -> PreferredControl.TOGGLE
+                    ParameterType.ENUM -> PreferredControl.ENUM
+                    ParameterType.INTEGER -> PreferredControl.KNOB
+                },
+                centerValue = when {
+                    fields[5].toDoubleOrNull()?.let { it < 0 } == true &&
+                        fields[6].toDoubleOrNull()?.let { it > 0 } == true -> 0.0
+                    else -> null
+                },
+            )
+            ParameterValue(descriptor, fields[4].toDoubleOrNull() ?: descriptor.defaultValue)
+        }.toList()
+        return ParameterSnapshot(partIndex, kitIndex, values)
+    }
+
+    fun writeParameter(partIndex: Int, kitIndex: Int, write: ParameterWrite): Boolean =
+        runCatching {
+            NativeSynthBridge.nativeSetParameter(partIndex, kitIndex, write.path, write.value)
+        }.getOrDefault(false)
+
+    fun exportInstrument(partIndex: Int, destination: File): Boolean =
+        runCatching {
+            destination.parentFile?.mkdirs()
+            NativeSynthBridge.nativeExportInstrument(partIndex, destination.absolutePath)
+        }.getOrDefault(false)
 
     fun inspectParts(): List<PartInspector> =
         parseNativePartsSummary(

@@ -1,5 +1,6 @@
 package com.mick.zynaddsubfx
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
@@ -50,6 +51,7 @@ data class EditorUiState(
 @Composable
 @OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 fun PresetEditorScreen(
+    engine: SynthEngine,
     uiState: EditorUiState,
     heldNote: Int?,
     heldNotes: Set<Int>,
@@ -64,12 +66,15 @@ fun PresetEditorScreen(
     modifier: Modifier = Modifier,
 ) {
     val partExpanded = remember { mutableStateMapOf<Int, Boolean>() }
+    var selectedModule by rememberSaveable(uiState.selectedPartIndex) { mutableStateOf<String?>(null) }
+    var selectedKitIndex by rememberSaveable(uiState.selectedPartIndex) { mutableStateOf(0) }
     var keyboardVisible by rememberSaveable { mutableStateOf(false) }
     val keyboardSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
     val selectedPart = remember(uiState.parts, uiState.selectedPartIndex) {
         uiState.parts.firstOrNull { it.partIndex == uiState.selectedPartIndex }
             ?: uiState.parts.firstOrNull()
     }
+    BackHandler(enabled = selectedModule != null) { selectedModule = null }
 
     LaunchedEffect(uiState.parts) {
         uiState.parts.forEach { part ->
@@ -79,7 +84,23 @@ fun PresetEditorScreen(
         }
     }
 
-    Box(modifier.fillMaxSize().statusBarsPadding()) {
+    Box(modifier.fillMaxSize()) {
+        if (selectedModule != null && selectedPart != null) {
+            FullInstrumentEditor(
+                engine = engine,
+                partIndex = selectedPart.partIndex,
+                kitIndex = selectedKitIndex,
+                module = selectedModule!!,
+                heldNotes = heldNotes,
+                keyboardOctaveShift = keyboardOctaveShift,
+                onBack = { selectedModule = null },
+                onOpenModule = { selectedModule = it },
+                onPressKeyboardNote = onPressKeyboardNote,
+                onReleaseKeyboardNote = onReleaseKeyboardNote,
+                modifier = Modifier.fillMaxSize(),
+            )
+            return@Box
+        }
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -89,6 +110,7 @@ fun PresetEditorScreen(
         ) {
             if (selectedPart != null) {
                 PartEditorCard(
+                    engine = engine,
                     part = selectedPart,
                     expanded = partExpanded[selectedPart.partIndex] ?: selectedPart.enabled,
                     onToggleExpanded = {
@@ -100,6 +122,10 @@ fun PresetEditorScreen(
                     onSetPartSubEnabled = onSetPartSubEnabled,
                     onSetPartPadEnabled = onSetPartPadEnabled,
                     onSoloPart = onSoloPart,
+                    onOpenModule = { module, kit ->
+                        selectedKitIndex = kit
+                        selectedModule = module
+                    },
                     activeFxSlots = uiState.activeFxSlots,
                     mixer = uiState.mixer
                 )
@@ -185,6 +211,7 @@ private fun KeyboardOverlayCard(
 @Composable
 @OptIn(ExperimentalLayoutApi::class)
 private fun PartEditorCard(
+    engine: SynthEngine,
     part: SynthEngine.PartInspector,
     expanded: Boolean,
     onToggleExpanded: () -> Unit,
@@ -193,13 +220,47 @@ private fun PartEditorCard(
     onSetPartSubEnabled: (Int, Boolean) -> Unit,
     onSetPartPadEnabled: (Int, Boolean) -> Unit,
     onSoloPart: (Int) -> Unit,
+    onOpenModule: (String, Int) -> Unit,
     activeFxSlots: List<SynthEngine.ActiveFxSlot>,
     mixer: SynthEngine.MixerInspector,
 ) {
-    var addSectionExpanded by rememberSaveable(part.partIndex) { mutableStateOf(false) }
-    var subSectionExpanded by rememberSaveable(part.partIndex) { mutableStateOf(false) }
-    var padSectionExpanded by rememberSaveable(part.partIndex) { mutableStateOf(false) }
-    var fxSectionExpanded by rememberSaveable(part.partIndex) { mutableStateOf(false) }
+    var structure by remember(part.partIndex) {
+        mutableStateOf(engine.parameterSnapshot(part.partIndex, 0))
+    }
+    var kitSnapshots by remember(part.partIndex) {
+        mutableStateOf((0 until 16).map { engine.parameterSnapshot(part.partIndex, it) })
+    }
+    var editedStructuralParameter by remember { mutableStateOf<SynthEngine.ParameterValue?>(null) }
+    fun structural(path: String, fallback: String): String =
+        structure.values.firstOrNull { it.descriptor.path == path }?.let { value ->
+            when (value.descriptor.type) {
+                SynthEngine.ParameterType.BOOLEAN -> if (value.value >= .5) "ON" else "OFF"
+                SynthEngine.ParameterType.ENUM -> value.descriptor.options.getOrNull(value.value.toInt())
+                    ?: value.value.toInt().toString()
+                SynthEngine.ParameterType.INTEGER -> value.value.toInt().toString()
+            }
+        } ?: fallback
+    fun edit(path: String) {
+        editedStructuralParameter = structure.values.firstOrNull { it.descriptor.path == path }
+    }
+    fun bool(snapshot: SynthEngine.ParameterSnapshot, path: String): Boolean =
+        snapshot.values.firstOrNull { it.descriptor.path == path }?.value?.let { it >= .5 } == true
+    fun refreshKits() {
+        kitSnapshots = (0 until 16).map { engine.parameterSnapshot(part.partIndex, it) }
+    }
+    fun writeKit(kit: Int, path: String, value: Boolean) {
+        if (engine.writeParameter(part.partIndex, kit, SynthEngine.ParameterWrite(path, if (value) 1.0 else 0.0))) {
+            refreshKits()
+        }
+    }
+    fun addKitEngine(path: String) {
+        val kit = (1 until 16).firstOrNull { !bool(kitSnapshots[it], "kit/enabled") } ?: return
+        engine.writeParameter(part.partIndex, kit, SynthEngine.ParameterWrite("kit/enabled", 1.0))
+        engine.writeParameter(part.partIndex, kit, SynthEngine.ParameterWrite("kit/addEnabled", if (path == "kit/addEnabled") 1.0 else 0.0))
+        engine.writeParameter(part.partIndex, kit, SynthEngine.ParameterWrite("kit/subEnabled", if (path == "kit/subEnabled") 1.0 else 0.0))
+        engine.writeParameter(part.partIndex, kit, SynthEngine.ParameterWrite("kit/padEnabled", if (path == "kit/padEnabled") 1.0 else 0.0))
+        refreshKits()
+    }
     val partTitle = if (part.name.isBlank()) {
         "Part ${part.partIndex + 1}"
     } else {
@@ -269,118 +330,121 @@ private fun PartEditorCard(
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            EditorStatChip("Ch", (part.receiveChannel + 1).toString())
-            EditorStatChip("Keys", "${part.minKey}..${part.maxKey}")
-            EditorStatChip("Mode", if (part.poly) "POLY" else "MONO")
-            EditorStatChip("Stereo", if (part.stereoEnabled) "ON" else "OFF")
-            EditorStatChip("RndGrp", if (part.rndGroupingEnabled) "ON" else "OFF")
-            EditorStatChip("VolRaw", String.format(Locale.US, "%.3f", part.volumeRaw))
-            EditorStatChip("Gain", String.format(Locale.US, "%.3f", part.gainRaw))
+            ZynValueChip("Ch", (structural("part/channel", part.receiveChannel.toString()).toIntOrNull()?.plus(1)).toString(), true) {
+                edit("part/channel")
+            }
+            ZynValueChip("Keys", "${structural("part/minKey", part.minKey.toString())}..${structural("part/maxKey", part.maxKey.toString())}", true) {
+                edit("part/minKey")
+            }
+            ZynValueChip("Mode", structural("part/polyMode", if (part.poly) "ON" else "OFF"), true) {
+                edit("part/polyMode")
+            }
+            ZynValueChip("Stereo", structural("add/stereo", if (part.stereoEnabled) "ON" else "OFF"), true) {
+                edit("add/stereo")
+            }
+            ZynValueChip("RndGrp", structural("add/randomGrouping", if (part.rndGroupingEnabled) "ON" else "OFF"), true) {
+                edit("add/randomGrouping")
+            }
         }
         Spacer(modifier = Modifier.height(6.dp))
-        PartModuleSection(
-            title = "ADD",
-            count = part.addEnabledCount,
-            expanded = addSectionExpanded,
-            onToggle = { addSectionExpanded = !addSectionExpanded }
-        ) {
-            val enabled = part.addEnabledCount > 0
-            LuminousToggleButton(
-                label = if (enabled) "ADD ON" else "ADD OFF",
-                enabled = enabled,
-                onToggle = { onSetPartAddEnabled(part.partIndex, !enabled) }
-            )
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                EditorStatChip("Ops", part.addEnabledCount.toString())
-                EditorStatChip("Part", (part.partIndex + 1).toString())
-                EditorStatChip("NoteOn", if (part.noteOn) "YES" else "NO")
-            }
-            Text(
-                text = "Additive engine active operators for this part.",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodySmall
+        EngineKitSection("ADD", "kit/addEnabled", kitSnapshots, ::bool, { onOpenModule("ADD", it) }, ::writeKit) {
+            addKitEngine("kit/addEnabled")
+        }
+        editedStructuralParameter?.let { parameter ->
+            ParameterEditorDialog(
+                parameter = parameter,
+                onDismiss = { editedStructuralParameter = null },
+                onApply = { value ->
+                    if (engine.writeParameter(
+                            part.partIndex,
+                            0,
+                            SynthEngine.ParameterWrite(parameter.descriptor.path, value)
+                        )
+                    ) {
+                        structure = engine.parameterSnapshot(part.partIndex, 0)
+                    }
+                    editedStructuralParameter = null
+                },
             )
         }
         Spacer(modifier = Modifier.height(4.dp))
-        PartModuleSection(
-            title = "SUB",
-            count = part.subEnabledCount,
-            expanded = subSectionExpanded,
-            onToggle = { subSectionExpanded = !subSectionExpanded }
-        ) {
-            val enabled = part.subEnabledCount > 0
-            LuminousToggleButton(
-                label = if (enabled) "SUB ON" else "SUB OFF",
-                enabled = enabled,
-                onToggle = { onSetPartSubEnabled(part.partIndex, !enabled) }
-            )
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                EditorStatChip("Ops", part.subEnabledCount.toString())
-                EditorStatChip("Range", "${part.minKey}..${part.maxKey}")
-                EditorStatChip("Mode", if (part.poly) "POLY" else "MONO")
-            }
-            Text(
-                text = "Subtractive block enabled operators for this part.",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodySmall
-            )
+        EngineKitSection("SUB", "kit/subEnabled", kitSnapshots, ::bool, { onOpenModule("SUB", it) }, ::writeKit) {
+            addKitEngine("kit/subEnabled")
         }
         Spacer(modifier = Modifier.height(4.dp))
-        PartModuleSection(
-            title = "PAD",
-            count = part.padEnabledCount,
-            expanded = padSectionExpanded,
-            onToggle = { padSectionExpanded = !padSectionExpanded }
-        ) {
-            val enabled = part.padEnabledCount > 0
-            LuminousToggleButton(
-                label = if (enabled) "PAD ON" else "PAD OFF",
-                enabled = enabled,
-                onToggle = { onSetPartPadEnabled(part.partIndex, !enabled) }
-            )
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                EditorStatChip("Enabled", part.padEnabledCount.toString())
-                EditorStatChip("ActiveKit", part.activeKitItems.toString())
-                EditorStatChip("MutedKit", part.mutedKitItems.toString())
-                EditorStatChip("KitMode", part.kitMode.toString())
-            }
-            Text(
-                text = "PAD synth / sample-based layer status.",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodySmall
-            )
+        EngineKitSection("PAD", "kit/padEnabled", kitSnapshots, ::bool, { onOpenModule("PAD", it) }, ::writeKit) {
+            addKitEngine("kit/padEnabled")
         }
         Spacer(modifier = Modifier.height(4.dp))
-        PartModuleSection(
+        ZynModuleRow(
             title = "FX",
             count = part.partFxActiveCount,
-            expanded = fxSectionExpanded,
-            onToggle = { fxSectionExpanded = !fxSectionExpanded }
-        ) {
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                EditorStatChip("Slots", part.partFxActiveCount.toString())
-                EditorStatChip("Stereo", if (part.stereoEnabled) "ON" else "OFF")
-                EditorStatChip("Peak", String.format(Locale.US, "%.3f", part.outputPeak))
+            active = part.partFxActiveCount > 0,
+            onOpen = { onOpenModule("FX", 0) },
+            onToggle = { onOpenModule("FX", 0) },
+        )
+    }
+}
+
+@Composable
+private fun EngineKitSection(
+    title: String,
+    enginePath: String,
+    kits: List<SynthEngine.ParameterSnapshot>,
+    bool: (SynthEngine.ParameterSnapshot, String) -> Boolean,
+    onOpen: (Int) -> Unit,
+    onWrite: (Int, String, Boolean) -> Unit,
+    onAdd: () -> Unit,
+) {
+    val active = kits.filter { bool(it, "kit/enabled") && bool(it, enginePath) }
+    Surface(
+        Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        color = Color(0xFF122229),
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF234A53)),
+    ) {
+        Column(Modifier.padding(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(title, color = Color(0xFF66F0E9), modifier = Modifier.weight(1f))
+                ZynValueChip("", active.size.toString())
+                Text("+", color = Color(0xFF66F0E9), modifier = Modifier.clickable(onClick = onAdd).padding(8.dp))
             }
-            PartFxRouting(
-                part = part,
-                activeFxSlots = activeFxSlots,
-                mixer = mixer
-            )
+            active.forEach { kit ->
+                val muted = bool(kit, "kit/muted")
+                ZynKitItemRow(
+                    label = "Kit ${kit.kitIndex + 1}",
+                    muted = muted,
+                    onOpen = { onOpen(kit.kitIndex) },
+                    onMute = { onWrite(kit.kitIndex, "kit/muted", !muted) },
+                )
+            }
         }
     }
+}
+
+@Composable
+private fun ParameterEditorDialog(
+    parameter: SynthEngine.ParameterValue,
+    onDismiss: () -> Unit,
+    onApply: (Double) -> Unit,
+) {
+    var value by remember(parameter.descriptor.path) { mutableStateOf(parameter.value) }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(parameter.descriptor.label) },
+        text = {
+            Column {
+                Text(value.toInt().toString())
+                androidx.compose.material3.Slider(
+                    value = value.toFloat(),
+                    onValueChange = { value = it.toDouble() },
+                    valueRange = parameter.descriptor.minimum.toFloat()..parameter.descriptor.maximum.toFloat(),
+                )
+            }
+        },
+        confirmButton = { Text("Apply", modifier = Modifier.clickable { onApply(value) }.padding(8.dp)) },
+        dismissButton = { Text("Cancel", modifier = Modifier.clickable(onClick = onDismiss).padding(8.dp)) },
+    )
 }
 
 @Composable
@@ -579,7 +643,7 @@ private fun PartModuleSection(
                 }
                 Spacer(modifier = Modifier.weight(1f))
                 Text(
-                    text = if (expanded) "▾" else "▸",
+                    text = if (expanded) "▾" else "›",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.labelLarge
                 )
