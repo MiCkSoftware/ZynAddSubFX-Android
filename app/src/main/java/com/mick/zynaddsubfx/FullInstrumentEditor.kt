@@ -12,6 +12,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -33,6 +34,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -54,8 +56,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.io.File
@@ -88,6 +95,7 @@ fun FullInstrumentEditor(
     var exportedRevision by remember { mutableStateOf(0L) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val contentScroll = rememberScrollState()
+    val sectionOffsets = remember(module, state.kitIndex) { mutableStateOf<Map<String, Int>>(emptyMap()) }
     val scope = rememberCoroutineScope()
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/octet-stream")
@@ -112,8 +120,23 @@ fun FullInstrumentEditor(
         AddOscillatorEditorScreen(model = model, onBack = { specializedScreen = null })
         return
     }
+    if (specializedScreen == "resonance") {
+        AddResonanceEditorScreen(
+            model = model,
+            heldNotes = heldNotes,
+            keyboardOctaveShift = keyboardOctaveShift,
+            onPressKeyboardNote = onPressKeyboardNote,
+            onReleaseKeyboardNote = onReleaseKeyboardNote,
+            onBack = { specializedScreen = null },
+        )
+        return
+    }
     if (specializedScreen == "voiceDetail") {
-        AddVoiceDetailScreen(model = model, onBack = { specializedScreen = null })
+        AddVoiceDetailScreen(
+            model = model,
+            onBack = { specializedScreen = null },
+            onOpenOscillator = { specializedScreen = "oscillator" },
+        )
         return
     }
 
@@ -168,11 +191,13 @@ fun FullInstrumentEditor(
                 ) {
                     sectionNames.forEachIndexed { index, tab ->
                         Surface(
-                            color = if (activeAnchor(contentScroll.value, sectionNames) == tab) Color(0xFF23616A) else Color(0xFF182F35),
+                            color = if (activeAnchor(contentScroll.value, sectionNames, sectionOffsets.value) == tab) Color(0xFF23616A) else Color(0xFF182F35),
                             shape = RoundedCornerShape(6.dp),
                             modifier = Modifier.combinedClickable(onClick = {
                                 model.selectTab(tab)
-                                scope.launch { contentScroll.animateScrollTo(index * 430) }
+                                scope.launch {
+                                    contentScroll.animateScrollTo(sectionOffsets.value[tab] ?: 0)
+                                }
                             }),
                         ) {
                             Text(tab, modifier = Modifier.padding(horizontal = 11.dp, vertical = 5.dp))
@@ -196,18 +221,24 @@ fun FullInstrumentEditor(
                         ZynEditorSection(
                             title = section,
                             parameters = parameters,
-                            complex = section in setOf("Oscillator", "Resonance", "Spectrum") ||
+                            modifier = Modifier.onGloballyPositioned {
+                                val offset = it.positionInParent().y.roundToInt()
+                                if (sectionOffsets.value[section] != offset) {
+                                    sectionOffsets.value = sectionOffsets.value + (section to offset)
+                                }
+                            },
+                            complex = section == "Spectrum" ||
                                 (module == "FX" && section != "Routing"),
                             onComplex = {
                                 model.selectTab(section)
-                                specializedScreen = if (section == "Oscillator") "oscillator" else null
+                                specializedScreen = if (section == "Resonance") "resonance" else null
                                 if (specializedScreen == null) selector = "complex"
                             },
                             onWrite = model::write,
                             onEdit = { editedParameter = it },
                             verticalLabels = module == "ADD",
-                            leadingContent = if (section == "Voices") {
-                                {
+                            leadingContent = when (section) {
+                                "Voices" -> ({
                                     VoiceMatrix(
                                         values = state.snapshot?.values.orEmpty(),
                                         onWrite = model::write,
@@ -216,8 +247,31 @@ fun FullInstrumentEditor(
                                             specializedScreen = "voiceDetail"
                                         },
                                     )
-                                }
-                            } else null,
+                                })
+                                "Resonance" -> ({
+                                    Box(
+                                        Modifier.fillMaxWidth().height(90.dp).clickable {
+                                            model.selectTab(section)
+                                            specializedScreen = "resonance"
+                                        },
+                                    ) {
+                                        ResonanceCurve(
+                                            points = state.snapshot?.values.orEmpty().filter {
+                                                it.descriptor.group == "ADD / Resonance points"
+                                            },
+                                            modifier = Modifier.fillMaxSize(),
+                                        )
+                                        Surface(
+                                            modifier = Modifier.align(Alignment.TopEnd).padding(5.dp),
+                                            color = Color(0xCC18383E),
+                                            shape = RoundedCornerShape(5.dp),
+                                        ) {
+                                            Text("↗", color = Color(0xFF8EF5EE), modifier = Modifier.padding(6.dp))
+                                        }
+                                    }
+                                })
+                                else -> null
+                            },
                         )
                     }
                 }
@@ -363,7 +417,11 @@ private fun VoiceMatrixKnob(
 }
 
 @Composable
-private fun AddVoiceDetailScreen(model: InstrumentEditorViewModel, onBack: () -> Unit) {
+private fun AddVoiceDetailScreen(
+    model: InstrumentEditorViewModel,
+    onBack: () -> Unit,
+    onOpenOscillator: () -> Unit,
+) {
     val state = model.state
     val values = state.snapshot?.values.orEmpty().filter {
         it.descriptor.group.endsWith("Voice ${state.selectedVoice + 1}")
@@ -374,6 +432,9 @@ private fun AddVoiceDetailScreen(model: InstrumentEditorViewModel, onBack: () ->
             Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(7.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
+            Button(onClick = onOpenOscillator, modifier = Modifier.fillMaxWidth()) {
+                Text("Edit voice oscillator")
+            }
             listOf("Voice", "Frequency", "Amplitude", "Filter", "Modulation").forEach { section ->
                 val selected = values.filter { value ->
                     when (section) {
@@ -401,11 +462,13 @@ private fun AddVoiceDetailScreen(model: InstrumentEditorViewModel, onBack: () ->
 @Composable
 private fun AddOscillatorEditorScreen(model: InstrumentEditorViewModel, onBack: () -> Unit) {
     val values = model.state.snapshot?.values.orEmpty()
-    val controls = values.filter { it.descriptor.group == "ADD / Oscillator" }
-    val magnitudes = values.filter { it.descriptor.group == "ADD / Oscillator harmonics" }
-    val phases = values.filter { it.descriptor.group == "ADD / Oscillator phases" }
+    val voice = model.state.selectedVoice
+    val group = "ADD / Voice ${voice + 1} / Oscillator"
+    val controls = values.filter { it.descriptor.group == group }
+    val magnitudes = values.filter { it.descriptor.group == "$group harmonics" }
+    val phases = values.filter { it.descriptor.group == "$group phases" }
     Column(Modifier.fillMaxSize()) {
-        EditorSubScreenHeader("ADsynth Oscillator", onBack)
+        EditorSubScreenHeader("Voice ${voice + 1} oscillator", onBack)
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(7.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 OscillatorPreview(magnitudes, phases, Modifier.weight(1f).height(150.dp))
@@ -436,6 +499,131 @@ private fun AddOscillatorEditorScreen(model: InstrumentEditorViewModel, onBack: 
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun AddResonanceEditorScreen(
+    model: InstrumentEditorViewModel,
+    heldNotes: Set<Int>,
+    keyboardOctaveShift: Int,
+    onPressKeyboardNote: (Int) -> Unit,
+    onReleaseKeyboardNote: (Int) -> Unit,
+    onBack: () -> Unit,
+) {
+    val values = model.state.snapshot?.values.orEmpty()
+    val controls = values.filter { it.descriptor.group == "ADD / Resonance" }
+    val points = values.filter { it.descriptor.group == "ADD / Resonance points" }
+    val enabled = controls.firstOrNull { it.descriptor.path.endsWith("/enabled") }
+    val maxDb = controls.firstOrNull { it.descriptor.path.endsWith("/maxDb") }
+    val center = controls.firstOrNull { it.descriptor.path.endsWith("/center") }
+    val octaves = controls.firstOrNull { it.descriptor.path.endsWith("/octaves") }
+    val protect = controls.firstOrNull { it.descriptor.path.endsWith("/protectFundamental") }
+    var graphSize by remember { mutableStateOf(IntSize.Zero) }
+
+    Column(Modifier.fillMaxSize()) {
+        EditorSubScreenHeader("ADsynth Resonance", onBack)
+        Column(
+            Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(7.dp),
+            verticalArrangement = Arrangement.spacedBy(7.dp),
+        ) {
+            ResonanceCurve(
+                points = points,
+                modifier = Modifier.fillMaxWidth().height(260.dp).onSizeChanged { graphSize = it }.pointerInput(graphSize) {
+                    fun write(positionX: Float, positionY: Float) {
+                        if (graphSize.width <= 0 || graphSize.height <= 0 || points.isEmpty()) return
+                        val index = ((positionX / graphSize.width) * (points.size - 1))
+                            .roundToInt().coerceIn(points.indices)
+                        val value = (127f * (1f - positionY / graphSize.height))
+                            .roundToInt().coerceIn(0, 127)
+                        model.writePath("add/resonance/point/$index", value.toDouble())
+                    }
+                    detectDragGestures(
+                        onDragStart = { write(it.x, it.y) },
+                        onDrag = { change, _ ->
+                            write(change.position.x, change.position.y)
+                            change.consume()
+                        },
+                    )
+                },
+            )
+            val curveActions = listOf(
+                "Zero" to "add/resonance/zero",
+                "Smooth" to "add/resonance/smooth",
+                "Interp." to "add/resonance/interpolateSmooth",
+                "Linear" to "add/resonance/interpolateLinear",
+                "R1" to "add/resonance/random/0",
+                "R2" to "add/resonance/random/1",
+                "R3" to "add/resonance/random/2",
+            )
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                curveActions.forEach { (label, path) ->
+                    OutlinedButton(
+                        onClick = { model.writePath(path, 1.0) },
+                        modifier = Modifier.weight(1f),
+                        contentPadding = ButtonDefaults.TextButtonContentPadding,
+                    ) {
+                        Text(label, fontSize = 9.sp, maxLines = 1)
+                    }
+                }
+            }
+            val resonanceControls = listOfNotNull(enabled, maxDb, center, octaves, protect)
+            DenseParameterGrid(
+                parameters = resonanceControls,
+                onWrite = model::write,
+                verticalLabels = true,
+                onLongPress = { model.reset(it) },
+                valueText = { parameter ->
+                    when {
+                        parameter.descriptor.path.endsWith("/maxDb") ->
+                            parameter.value.roundToInt().toString()
+                        parameter.descriptor.path.endsWith("/center") -> {
+                            val hz = 10000.0 * 10.0.pow(-(1.0 - parameter.value / 127.0) * 2.0)
+                            if (hz >= 1000) "%.1fk".format(hz / 1000) else "%.0f".format(hz)
+                        }
+                        parameter.descriptor.path.endsWith("/octaves") ->
+                            "%.1f".format(0.25 + 10.0 * parameter.value / 127.0)
+                        else -> parameter.value.roundToInt().toString()
+                    }
+                },
+            )
+        }
+        ZynClassicKeyboardStrip(
+            heldNotes = heldNotes,
+            octaveShift = keyboardOctaveShift,
+            onPress = onPressKeyboardNote,
+            onRelease = onReleaseKeyboardNote,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 7.dp, vertical = 4.dp),
+        )
+    }
+}
+
+@Composable
+private fun ResonanceCurve(
+    points: List<SynthEngine.ParameterValue>,
+    modifier: Modifier = Modifier,
+) {
+    Canvas(modifier) {
+        drawRect(Color(0xFF050A0C))
+        repeat(9) { line ->
+            val x = size.width * line / 8f
+            drawLine(Color(0xFF31515A), start = androidx.compose.ui.geometry.Offset(x, 0f),
+                end = androidx.compose.ui.geometry.Offset(x, size.height), strokeWidth = 1f)
+        }
+        repeat(5) { line ->
+            val y = size.height * line / 4f
+            drawLine(Color(0xFF31515A), start = androidx.compose.ui.geometry.Offset(0f, y),
+                end = androidx.compose.ui.geometry.Offset(size.width, y), strokeWidth = 1f)
+        }
+        if (points.isNotEmpty()) {
+            val path = Path()
+            points.forEachIndexed { index, point ->
+                val x = size.width * index / (points.size - 1).coerceAtLeast(1)
+                val y = size.height * (1f - point.value.toFloat() / 127f)
+                if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
+            }
+            drawPath(path, Color(0xFFFF4D57), style = androidx.compose.ui.graphics.drawscope.Stroke(2.5f))
         }
     }
 }
@@ -489,7 +677,7 @@ private fun OscillatorPreview(
 
 @Composable
 private fun BaseFunctionPreview(controls: List<SynthEngine.ParameterValue>, modifier: Modifier) {
-    val shape = controls.firstOrNull { it.descriptor.path == "add/osc/baseShape" }?.value ?: 64.0
+    val shape = controls.firstOrNull { it.descriptor.path.endsWith("/osc/baseShape") }?.value ?: 64.0
     Canvas(modifier) {
         drawRect(Color.Black)
         val path = Path()
@@ -512,20 +700,20 @@ private fun populatedSections(
     val declared = InstrumentEditorViewModel.tabsFor(module)
     return declared.filter { section ->
         parametersFor(all, module, section, 0).isNotEmpty() ||
-            section in setOf("Oscillator", "Resonance", "Spectrum") ||
+            section in setOf("Resonance", "Spectrum") ||
             (module == "FX" && section != "Routing")
     }
 }
 
-private fun activeAnchor(scroll: Int, sections: List<String>): String =
-    sections.getOrElse((scroll / 430).coerceIn(0, (sections.size - 1).coerceAtLeast(0))) {
-        sections.firstOrNull().orEmpty()
-    }
+private fun activeAnchor(scroll: Int, sections: List<String>, offsets: Map<String, Int>): String =
+    sections.lastOrNull { (offsets[it] ?: Int.MAX_VALUE) <= scroll + 12 }
+        ?: sections.firstOrNull().orEmpty()
 
 @Composable
 private fun ZynEditorSection(
     title: String,
     parameters: List<SynthEngine.ParameterValue>,
+    modifier: Modifier = Modifier,
     complex: Boolean,
     onComplex: () -> Unit,
     onWrite: (SynthEngine.ParameterValue, Double) -> Unit,
@@ -534,7 +722,7 @@ private fun ZynEditorSection(
     leadingContent: (@Composable () -> Unit)? = null,
 ) {
     Column(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         Row(
@@ -566,10 +754,20 @@ private fun ZynEditorSection(
                             style = MaterialTheme.typography.labelMedium,
                             modifier = Modifier.padding(start = 4.dp, top = 5.dp, bottom = 2.dp),
                         )
-                        DenseParameterGrid(groupedParameters, onWrite, true, onEdit)
+                        DenseParameterGrid(
+                            groupedParameters,
+                            onWrite,
+                            verticalLabels = true,
+                            onLongPress = onEdit,
+                        )
                     }
                 } else {
-                    DenseParameterGrid(parameters, onWrite, false, onEdit)
+                    DenseParameterGrid(
+                        parameters,
+                        onWrite,
+                        verticalLabels = false,
+                        onLongPress = onEdit,
+                    )
                 }
             }
         }
@@ -618,7 +816,7 @@ private fun parametersFor(
 
 private fun emptyMessage(module: String, tab: String): String = when {
     module == "FX" -> "FX $tab is the next native parameter family to connect."
-    tab in setOf("Oscillator", "Resonance", "Spectrum") -> "Open the terminal editor above."
+    tab in setOf("Resonance", "Spectrum") -> "Open the terminal editor above."
     else -> "No $tab parameters are available for this kit item."
 }
 
@@ -628,6 +826,7 @@ private fun DenseParameterGrid(
     parameters: List<SynthEngine.ParameterValue>,
     onWrite: (SynthEngine.ParameterValue, Double) -> Unit,
     verticalLabels: Boolean = false,
+    valueText: (SynthEngine.ParameterValue) -> String = { it.value.roundToInt().toString() },
     onLongPress: (SynthEngine.ParameterValue) -> Unit,
 ) {
     BoxWithConstraints {
@@ -649,7 +848,13 @@ private fun DenseParameterGrid(
                 ) {
                     rowParameters.forEach { parameter ->
                         Box(Modifier.weight(1f)) {
-                            DenseParameterControl(parameter, onWrite, onLongPress, verticalLabels)
+                            DenseParameterControl(
+                                parameter,
+                                onWrite,
+                                onLongPress,
+                                verticalLabels,
+                                valueText(parameter),
+                            )
                         }
                     }
                     repeat(columns - rowParameters.size) {
@@ -668,6 +873,7 @@ private fun DenseParameterControl(
     onWrite: (SynthEngine.ParameterValue, Double) -> Unit,
     onLongPress: (SynthEngine.ParameterValue) -> Unit,
     verticalLabel: Boolean = false,
+    valueText: String = parameter.value.roundToInt().toString(),
 ) {
     val descriptor = parameter.descriptor
     Surface(
@@ -748,6 +954,7 @@ private fun DenseParameterControl(
                     value = parameter.value.toFloat(),
                     min = descriptor.minimum.toFloat(),
                     max = descriptor.maximum.toFloat(),
+                    valueText = valueText,
                     onValueChange = { onWrite(parameter, it.roundToInt().toDouble()) },
                 )
             }

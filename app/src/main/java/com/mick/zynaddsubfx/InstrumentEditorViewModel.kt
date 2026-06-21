@@ -76,6 +76,27 @@ class InstrumentEditorViewModel(private val engine: SynthEngine) : ViewModel() {
     fun reset(parameter: SynthEngine.ParameterValue) =
         write(parameter, parameter.descriptor.defaultValue)
 
+    fun writePath(path: String, value: Double) {
+        val parameter = state.snapshot?.values?.firstOrNull { it.descriptor.path == path }
+        if (parameter != null) {
+            write(parameter, value)
+        } else if (engine.writeParameter(
+                state.partIndex,
+                state.kitIndex,
+                SynthEngine.ParameterWrite(path, value)
+            )
+        ) {
+            state = state.copy(
+                snapshot = engine.parameterSnapshot(state.partIndex, state.kitIndex),
+                dirty = true,
+                revision = state.revision + 1,
+                operation = SynthEngine.OperationState.Idle,
+            )
+        } else {
+            state = state.copy(operation = SynthEngine.OperationState.Failed("Could not update resonance"))
+        }
+    }
+
     fun beginExport() {
         state = state.copy(operation = SynthEngine.OperationState.Running)
     }
@@ -93,7 +114,7 @@ class InstrumentEditorViewModel(private val engine: SynthEngine) : ViewModel() {
 
     companion object {
         fun tabsFor(engineName: String): List<String> = when (engineName) {
-            "ADD" -> listOf("Amp", "Frequency", "Filter", "Voices", "Oscillator", "Resonance")
+            "ADD" -> listOf("Amp", "Frequency", "Filter", "Voices", "Resonance")
             "SUB" -> listOf("Global", "Amp", "Frequency", "Filter", "Harmonics")
             "PAD" -> listOf("Global", "Amp", "Frequency", "Filter", "Profile", "Spectrum", "Quality")
             "FX" -> listOf("Routing", "FX 1", "FX 2", "FX 3")

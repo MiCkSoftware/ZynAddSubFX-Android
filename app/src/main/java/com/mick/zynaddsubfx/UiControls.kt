@@ -51,6 +51,7 @@ fun TinyKnob(
     min: Float,
     max: Float,
     dragRangePx: Float = 600f,
+    valueText: String = value.toInt().toString(),
     onValueChange: (Float) -> Unit,
 ) {
     val safeRange = (max - min).coerceAtLeast(1f)
@@ -102,7 +103,7 @@ fun TinyKnob(
                 )
             }
             Text(
-                text = value.toInt().toString(),
+                text = valueText,
                 modifier = Modifier.align(Alignment.Center),
                 color = MaterialTheme.colorScheme.onSurface,
                 textAlign = TextAlign.Center,

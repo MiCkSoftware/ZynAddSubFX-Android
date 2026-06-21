@@ -21,6 +21,7 @@
 #include "Params/SUBnoteParameters.h"
 #include "Params/PADnoteParameters.h"
 #include "Synth/OscilGen.h"
+#include "Synth/Resonance.h"
 
 namespace {
 constexpr double kTwoPi = 6.28318530717958647692;
@@ -620,7 +621,25 @@ std::string ZynAndroidEngine::parameterSnapshot(int partIndex, int kitIndex) con
             envelopeValue("add/filterEnvelope", "ADD / Filter / Envelope", *g.FilterEnvelope, true, false, false);
         if (g.FilterLfo)
             lfoValue("add/filterLfo", "ADD / Filter / LFO", *g.FilterLfo);
-        add("add/randomGrouping", "Random grouping", "ADD / Oscillator", "bool", g.Hrandgrouping, 0, 1, 0);
+        add("add/randomGrouping", "Random grouping", "ADD / Global", "bool", g.Hrandgrouping, 0, 1, 0);
+        if (g.Reson) {
+            const auto &resonance = *g.Reson;
+            add("add/resonance/enabled", "Enabled", "ADD / Resonance", "bool",
+                resonance.Penabled, 0, 1, 0);
+            add("add/resonance/maxDb", "Maximum resonance", "ADD / Resonance", "int",
+                resonance.PmaxdB, 0, 127, 20);
+            add("add/resonance/center", "Center frequency", "ADD / Resonance", "int",
+                resonance.Pcenterfreq, 0, 127, 64);
+            add("add/resonance/octaves", "Octave span", "ADD / Resonance", "int",
+                resonance.Poctavesfreq, 0, 127, 64);
+            add("add/resonance/protectFundamental", "Protect fundamental", "ADD / Resonance", "bool",
+                resonance.Pprotectthefundamental, 0, 1, 0);
+            for (int point = 0; point < N_RES_POINTS; ++point) {
+                add(("add/resonance/point/" + std::to_string(point)).c_str(),
+                    ("Point " + std::to_string(point + 1)).c_str(), "ADD / Resonance points", "int",
+                    resonance.Prespoints[point], 0, 127, 64);
+            }
+        }
         for (int voice = 0; voice < NUM_VOICES; ++voice) {
             const auto &v = kit.adpars->VoicePar[voice];
             const std::string prefix = "add/voice/" + std::to_string(voice) + "/";
@@ -644,24 +663,25 @@ std::string ZynAndroidEngine::parameterSnapshot(int partIndex, int kitIndex) con
                 static_cast<int>(v.PFMEnabled), 0, 5, 0, "Off,Mix,Ring,Phase,Frequency,PWM");
             if (v.OscilGn) {
                 const auto &o = *v.OscilGn;
-                const std::string oscGroup = "ADD / Oscillator";
-                add("add/osc/magnitudeType", "Magnitude scale", oscGroup.c_str(), "enum", o.Phmagtype, 0, 4, 0,
+                const std::string oscPrefix = prefix + "osc/";
+                const std::string oscGroup = group + " / Oscillator";
+                add((oscPrefix + "magnitudeType").c_str(), "Magnitude scale", oscGroup.c_str(), "enum", o.Phmagtype, 0, 4, 0,
                     "Linear,-40 dB,-60 dB,-80 dB,-100 dB");
-                add("add/osc/baseFunction", "Base function", oscGroup.c_str(), "enum", o.Pcurrentbasefunc, 0, 15, 0,
+                add((oscPrefix + "baseFunction").c_str(), "Base function", oscGroup.c_str(), "enum", o.Pcurrentbasefunc, 0, 15, 0,
                     "Sine,Triangle,Pulse,Saw,Power,Gauss,Diode,AbsSine,PulseSine,StretchSine,Chirp,AbsStretchSine,Chebyshev,Sqr,Spike,Circle");
-                add("add/osc/baseShape", "Base shape", oscGroup.c_str(), "int", o.Pbasefuncpar, 0, 127, 64);
-                add("add/osc/waveshape", "Waveshaping", oscGroup.c_str(), "int", o.Pwaveshaping, 0, 127, 64);
-                add("add/osc/filterType", "Filter", oscGroup.c_str(), "enum", o.Pfiltertype, 0, 13, 0,
+                add((oscPrefix + "baseShape").c_str(), "Base shape", oscGroup.c_str(), "int", o.Pbasefuncpar, 0, 127, 64);
+                add((oscPrefix + "waveshape").c_str(), "Waveshaping", oscGroup.c_str(), "int", o.Pwaveshaping, 0, 127, 64);
+                add((oscPrefix + "filterType").c_str(), "Filter", oscGroup.c_str(), "enum", o.Pfiltertype, 0, 13, 0,
                     "Off,LP1,LP2,HP1,HP2,BP1,BP2,Cos,Sin,LowShelf,S,Comb,Spike,LP3");
-                add("add/osc/filter1", "Filter parameter 1", oscGroup.c_str(), "int", o.Pfilterpar1, 0, 127, 64);
-                add("add/osc/filter2", "Filter parameter 2", oscGroup.c_str(), "int", o.Pfilterpar2, 0, 127, 64);
-                add("add/osc/randomness", "Phase randomness", oscGroup.c_str(), "int", o.Prand, 0, 127, 64);
+                add((oscPrefix + "filter1").c_str(), "Filter parameter 1", oscGroup.c_str(), "int", o.Pfilterpar1, 0, 127, 64);
+                add((oscPrefix + "filter2").c_str(), "Filter parameter 2", oscGroup.c_str(), "int", o.Pfilterpar2, 0, 127, 64);
+                add((oscPrefix + "randomness").c_str(), "Phase randomness", oscGroup.c_str(), "int", o.Prand, 0, 127, 64);
                 for (int h = 0; h < MAX_AD_HARMONICS; ++h) {
-                    add(("add/osc/harmonic/" + std::to_string(h) + "/magnitude").c_str(),
-                        ("Harmonic " + std::to_string(h + 1)).c_str(), "ADD / Oscillator harmonics",
+                    add((oscPrefix + "harmonic/" + std::to_string(h) + "/magnitude").c_str(),
+                        ("Harmonic " + std::to_string(h + 1)).c_str(), (oscGroup + " harmonics").c_str(),
                         "int", o.Phmag[h], 0, 127, h == 0 ? 127 : 64);
-                    add(("add/osc/harmonic/" + std::to_string(h) + "/phase").c_str(),
-                        ("Phase " + std::to_string(h + 1)).c_str(), "ADD / Oscillator phases",
+                    add((oscPrefix + "harmonic/" + std::to_string(h) + "/phase").c_str(),
+                        ("Phase " + std::to_string(h + 1)).c_str(), (oscGroup + " phases").c_str(),
                         "int", o.Phphase[h], 0, 127, 64);
                 }
             }
@@ -804,6 +824,26 @@ bool ZynAndroidEngine::setParameter(int partIndex, int kitIndex, const std::stri
             else return false;
             filter.changed = true;
         }
+        else if (path.rfind("add/resonance/", 0) == 0 && g.Reson) {
+            auto &resonance = *g.Reson;
+            const auto field = path.substr(14);
+            if (field == "enabled") resonance.Penabled = b();
+            else if (field == "maxDb") resonance.PmaxdB = i(0, 127);
+            else if (field == "center") resonance.Pcenterfreq = i(0, 127);
+            else if (field == "octaves") resonance.Poctavesfreq = i(0, 127);
+            else if (field == "protectFundamental") resonance.Pprotectthefundamental = b();
+            else if (field == "zero") resonance.zero();
+            else if (field == "smooth") resonance.smooth();
+            else if (field == "interpolateSmooth") resonance.interpolatepeaks(0);
+            else if (field == "interpolateLinear") resonance.interpolatepeaks(1);
+            else if (field.rfind("random/", 0) == 0) resonance.randomize(
+                std::clamp(std::atoi(field.substr(7).c_str()), 0, 2));
+            else if (field.rfind("point/", 0) == 0) {
+                const int point = std::atoi(field.substr(6).c_str());
+                if (point < 0 || point >= N_RES_POINTS) return false;
+                resonance.setpoint(point, i(0, 127));
+            } else return false;
+        }
         else if (path == "add/randomGrouping") g.Hrandgrouping = b();
         else if (path.rfind("add/voice/", 0) == 0) {
             const auto rest = path.substr(10);
@@ -827,29 +867,30 @@ bool ZynAndroidEngine::setParameter(int partIndex, int kitIndex, const std::stri
             else if (field == "resonance") v.Presonance = b();
             else if (field == "filter") v.PFilterEnabled = b();
             else if (field == "fmType") v.PFMEnabled = static_cast<zyn::FMTYPE>(i(0, 5));
-            else return false;
-        } else if (path.rfind("add/osc/", 0) == 0) {
-            auto &o = *kit.adpars->VoicePar[0].OscilGn;
-            if (path == "add/osc/magnitudeType") o.Phmagtype = i(0, 4);
-            else if (path == "add/osc/baseFunction") o.Pcurrentbasefunc = i(0, 15);
-            else if (path == "add/osc/baseShape") o.Pbasefuncpar = i(0, 127);
-            else if (path == "add/osc/waveshape") o.Pwaveshaping = i(0, 127);
-            else if (path == "add/osc/filterType") o.Pfiltertype = i(0, 13);
-            else if (path == "add/osc/filter1") o.Pfilterpar1 = i(0, 127);
-            else if (path == "add/osc/filter2") o.Pfilterpar2 = i(0, 127);
-            else if (path == "add/osc/randomness") o.Prand = i(0, 127);
-            else if (path.rfind("add/osc/harmonic/", 0) == 0) {
-                const auto rest = path.substr(17);
-                const auto slash = rest.find('/');
-                if (slash == std::string::npos) return false;
-                const int h = std::atoi(rest.substr(0, slash).c_str());
-                if (h < 0 || h >= MAX_AD_HARMONICS) return false;
-                const auto field = rest.substr(slash + 1);
-                if (field == "magnitude") o.Phmag[h] = i(0, 127);
-                else if (field == "phase") o.Phphase[h] = i(0, 127);
-                else return false;
+            else if (field.rfind("osc/", 0) == 0 && v.OscilGn) {
+                auto &o = *v.OscilGn;
+                const auto oscField = field.substr(4);
+                if (oscField == "magnitudeType") o.Phmagtype = i(0, 4);
+                else if (oscField == "baseFunction") o.Pcurrentbasefunc = i(0, 15);
+                else if (oscField == "baseShape") o.Pbasefuncpar = i(0, 127);
+                else if (oscField == "waveshape") o.Pwaveshaping = i(0, 127);
+                else if (oscField == "filterType") o.Pfiltertype = i(0, 13);
+                else if (oscField == "filter1") o.Pfilterpar1 = i(0, 127);
+                else if (oscField == "filter2") o.Pfilterpar2 = i(0, 127);
+                else if (oscField == "randomness") o.Prand = i(0, 127);
+                else if (oscField.rfind("harmonic/", 0) == 0) {
+                    const auto harmonic = oscField.substr(9);
+                    const auto harmonicSlash = harmonic.find('/');
+                    if (harmonicSlash == std::string::npos) return false;
+                    const int h = std::atoi(harmonic.substr(0, harmonicSlash).c_str());
+                    if (h < 0 || h >= MAX_AD_HARMONICS) return false;
+                    const auto harmonicField = harmonic.substr(harmonicSlash + 1);
+                    if (harmonicField == "magnitude") o.Phmag[h] = i(0, 127);
+                    else if (harmonicField == "phase") o.Phphase[h] = i(0, 127);
+                    else return false;
+                } else return false;
+                o.prepare();
             } else return false;
-            o.prepare();
         } else return false;
     } else if (path.rfind("sub/", 0) == 0 && kit.subpars) {
         auto &s = *kit.subpars;
