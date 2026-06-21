@@ -558,10 +558,39 @@ private fun ZynEditorSection(
             leadingContent?.invoke()
             if (complex) ComplexEditorLauncher(title, onComplex)
             if (parameters.isNotEmpty()) {
-                DenseParameterGrid(parameters, onWrite, verticalLabels, onEdit)
+                if (verticalLabels) {
+                    parameters.groupBy { it.descriptor.group }.forEach { (group, groupedParameters) ->
+                        Text(
+                            addSubsectionLabel(group),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.labelMedium,
+                            modifier = Modifier.padding(start = 4.dp, top = 5.dp, bottom = 2.dp),
+                        )
+                        DenseParameterGrid(groupedParameters, onWrite, true, onEdit)
+                    }
+                } else {
+                    DenseParameterGrid(parameters, onWrite, false, onEdit)
+                }
             }
         }
     }
+}
+
+private fun addSubsectionLabel(group: String): String = when {
+    group.endsWith("/ Global") -> "Global parameters"
+    group.endsWith("/ Punch") -> "Punch"
+    group.endsWith("/ Envelope") -> when {
+        group.contains("Amplitude") -> "Amplitude Envelope"
+        group.contains("Frequency") -> "Frequency Envelope"
+        else -> "Filter Envelope"
+    }
+    group.endsWith("/ LFO") -> when {
+        group.contains("Amplitude") -> "Amplitude LFO"
+        group.contains("Frequency") -> "Frequency LFO"
+        else -> "Filter LFO"
+    }
+    group.endsWith("/ Parameters") -> "Filter Parameters"
+    else -> group.substringAfterLast('/')
 }
 
 private fun parametersFor(
@@ -745,10 +774,7 @@ private fun addLabelColor(descriptor: SynthEngine.ParameterDescriptor): Color {
         descriptor.path.startsWith("add/filterLfo") -> 290f
         descriptor.path.startsWith("add/filter/") ||
             descriptor.path.startsWith("add/filterVelocity") -> 48f
-        descriptor.path in setOf(
-            "add/bandwidth", "add/detune", "add/coarseDetune", "add/coarse",
-            "add/octave", "add/detuneType",
-        ) -> 140f
+        descriptor.path in setOf("add/detune", "add/coarse", "add/octave", "add/detuneType") -> 140f
         else -> 188f
     }
     return Color.hsv(hue, saturation = .52f, value = .22f)
@@ -759,7 +785,6 @@ private fun compactAddLabel(descriptor: SynthEngine.ParameterDescriptor): String
     descriptor.path == "add/volume" -> "Volume"
     descriptor.path == "add/panning" -> "Panning"
     descriptor.path == "add/velocity" -> "Velocity"
-    descriptor.path == "add/fadeIn" -> "Fade-in"
     descriptor.path == "add/punchStrength" -> "Punch Str."
     descriptor.path == "add/punchTime" -> "Punch Time"
     descriptor.path == "add/punchStretch" -> "Punch Stret."
