@@ -893,33 +893,31 @@ private fun DenseParameterControl(
         shape = RoundedCornerShape(7.dp),
         border = BorderStroke(1.dp, Color(0xFF274B54)),
     ) {
-        Row(
-            Modifier.fillMaxWidth().height(if (verticalLabel) 78.dp else 86.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            if (verticalLabel) {
-                Surface(
-                    modifier = Modifier.width(28.dp).fillMaxHeight(),
-                    color = addLabelColor(descriptor),
-                    shape = RoundedCornerShape(topStart = 7.dp, bottomStart = 7.dp),
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Text(
-                            compactAddLabel(descriptor),
-                            modifier = Modifier.rotate(-90f).requiredWidth(72.dp),
-                            style = MaterialTheme.typography.labelSmall,
-                            fontSize = 9.sp,
-                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                            maxLines = 1,
-                        )
+        Box(Modifier.fillMaxWidth().height(if (verticalLabel) 78.dp else 86.dp)) {
+            Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
+                if (verticalLabel) {
+                    Surface(
+                        modifier = Modifier.width(28.dp).fillMaxHeight(),
+                        color = addLabelColor(descriptor),
+                        shape = RoundedCornerShape(topStart = 7.dp, bottomStart = 7.dp),
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Text(
+                                compactAddLabel(descriptor),
+                                modifier = Modifier.rotate(-90f).requiredWidth(72.dp),
+                                style = MaterialTheme.typography.labelSmall,
+                                fontSize = 9.sp,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                maxLines = 1,
+                            )
+                        }
                     }
                 }
-            }
-            Column(
-                Modifier.weight(1f).padding(horizontal = 3.dp, vertical = 4.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-            when (descriptor.type) {
+                Column(
+                    Modifier.weight(1f).padding(horizontal = 3.dp, vertical = 4.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                when (descriptor.type) {
                 SynthEngine.ParameterType.BOOLEAN -> Switch(
                     checked = parameter.value >= .5,
                     onCheckedChange = { onWrite(parameter, if (it) 1.0 else 0.0) },
@@ -957,14 +955,28 @@ private fun DenseParameterControl(
                     valueText = valueText,
                     onValueChange = { onWrite(parameter, it.roundToInt().toDouble()) },
                 )
-            }
-                if (!verticalLabel) {
-                    Text(
-                        descriptor.label,
-                        style = MaterialTheme.typography.labelSmall,
-                        maxLines = 2,
-                    )
                 }
+                    if (!verticalLabel) {
+                        Text(
+                            descriptor.label,
+                            style = MaterialTheme.typography.labelSmall,
+                            maxLines = 2,
+                        )
+                    }
+                }
+            }
+            val unit = when {
+                descriptor.path.endsWith("/maxDb") -> "dB"
+                descriptor.path.endsWith("/center") -> "Hz"
+                else -> ""
+            }
+            if (unit.isNotEmpty()) {
+                Text(
+                    unit,
+                    modifier = Modifier.align(Alignment.BottomEnd).padding(end = 5.dp, bottom = 3.dp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 8.sp,
+                )
             }
         }
     }
