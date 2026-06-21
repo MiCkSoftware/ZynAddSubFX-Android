@@ -454,16 +454,30 @@ private fun AddVoiceDetailScreen(
             listOf("Voice", "Voice Oscillator", "Amplitude", "Frequency", "Filter", "Modulation", "Unison").forEach { section ->
                 val selected = values.filter { value ->
                     val group = value.descriptor.group
+                    val voiceRoot = "ADD / Voice ${state.selectedVoice + 1}"
                     when (section) {
                         "Voice" -> group.endsWith("/ Voice") &&
                             !value.descriptor.path.endsWith("/resonance")
                         "Voice Oscillator" -> group.endsWith("/ Voice Oscillator") &&
                             (state.selectedVoice > 0 ||
                                 !value.descriptor.path.endsWith("/externalOscillator"))
-                        "Amplitude" -> group.contains("/ Amplitude")
-                        "Frequency" -> group.contains("/ Frequency") && !group.contains("/ Modulation")
-                        "Filter" -> group.contains("/ Filter")
-                        "Modulation" -> group.contains("/ Modulation")
+                        "Amplitude" -> group == "$voiceRoot / Amplitude" ||
+                            group == "$voiceRoot / Amplitude / Envelope" ||
+                            group == "$voiceRoot / Amplitude / LFO"
+                        "Frequency" -> when (group) {
+                            "$voiceRoot / Frequency" ->
+                                value.descriptor.path.substringAfterLast('/') in setOf(
+                                    "detune", "fixedFreq", "fixedFreqEt", "octave",
+                                    "detuneType", "coarse"
+                                )
+                            "$voiceRoot / Frequency / Envelope",
+                            "$voiceRoot / Frequency / LFO" -> true
+                            else -> false
+                        }
+                        "Filter" -> group == "$voiceRoot / Filter" ||
+                            group == "$voiceRoot / Filter / Envelope" ||
+                            group == "$voiceRoot / Filter / LFO"
+                        "Modulation" -> group.startsWith("$voiceRoot / Modulation")
                         else -> value.descriptor.path.substringAfterLast('/') in setOf(
                             "unison", "spread", "stereoSpread",
                             "vibrato", "vibratoSpeed", "unisonInvert"
@@ -518,7 +532,7 @@ private fun AddVoiceDetailScreen(
                             }
                         }
                         selected.groupBy { it.descriptor.group }.forEach { (group, parameters) ->
-                            val subsection = group.substringAfterLast('/')
+                            val subsection = group.substringAfterLast('/').trim()
                             if (subsection != section && subsection !in setOf("Voice", "Amplitude", "Frequency", "Filter", "Modulation")) {
                                 Text(
                                     subsection,
@@ -528,10 +542,19 @@ private fun AddVoiceDetailScreen(
                                 )
                             }
                             DenseParameterGrid(
-                                parameters = parameters,
+                                parameters = parameters.sortedBy {
+                                    voiceParameterOrder(section, group, it.descriptor.path)
+                                },
                                 onWrite = model::write,
                                 verticalLabels = true,
                                 onLongPress = { model.reset(it) },
+                                valueText = {
+                                    if (it.descriptor.path.endsWith("/detune")) {
+                                        "%.2f".format((it.value - 8192.0) / 8192.0 * 100.0)
+                                    } else {
+                                        it.value.roundToInt().toString()
+                                    }
+                                },
                             )
                         }
                     }
@@ -539,6 +562,37 @@ private fun AddVoiceDetailScreen(
             }
         }
     }
+}
+
+private fun voiceParameterOrder(section: String, group: String, path: String): Int {
+    val field = path.substringAfterLast('/')
+    val order = when {
+        section == "Amplitude" && group.endsWith("/ Amplitude") -> listOf(
+            "volumeMinus", "volume", "velocity", "panning"
+        )
+        section == "Amplitude" && group.endsWith("/ Envelope") -> listOf(
+            "ampEnvelopeEnabled", "attackTime", "decayTime", "sustain",
+            "releaseTime", "stretch", "forceRelease", "loop"
+        )
+        section == "Amplitude" && group.endsWith("/ LFO") -> listOf(
+            "ampLfoEnabled", "frequency", "depth", "start", "delay", "stretch", "continuous",
+            "amplitudeRandom", "frequencyRandom", "waveform"
+        )
+        section == "Frequency" && group.endsWith("/ Frequency") -> listOf(
+            "detune", "fixedFreq", "fixedFreqEt", "octave", "detuneType", "coarse"
+        )
+        section == "Frequency" && group.endsWith("/ Envelope") -> listOf(
+            "freqEnvelopeEnabled", "attackValue", "attackTime", "releaseTime",
+            "releaseValue", "stretch", "forceRelease"
+        )
+        section == "Frequency" && group.endsWith("/ LFO") -> listOf(
+            "freqLfoEnabled", "frequency", "depth", "start", "delay", "stretch", "continuous",
+            "amplitudeRandom", "frequencyRandom", "waveform"
+        )
+        else -> emptyList()
+    }
+    val index = order.indexOf(field)
+    return if (index >= 0) index else order.size
 }
 
 @Composable
@@ -1187,6 +1241,8 @@ private fun compactAddLabel(descriptor: SynthEngine.ParameterDescriptor): String
     descriptor.path.endsWith("/stretch") -> "Stretch"
     descriptor.path.endsWith("/loop") -> "Loop"
     descriptor.path.endsWith("/forceRelease") -> "Force Rel."
+    descriptor.path.endsWith("/amplitudeRandom") -> "A.R."
+    descriptor.path.endsWith("/frequencyRandom") -> "F.R."
     descriptor.path.endsWith("/frequency") -> "Frequency"
     descriptor.path.endsWith("/depth") -> "Depth"
     descriptor.path.endsWith("/start") -> "Start"
@@ -1243,6 +1299,7 @@ private fun ParameterEditSheet(
 }
 
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
 private fun SelectorSheet(title: String, count: Int, selected: Int, onSelect: (Int) -> Unit) {
     Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(title, style = MaterialTheme.typography.titleMedium)

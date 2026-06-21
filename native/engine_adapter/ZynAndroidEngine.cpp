@@ -671,22 +671,22 @@ std::string ZynAndroidEngine::parameterSnapshot(int partIndex, int kitIndex) con
             add((prefix + "unisonInvert").c_str(), "Unison phase invert", group.c_str(), "enum",
                 v.Unison_invert_phase, 0, 4, 0, "None,Random,50%,33%,25%");
             add((prefix + "panning").c_str(), "Panning", amplitudeGroup.c_str(), "int", v.PPanning, 0, 127, 64);
-            add((prefix + "volume").c_str(), "Volume", amplitudeGroup.c_str(), "int",
+            add((prefix + "volumeMinus").c_str(), "Minus", amplitudeGroup.c_str(), "bool",
+                v.PVolumeminus, 0, 1, 0);
+            add((prefix + "volume").c_str(), "Vol", amplitudeGroup.c_str(), "int",
                 std::clamp(static_cast<int>(std::lround(127.0f * (1.0f + v.volume / 60.0f))), 0, 127),
                 0, 127, 100);
-            add((prefix + "volumeMinus").c_str(), "Negative volume", amplitudeGroup.c_str(), "bool",
-                v.PVolumeminus, 0, 1, 0);
-            add((prefix + "velocity").c_str(), "Velocity sensitivity", amplitudeGroup.c_str(), "int",
+            add((prefix + "velocity").c_str(), "V.Sns", amplitudeGroup.c_str(), "int",
                 v.PAmpVelocityScaleFunction, 0, 127, 127);
-            add((prefix + "detune").c_str(), "Fine detune", frequencyGroup.c_str(), "int", v.PDetune, 0, 16383, 8192);
+            add((prefix + "detune").c_str(), "Detune", frequencyGroup.c_str(), "int", v.PDetune, 0, 16383, 8192);
             const int voiceOctave = v.PCoarseDetune / 1024 >= 8 ? v.PCoarseDetune / 1024 - 16 : v.PCoarseDetune / 1024;
             const int voiceCoarse = v.PCoarseDetune % 1024 >= 512 ? v.PCoarseDetune % 1024 - 1024 : v.PCoarseDetune % 1024;
             add((prefix + "octave").c_str(), "Octave", frequencyGroup.c_str(), "int", voiceOctave, -8, 7, 0);
             add((prefix + "coarse").c_str(), "Coarse detune", frequencyGroup.c_str(), "int", voiceCoarse, -64, 63, 0);
             add((prefix + "detuneType").c_str(), "Detune type", frequencyGroup.c_str(), "enum",
                 v.PDetuneType, 0, 4, 0, "Default,L35 cents,L10 cents,E100 cents,E1200 cents");
-            add((prefix + "fixedFreq").c_str(), "Fixed 440 Hz", frequencyGroup.c_str(), "bool", v.Pfixedfreq, 0, 1, 0);
-            add((prefix + "fixedFreqEt").c_str(), "Keyboard tracking", frequencyGroup.c_str(), "int",
+            add((prefix + "fixedFreq").c_str(), "440Hz", frequencyGroup.c_str(), "bool", v.Pfixedfreq, 0, 1, 0);
+            add((prefix + "fixedFreqEt").c_str(), "Eq.T.", frequencyGroup.c_str(), "int",
                 v.PfixedfreqET, 0, 127, 0);
             add((prefix + "bend").c_str(), "Pitch bend", frequencyGroup.c_str(), "int",
                 static_cast<int>(v.PBendAdjust) - 64, -64, 63, 0);
@@ -722,13 +722,13 @@ std::string ZynAndroidEngine::parameterSnapshot(int partIndex, int kitIndex) con
             add((prefix + "modDetuneType").c_str(), "Modulator detune type", modulationGroup.c_str(), "enum",
                 v.PFMDetuneType, 0, 4, 0, "Default,L35 cents,L10 cents,E100 cents,E1200 cents");
             add((prefix + "sync").c_str(), "Hard sync", modulationGroup.c_str(), "bool", v.PsyncEnabled, 0, 1, 0);
-            add((prefix + "ampEnvelopeEnabled").c_str(), "Amplitude envelope", amplitudeGroup.c_str(), "bool",
+            add((prefix + "ampEnvelopeEnabled").c_str(), "Enable", (amplitudeGroup + " / Envelope").c_str(), "bool",
                 v.PAmpEnvelopeEnabled, 0, 1, 1);
-            add((prefix + "ampLfoEnabled").c_str(), "Amplitude LFO", amplitudeGroup.c_str(), "bool",
+            add((prefix + "ampLfoEnabled").c_str(), "Enable", (amplitudeGroup + " / LFO").c_str(), "bool",
                 v.PAmpLfoEnabled, 0, 1, 0);
-            add((prefix + "freqEnvelopeEnabled").c_str(), "Frequency envelope", frequencyGroup.c_str(), "bool",
+            add((prefix + "freqEnvelopeEnabled").c_str(), "Enable", (frequencyGroup + " / Envelope").c_str(), "bool",
                 v.PFreqEnvelopeEnabled, 0, 1, 0);
-            add((prefix + "freqLfoEnabled").c_str(), "Frequency LFO", frequencyGroup.c_str(), "bool",
+            add((prefix + "freqLfoEnabled").c_str(), "Enable", (frequencyGroup + " / LFO").c_str(), "bool",
                 v.PFreqLfoEnabled, 0, 1, 0);
             add((prefix + "filterEnvelopeEnabled").c_str(), "Filter envelope", filterGroup.c_str(), "bool",
                 v.PFilterEnvelopeEnabled, 0, 1, 0);
@@ -739,7 +739,7 @@ std::string ZynAndroidEngine::parameterSnapshot(int partIndex, int kitIndex) con
             add((prefix + "modFreqEnvelopeEnabled").c_str(), "Mod frequency envelope", modulationGroup.c_str(), "bool",
                 v.PFMFreqEnvelopeEnabled, 0, 1, 0);
             if (v.AmpEnvelope) envelopeValue((prefix + "ampEnvelope").c_str(),
-                (amplitudeGroup + " / Envelope").c_str(), *v.AmpEnvelope, true, true, false);
+                (amplitudeGroup + " / Envelope").c_str(), *v.AmpEnvelope, true, true, true);
             if (v.AmpLfo) lfoValue((prefix + "ampLfo").c_str(),
                 (amplitudeGroup + " / LFO").c_str(), *v.AmpLfo);
             if (v.FreqEnvelope) envelopeValue((prefix + "freqEnvelope").c_str(),
