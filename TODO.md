@@ -15,3 +15,5 @@
 - FX todo (main and parts ...)
 - keyboard # notes
 - addsynth voices colmun not aligned
+- muted part mutes all pars bug
+- stereo button too big

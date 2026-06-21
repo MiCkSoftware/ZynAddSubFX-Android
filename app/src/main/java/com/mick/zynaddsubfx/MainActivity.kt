@@ -213,7 +213,6 @@ fun ZynAddSubFXApp(nativeStatus: NativeSmokeStatus = NativeSmokeStatus.preview()
     var partInspectors by remember { mutableStateOf<List<SynthEngine.PartInspector>>(emptyList()) }
     var mixerInspector by remember { mutableStateOf(SynthEngine.MixerInspector(emptyList(), emptyList())) }
     var inspectorRefreshToken by rememberSaveable { mutableStateOf(0) }
-    var debugSection by rememberSaveable { mutableStateOf(DebugSection.INSPECTOR) }
     var selectedPlayPartIndex by rememberSaveable { mutableStateOf(0) }
     val statusText = remember(nativeStatus) { nativeStatus.toDisplayString() }
     val zynProbeText = remember(nativeStatus) { nativeStatus.zynProbeDisplayString() }
@@ -729,50 +728,6 @@ enum class AppDestinations(
     EDITOR("Editor", Icons.Default.AccountBox),
 }
 
-enum class DebugSection { INSPECTOR, TOOLS }
-
-@Composable
-private fun DebugScreen(
-    section: DebugSection,
-    onSectionChange: (DebugSection) -> Unit,
-    currentPresetPath: String?,
-    inspector: SynthEngine.PresetInspector?,
-    partInspectors: List<SynthEngine.PartInspector>,
-    mixerInspector: SynthEngine.MixerInspector,
-    activeFxSlots: List<SynthEngine.ActiveFxSlot>,
-    onSetPart0Enabled: (Boolean) -> Unit,
-    onSetPartEnabled: (Int, Boolean) -> Unit,
-    onSetPartChannel: (Int, Int) -> Unit,
-    onSoloPart: (Int) -> Unit,
-    legacyPanel: @Composable () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Column(modifier = modifier.fillMaxSize().padding(12.dp)) {
-        Text("Debug", style = MaterialTheme.typography.titleLarge)
-        Spacer(modifier = Modifier.height(8.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = { onSectionChange(DebugSection.INSPECTOR) }) { Text("Inspector") }
-            OutlinedButton(onClick = { onSectionChange(DebugSection.TOOLS) }) { Text("Tools") }
-        }
-        Spacer(modifier = Modifier.height(8.dp))
-        when (section) {
-            DebugSection.INSPECTOR -> FxActiveScreen(
-                currentPresetPath = currentPresetPath,
-                inspector = inspector,
-                partInspectors = partInspectors,
-                mixerInspector = mixerInspector,
-                activeFxSlots = activeFxSlots,
-                onSetPart0Enabled = onSetPart0Enabled,
-                onSetPartEnabled = onSetPartEnabled,
-                onSetPartChannel = onSetPartChannel,
-                onSoloPart = onSoloPart,
-                modifier = Modifier.weight(1f)
-            )
-            DebugSection.TOOLS -> legacyPanel()
-        }
-    }
-}
-
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
 private fun Greeting(
@@ -871,18 +826,6 @@ private fun Greeting(
                 onClick = onStressReloadCurrentPreset,
                 enabled = !stressRunning && !presetLoading && currentPresetPath != null
             ) { Text("Stress Reload") }
-        }
-        Spacer(modifier = Modifier.height(12.dp))
-        Text(text = "Touch keyboard (press/release)")
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            listOf(60, 62, 64, 65, 67, 69, 71).forEach { note ->
-                TactileKey(
-                    note = note,
-                    active = heldNote == note,
-                    onPress = { onPressKeyboardNote(note) },
-                    onRelease = { onReleaseKeyboardNote(note) }
-                )
-            }
         }
         Spacer(modifier = Modifier.height(8.dp))
         Row(
