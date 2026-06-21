@@ -255,10 +255,14 @@ fun FullInstrumentEditor(
                                             specializedScreen = "resonance"
                                         },
                                     ) {
+                                        val resonanceEnabled = state.snapshot?.values.orEmpty().firstOrNull {
+                                            it.descriptor.path == "add/resonance/enabled"
+                                        }?.value?.let { it >= .5 } == true
                                         ResonanceCurve(
                                             points = state.snapshot?.values.orEmpty().filter {
                                                 it.descriptor.group == "ADD / Resonance points"
                                             },
+                                            enabled = resonanceEnabled,
                                             modifier = Modifier.fillMaxSize(),
                                         )
                                         Surface(
@@ -530,6 +534,7 @@ private fun AddResonanceEditorScreen(
         ) {
             ResonanceCurve(
                 points = points,
+                enabled = enabled?.value?.let { it >= .5 } == true,
                 modifier = Modifier.fillMaxWidth().height(260.dp).onSizeChanged { graphSize = it }.pointerInput(graphSize) {
                     fun write(positionX: Float, positionY: Float) {
                         if (graphSize.width <= 0 || graphSize.height <= 0 || points.isEmpty()) return
@@ -563,6 +568,10 @@ private fun AddResonanceEditorScreen(
                         onClick = { model.writePath(path, 1.0) },
                         modifier = Modifier.weight(1f),
                         contentPadding = ButtonDefaults.TextButtonContentPadding,
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = Color(0xFFFF4D57),
+                        ),
+                        border = BorderStroke(1.dp, Color(0xFFFF4D57)),
                     ) {
                         Text(label, fontSize = 9.sp, maxLines = 1)
                     }
@@ -602,18 +611,21 @@ private fun AddResonanceEditorScreen(
 @Composable
 private fun ResonanceCurve(
     points: List<SynthEngine.ParameterValue>,
+    enabled: Boolean,
     modifier: Modifier = Modifier,
 ) {
     Canvas(modifier) {
+        val gridColor = if (enabled) Color(0xFF31515A) else Color(0xFF30383B)
+        val curveColor = if (enabled) Color(0xFFFF4D57) else Color(0xFF747B7E)
         drawRect(Color(0xFF050A0C))
         repeat(9) { line ->
             val x = size.width * line / 8f
-            drawLine(Color(0xFF31515A), start = androidx.compose.ui.geometry.Offset(x, 0f),
+            drawLine(gridColor, start = androidx.compose.ui.geometry.Offset(x, 0f),
                 end = androidx.compose.ui.geometry.Offset(x, size.height), strokeWidth = 1f)
         }
         repeat(5) { line ->
             val y = size.height * line / 4f
-            drawLine(Color(0xFF31515A), start = androidx.compose.ui.geometry.Offset(0f, y),
+            drawLine(gridColor, start = androidx.compose.ui.geometry.Offset(0f, y),
                 end = androidx.compose.ui.geometry.Offset(size.width, y), strokeWidth = 1f)
         }
         if (points.isNotEmpty()) {
@@ -623,7 +635,7 @@ private fun ResonanceCurve(
                 val y = size.height * (1f - point.value.toFloat() / 127f)
                 if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
             }
-            drawPath(path, Color(0xFFFF4D57), style = androidx.compose.ui.graphics.drawscope.Stroke(2.5f))
+            drawPath(path, curveColor, style = androidx.compose.ui.graphics.drawscope.Stroke(2.5f))
         }
     }
 }
