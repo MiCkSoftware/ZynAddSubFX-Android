@@ -356,7 +356,10 @@ private fun VoiceMatrix(
             Spacer(Modifier.width(28.dp))
         }
         repeat(8) { voice ->
-            val voiceValues = values.filter { it.descriptor.group.endsWith("Voice ${voice + 1}") }
+            val voiceValues = values.filter {
+                it.descriptor.path.startsWith("add/voice/$voice/") &&
+                    !it.descriptor.path.contains("/osc/")
+            }
             fun value(suffix: String) = voiceValues.firstOrNull { it.descriptor.path.endsWith("/$suffix") }
             val enabled = value("enabled")
             val resonance = value("resonance")
@@ -428,38 +431,129 @@ private fun AddVoiceDetailScreen(
 ) {
     val state = model.state
     val values = state.snapshot?.values.orEmpty().filter {
-        it.descriptor.group.endsWith("Voice ${state.selectedVoice + 1}")
+        it.descriptor.path.startsWith("add/voice/${state.selectedVoice}/") &&
+            !it.descriptor.path.contains("/osc/")
     }
+    val oscillatorGroup = "ADD / Voice ${state.selectedVoice + 1} / Oscillator"
+    val oscillatorMagnitudes = state.snapshot?.values.orEmpty().filter {
+        it.descriptor.group == "$oscillatorGroup harmonics"
+    }
+    val oscillatorPhases = state.snapshot?.values.orEmpty().filter {
+        it.descriptor.group == "$oscillatorGroup phases"
+    }
+    val oscillatorMagnitudeType = state.snapshot?.values.orEmpty().firstOrNull {
+        it.descriptor.group == oscillatorGroup &&
+            it.descriptor.path.endsWith("/magnitudeType")
+    }?.value?.roundToInt() ?: 0
     Column(Modifier.fillMaxSize()) {
         EditorSubScreenHeader("Voice ${state.selectedVoice + 1} details", onBack)
         Column(
             Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(7.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            Button(onClick = onOpenOscillator, modifier = Modifier.fillMaxWidth()) {
-                Text("Edit voice oscillator")
-            }
-            listOf("Voice", "Frequency", "Amplitude", "Filter", "Modulation").forEach { section ->
+            listOf("Voice", "Voice Oscillator", "Amplitude", "Frequency", "Filter", "Modulation", "Unison").forEach { section ->
                 val selected = values.filter { value ->
+                    val group = value.descriptor.group
                     when (section) {
-                        "Voice" -> value.descriptor.path.substringAfterLast('/') in setOf(
-                            "unison", "spread", "phaseRandom", "stereoSpread", "vibratoSpeed"
+                        "Voice" -> group.endsWith("/ Voice") &&
+                            !value.descriptor.path.endsWith("/resonance")
+                        "Voice Oscillator" -> group.endsWith("/ Voice Oscillator") &&
+                            (state.selectedVoice > 0 ||
+                                !value.descriptor.path.endsWith("/externalOscillator"))
+                        "Amplitude" -> group.contains("/ Amplitude")
+                        "Frequency" -> group.contains("/ Frequency") && !group.contains("/ Modulation")
+                        "Filter" -> group.contains("/ Filter")
+                        "Modulation" -> group.contains("/ Modulation")
+                        else -> value.descriptor.path.substringAfterLast('/') in setOf(
+                            "unison", "spread", "stereoSpread",
+                            "vibrato", "vibratoSpeed", "unisonInvert"
                         )
-                        "Frequency" -> value.descriptor.path.endsWith("/fixedFreq") ||
-                            value.descriptor.path.endsWith("/detune")
-                        "Amplitude" -> value.descriptor.path.endsWith("/volume") ||
-                            value.descriptor.path.endsWith("/panning")
-                        "Filter" -> value.descriptor.path.endsWith("/filter") ||
-                            value.descriptor.path.endsWith("/resonance")
-                        else -> value.descriptor.path.endsWith("/fmType")
                     }
-                }
+                }.distinctBy { it.descriptor.path }
                 if (selected.isNotEmpty()) {
-                    Text(section.uppercase(), color = Color(0xFF66F0E9), style = MaterialTheme.typography.labelSmall)
-                    DenseParameterGrid(selected, model::write) { model.reset(it) }
+                    ZynVoiceSection(section) {
+                        if (section == "Voice Oscillator") {
+                            Surface(
+                                modifier = Modifier.fillMaxWidth().height(118.dp)
+                                    .clickable(onClick = onOpenOscillator),
+                                color = Color(0xFF10262C),
+                                border = BorderStroke(1.dp, Color(0xFF2E6973)),
+                                shape = RoundedCornerShape(8.dp),
+                            ) {
+                                Box(Modifier.fillMaxSize()) {
+                                    OscillatorPreview(
+                                        oscillatorMagnitudes,
+                                        oscillatorPhases,
+                                        oscillatorMagnitudeType,
+                                        Modifier.fillMaxSize(),
+                                    )
+                                    Surface(
+                                        modifier = Modifier.align(Alignment.TopEnd).padding(5.dp),
+                                        color = Color(0xCC18383E),
+                                        shape = RoundedCornerShape(5.dp),
+                                    ) {
+                                        Text(
+                                            "Edit voice oscillator ↗",
+                                            color = Color(0xFF8EF5EE),
+                                            modifier = Modifier.padding(6.dp),
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        if (section == "Unison") {
+                            val spread = selected.firstOrNull { it.descriptor.path.endsWith("/spread") }
+                            val size = selected.firstOrNull { it.descriptor.path.endsWith("/unison") }
+                            if (spread != null) {
+                                val cents = (spread.value / 127.0 * 2.0).pow(2.0) * 50.0
+                                Text(
+                                    if ((size?.value ?: 1.0) <= 1.0)
+                                        "OFF · %.1f cents".format(cents)
+                                    else
+                                        "${size?.value?.roundToInt()} voices · %.1f cents".format(cents),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    modifier = Modifier.padding(horizontal = 3.dp),
+                                )
+                            }
+                        }
+                        selected.groupBy { it.descriptor.group }.forEach { (group, parameters) ->
+                            val subsection = group.substringAfterLast('/')
+                            if (subsection != section && subsection !in setOf("Voice", "Amplitude", "Frequency", "Filter", "Modulation")) {
+                                Text(
+                                    subsection,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    modifier = Modifier.padding(start = 3.dp, top = 5.dp),
+                                )
+                            }
+                            DenseParameterGrid(
+                                parameters = parameters,
+                                onWrite = model::write,
+                                verticalLabels = true,
+                                onLongPress = { model.reset(it) },
+                            )
+                        }
+                    }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun ZynVoiceSection(title: String, content: @Composable () -> Unit) {
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(title.uppercase(), color = Color(0xFF66F0E9), style = MaterialTheme.typography.labelSmall)
+            Spacer(Modifier.width(7.dp))
+            Surface(
+                modifier = Modifier.weight(1f),
+                color = Color(0xFF234A53),
+                shape = RoundedCornerShape(99.dp),
+            ) { Spacer(Modifier.fillMaxWidth().height(1.dp)) }
+        }
+        content()
     }
 }
 
@@ -475,7 +569,13 @@ private fun AddOscillatorEditorScreen(model: InstrumentEditorViewModel, onBack: 
         EditorSubScreenHeader("Voice ${voice + 1} oscillator", onBack)
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(7.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                OscillatorPreview(magnitudes, phases, Modifier.weight(1f).height(150.dp))
+                OscillatorPreview(
+                    magnitudes,
+                    phases,
+                    controls.firstOrNull { it.descriptor.path.endsWith("/magnitudeType") }
+                        ?.value?.roundToInt() ?: 0,
+                    Modifier.weight(1f).height(150.dp),
+                )
                 BaseFunctionPreview(controls, Modifier.weight(1f).height(150.dp))
             }
             Spacer(Modifier.height(6.dp))
@@ -667,23 +767,62 @@ private fun VoiceMiniWave(seed: Int, modifier: Modifier) {
 private fun OscillatorPreview(
     magnitudes: List<SynthEngine.ParameterValue>,
     phases: List<SynthEngine.ParameterValue>,
+    magnitudeType: Int,
     modifier: Modifier,
 ) {
     Canvas(modifier) {
-        drawRect(Color.Black)
-        val path = Path()
-        repeat(128) { x ->
+        val gridColor = Color(0xFF31515A)
+        val curveColor = Color(0xFFFF4D57)
+        drawRect(Color(0xFF050A0C))
+        repeat(9) { line ->
+            val x = size.width * line / 8f
+            drawLine(
+                gridColor,
+                start = androidx.compose.ui.geometry.Offset(x, 0f),
+                end = androidx.compose.ui.geometry.Offset(x, size.height),
+                strokeWidth = 1f,
+            )
+        }
+        repeat(5) { line ->
+            val y = size.height * line / 4f
+            drawLine(
+                gridColor,
+                start = androidx.compose.ui.geometry.Offset(0f, y),
+                end = androidx.compose.ui.geometry.Offset(size.width, y),
+                strokeWidth = 1f,
+            )
+        }
+        val samples = DoubleArray(256)
+        var peak = 0.0
+        samples.indices.forEach { x ->
+            val angle = x.toDouble() / (samples.size - 1) * Math.PI * 2.0
             var sample = 0.0
-            magnitudes.take(32).forEachIndexed { h, value ->
-                val amplitude = (value.value - 64.0) / 63.0
-                val phase = phases.getOrNull(h)?.value?.div(127.0)?.times(Math.PI * 2) ?: 0.0
-                sample += amplitude * kotlin.math.sin((h + 1) * x / 128.0 * Math.PI * 2 + phase)
+            magnitudes.forEachIndexed { harmonic, value ->
+                val rawMagnitude = value.value
+                if (rawMagnitude == 64.0) return@forEachIndexed
+                val normalizedDistance = 1.0 - kotlin.math.abs(rawMagnitude / 64.0 - 1.0)
+                val amplitude = when (magnitudeType) {
+                    1 -> kotlin.math.exp(normalizedDistance * kotlin.math.ln(0.01))
+                    2 -> kotlin.math.exp(normalizedDistance * kotlin.math.ln(0.001))
+                    3 -> kotlin.math.exp(normalizedDistance * kotlin.math.ln(0.0001))
+                    4 -> kotlin.math.exp(normalizedDistance * kotlin.math.ln(0.00001))
+                    else -> 1.0 - normalizedDistance
+                } * if (rawMagnitude < 64.0) -1.0 else 1.0
+                val phase = ((phases.getOrNull(harmonic)?.value ?: 64.0) - 64.0) /
+                    64.0 * Math.PI
+                sample += amplitude * kotlin.math.sin((harmonic + 1) * angle + phase)
             }
-            val px = size.width * x / 127f
-            val py = size.height * (.5f - (sample / 8.0).coerceIn(-.45, .45)).toFloat()
+            samples[x] = sample
+            peak = maxOf(peak, kotlin.math.abs(sample))
+        }
+        val path = Path()
+        samples.forEachIndexed { x, sample ->
+            val px = size.width * x / (samples.size - 1)
+            val normalized = if (peak > 0.0) sample / peak else 0.0
+            val py = size.height * (.5f - normalized.toFloat() * .42f)
             if (x == 0) path.moveTo(px, py) else path.lineTo(px, py)
         }
-        drawPath(path, Color.Green, style = androidx.compose.ui.graphics.drawscope.Stroke(2f))
+        drawPath(path, curveColor, style = androidx.compose.ui.graphics.drawscope.Stroke(2.5f))
     }
 }
 
@@ -940,8 +1079,7 @@ private fun DenseParameterControl(
                         value = parameter.value.toFloat(),
                         min = descriptor.minimum.toFloat(),
                         max = descriptor.maximum.toFloat(),
-                        dragRangePx = 28f * (descriptor.maximum - descriptor.minimum)
-                            .toFloat().coerceAtLeast(1f),
+                        sensitivity = KnobSensitivity.Adjust,
                         onValueChange = { onWrite(parameter, it.roundToInt().toDouble()) },
                     )
                     Text(
@@ -964,6 +1102,11 @@ private fun DenseParameterControl(
                     value = parameter.value.toFloat(),
                     min = descriptor.minimum.toFloat(),
                     max = descriptor.maximum.toFloat(),
+                    sensitivity = if (descriptor.path.endsWith("/oscillatorPhase")) {
+                        KnobSensitivity.Adjust
+                    } else {
+                        KnobSensitivity.Default
+                    },
                     valueText = valueText,
                     onValueChange = { onWrite(parameter, it.roundToInt().toDouble()) },
                 )
@@ -996,6 +1139,18 @@ private fun DenseParameterControl(
 
 private fun addLabelColor(descriptor: SynthEngine.ParameterDescriptor): Color {
     val hue = when {
+        descriptor.group.endsWith("/ Amplitude envelope") -> 205f
+        descriptor.group.endsWith("/ Frequency envelope") -> 165f
+        descriptor.group.endsWith("/ Envelope") && descriptor.group.contains("/ Filter") -> 325f
+        descriptor.group.endsWith("/ LFO") && descriptor.group.contains("/ Amplitude") -> 270f
+        descriptor.group.endsWith("/ LFO") && descriptor.group.contains("/ Frequency") -> 235f
+        descriptor.group.endsWith("/ LFO") && descriptor.group.contains("/ Filter") -> 290f
+        descriptor.group.endsWith("/ Modulation") -> 286f
+        descriptor.group.endsWith("/ Voice Oscillator") -> 32f
+        descriptor.group.endsWith("/ Filter") -> 48f
+        descriptor.group.endsWith("/ Frequency") -> 140f
+        descriptor.group.endsWith("/ Amplitude") -> 205f
+        descriptor.group.endsWith("/ Voice") -> 188f
         descriptor.path.startsWith("add/punch") -> 24f
         descriptor.path.startsWith("add/ampEnvelope") -> 205f
         descriptor.path.startsWith("add/ampLfo") -> 270f

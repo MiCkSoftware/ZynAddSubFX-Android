@@ -37,6 +37,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -48,6 +49,11 @@ import com.mick.zynaddsubfx.ui.theme.LedFxHue
 import com.mick.zynaddsubfx.ui.theme.LedStereoHue
 import com.mick.zynaddsubfx.ui.theme.ledColors
 
+enum class KnobSensitivity {
+    Default,
+    Adjust,
+}
+
 @Composable
 fun TinyKnob(
     label: String,
@@ -55,9 +61,17 @@ fun TinyKnob(
     min: Float,
     max: Float,
     dragRangePx: Float = 600f,
+    sensitivity: KnobSensitivity = KnobSensitivity.Default,
     valueText: String = value.toInt().toString(),
     onValueChange: (Float) -> Unit,
 ) {
+    val screenHeightPx = with(androidx.compose.ui.platform.LocalDensity.current) {
+        LocalConfiguration.current.screenHeightDp.dp.toPx()
+    }
+    val effectiveDragRangePx = when (sensitivity) {
+        KnobSensitivity.Default -> dragRangePx
+        KnobSensitivity.Adjust -> screenHeightPx.coerceAtLeast(1f)
+    }
     val safeRange = (max - min).coerceAtLeast(1f)
     val normalized = ((value - min) / safeRange).coerceIn(0f, 1f)
     val currentValue by rememberUpdatedState(value)
@@ -74,7 +88,7 @@ fun TinyKnob(
         Box(
             modifier = Modifier
                 .size(43.dp)
-                .pointerInput(min, max, dragRangePx) {
+                .pointerInput(min, max, effectiveDragRangePx, sensitivity) {
                     detectDragGestures(
                         onDragStart = {
                             isDragging = true
@@ -84,8 +98,12 @@ fun TinyKnob(
                         onDragCancel = { isDragging = false }
                     ) { change, dragAmount ->
                         change.consume()
-                        val deltaRaw = ((-dragAmount.y) + (dragAmount.x * 0.2f)) / dragRangePx
-                        val delta = deltaRaw.coerceIn(-0.03f, 0.03f)
+                        val deltaRaw = ((-dragAmount.y) + (dragAmount.x * 0.2f)) / effectiveDragRangePx
+                        val delta = if (sensitivity == KnobSensitivity.Adjust) {
+                            deltaRaw
+                        } else {
+                            deltaRaw.coerceIn(-0.03f, 0.03f)
+                        }
                         dragNormalized = (dragNormalized + delta).coerceIn(0f, 1f)
                         onValueChange(min + dragNormalized * safeRange)
                     }

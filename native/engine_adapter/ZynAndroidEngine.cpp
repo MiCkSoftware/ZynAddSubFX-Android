@@ -538,7 +538,9 @@ std::string ZynAndroidEngine::parameterSnapshot(int partIndex, int kitIndex) con
         add((std::string(prefix) + "/depth").c_str(), "LFO depth", group, "int", lfo.Pintensity, 0, 127, 0);
         add((std::string(prefix) + "/start").c_str(), "LFO start phase", group, "int", lfo.Pstartphase, 0, 127, 64);
         add((std::string(prefix) + "/delay").c_str(), "LFO delay", group, "int", delay, 0, 127, 0);
-        add((std::string(prefix) + "/random").c_str(), "LFO random amount", group, "int", lfo.Prandomness, 0, 127, 0);
+        add((std::string(prefix) + "/stretch").c_str(), "LFO stretch", group, "int", lfo.Pstretch, 0, 127, 64);
+        add((std::string(prefix) + "/amplitudeRandom").c_str(), "Amplitude random", group, "int", lfo.Prandomness, 0, 127, 0);
+        add((std::string(prefix) + "/frequencyRandom").c_str(), "Frequency random", group, "int", lfo.Pfreqrand, 0, 127, 0);
         add((std::string(prefix) + "/continuous").c_str(), "Continuous LFO", group, "bool", lfo.Pcontinous, 0, 1, 0);
         add((std::string(prefix) + "/waveform").c_str(), "LFO waveform", group, "enum", lfo.PLFOtype, 0, 7, 0,
             "Sine,Triangle,Square,Ramp up,Ramp down,Exp down 1,Exp down 2,Random");
@@ -644,23 +646,135 @@ std::string ZynAndroidEngine::parameterSnapshot(int partIndex, int kitIndex) con
             const auto &v = kit.adpars->VoicePar[voice];
             const std::string prefix = "add/voice/" + std::to_string(voice) + "/";
             const std::string group = "ADD / Voice " + std::to_string(voice + 1);
+            const std::string voiceGroup = group + " / Voice";
+            const std::string oscillatorGroup = group + " / Voice Oscillator";
+            const std::string frequencyGroup = group + " / Frequency";
+            const std::string amplitudeGroup = group + " / Amplitude";
+            const std::string filterGroup = group + " / Filter";
+            const std::string modulationGroup = group + " / Modulation";
             add((prefix + "enabled").c_str(), "Enabled", group.c_str(), "bool", v.Enabled, 0, 1, voice == 0);
+            add((prefix + "delay").c_str(), "Delay", voiceGroup.c_str(), "int", v.PDelay, 0, 127, 0);
+            add((prefix + "resonance").c_str(), "Resonance", voiceGroup.c_str(), "bool", v.Presonance, 0, 1, 1);
+            add((prefix + "oscillatorType").c_str(), "Mode", oscillatorGroup.c_str(), "enum",
+                v.Type, 0, 2, 0, "Sound,White noise,Pink noise");
+            add((prefix + "oscillatorPhase").c_str(), "Phase", oscillatorGroup.c_str(), "int",
+                static_cast<int>(v.Poscilphase) - 64, -64, 63, 0);
+            add((prefix + "externalOscillator").c_str(), "Use oscillator", oscillatorGroup.c_str(), "enum",
+                v.Pextoscil + 1, 0, voice, 0,
+                voice == 0 ? "Internal" : "Internal,Voice 1,Voice 2,Voice 3,Voice 4,Voice 5,Voice 6,Voice 7");
             add((prefix + "unison").c_str(), "Unison voices", group.c_str(), "int", v.Unison_size, 1, 50, 1);
             add((prefix + "spread").c_str(), "Unison spread", group.c_str(), "int", v.Unison_frequency_spread, 0, 127, 60);
             add((prefix + "phaseRandom").c_str(), "Phase randomness", group.c_str(), "int", v.Unison_phase_randomness, 0, 127, 127);
             add((prefix + "stereoSpread").c_str(), "Stereo spread", group.c_str(), "int", v.Unison_stereo_spread, 0, 127, 64);
             add((prefix + "vibrato").c_str(), "Vibrato depth", group.c_str(), "int", v.Unison_vibratto, 0, 127, 64);
             add((prefix + "vibratoSpeed").c_str(), "Vibrato speed", group.c_str(), "int", v.Unison_vibratto_speed, 0, 127, 64);
-            add((prefix + "panning").c_str(), "Panning", group.c_str(), "int", v.PPanning, 0, 127, 64);
-            add((prefix + "volume").c_str(), "Volume", group.c_str(), "int",
+            add((prefix + "unisonInvert").c_str(), "Unison phase invert", group.c_str(), "enum",
+                v.Unison_invert_phase, 0, 4, 0, "None,Random,50%,33%,25%");
+            add((prefix + "panning").c_str(), "Panning", amplitudeGroup.c_str(), "int", v.PPanning, 0, 127, 64);
+            add((prefix + "volume").c_str(), "Volume", amplitudeGroup.c_str(), "int",
                 std::clamp(static_cast<int>(std::lround(127.0f * (1.0f + v.volume / 60.0f))), 0, 127),
                 0, 127, 100);
-            add((prefix + "detune").c_str(), "Fine detune", group.c_str(), "int", v.PDetune, 0, 16383, 8192);
-            add((prefix + "fixedFreq").c_str(), "Fixed frequency", group.c_str(), "bool", v.Pfixedfreq, 0, 1, 0);
-            add((prefix + "resonance").c_str(), "Resonance", group.c_str(), "bool", v.Presonance, 0, 1, 1);
-            add((prefix + "filter").c_str(), "Voice filter", group.c_str(), "bool", v.PFilterEnabled, 0, 1, 0);
-            add((prefix + "fmType").c_str(), "Modulation", group.c_str(), "enum",
+            add((prefix + "volumeMinus").c_str(), "Negative volume", amplitudeGroup.c_str(), "bool",
+                v.PVolumeminus, 0, 1, 0);
+            add((prefix + "velocity").c_str(), "Velocity sensitivity", amplitudeGroup.c_str(), "int",
+                v.PAmpVelocityScaleFunction, 0, 127, 127);
+            add((prefix + "detune").c_str(), "Fine detune", frequencyGroup.c_str(), "int", v.PDetune, 0, 16383, 8192);
+            const int voiceOctave = v.PCoarseDetune / 1024 >= 8 ? v.PCoarseDetune / 1024 - 16 : v.PCoarseDetune / 1024;
+            const int voiceCoarse = v.PCoarseDetune % 1024 >= 512 ? v.PCoarseDetune % 1024 - 1024 : v.PCoarseDetune % 1024;
+            add((prefix + "octave").c_str(), "Octave", frequencyGroup.c_str(), "int", voiceOctave, -8, 7, 0);
+            add((prefix + "coarse").c_str(), "Coarse detune", frequencyGroup.c_str(), "int", voiceCoarse, -64, 63, 0);
+            add((prefix + "detuneType").c_str(), "Detune type", frequencyGroup.c_str(), "enum",
+                v.PDetuneType, 0, 4, 0, "Default,L35 cents,L10 cents,E100 cents,E1200 cents");
+            add((prefix + "fixedFreq").c_str(), "Fixed 440 Hz", frequencyGroup.c_str(), "bool", v.Pfixedfreq, 0, 1, 0);
+            add((prefix + "fixedFreqEt").c_str(), "Keyboard tracking", frequencyGroup.c_str(), "int",
+                v.PfixedfreqET, 0, 127, 0);
+            add((prefix + "bend").c_str(), "Pitch bend", frequencyGroup.c_str(), "int",
+                static_cast<int>(v.PBendAdjust) - 64, -64, 63, 0);
+            add((prefix + "offsetHz").c_str(), "Frequency offset", frequencyGroup.c_str(), "int",
+                static_cast<int>(v.POffsetHz) - 64, -64, 63, 0);
+            add((prefix + "filter").c_str(), "Voice filter", filterGroup.c_str(), "bool", v.PFilterEnabled, 0, 1, 0);
+            add((prefix + "bypassGlobalFilter").c_str(), "Bypass global filter", filterGroup.c_str(), "bool",
+                v.Pfilterbypass, 0, 1, 0);
+            add((prefix + "fmType").c_str(), "Modulation type", modulationGroup.c_str(), "enum",
                 static_cast<int>(v.PFMEnabled), 0, 5, 0, "Off,Mix,Ring,Phase,Frequency,PWM");
+            add((prefix + "externalModulator").c_str(), "External modulator", modulationGroup.c_str(), "enum",
+                v.PFMVoice + 1, 0, voice, 0,
+                voice == 0 ? "Off" : "Off,Voice 1,Voice 2,Voice 3,Voice 4,Voice 5,Voice 6,Voice 7");
+            add((prefix + "externalModOscillator").c_str(), "External mod oscillator", modulationGroup.c_str(), "enum",
+                v.PextFMoscil + 1, 0, voice, 0,
+                voice == 0 ? "Internal" : "Internal,Voice 1,Voice 2,Voice 3,Voice 4,Voice 5,Voice 6,Voice 7");
+            add((prefix + "modPhase").c_str(), "Modulator phase", modulationGroup.c_str(), "int",
+                static_cast<int>(v.PFMoscilphase) - 64, -64, 63, 0);
+            add((prefix + "modVolume").c_str(), "Modulator volume", modulationGroup.c_str(), "int",
+                std::clamp(static_cast<int>(std::lround(127.0f * (1.0f + v.FMvolume / 60.0f))), 0, 127), 0, 127, 90);
+            add((prefix + "modVelocity").c_str(), "Modulator velocity", modulationGroup.c_str(), "int",
+                v.PFMVelocityScaleFunction, 0, 127, 64);
+            add((prefix + "modDamping").c_str(), "Frequency damping", modulationGroup.c_str(), "int",
+                static_cast<int>(v.PFMVolumeDamp) - 64, -64, 63, 0);
+            add((prefix + "modDetune").c_str(), "Modulator fine detune", modulationGroup.c_str(), "int",
+                v.PFMDetune, 0, 16383, 8192);
+            const int modOctave = v.PFMCoarseDetune / 1024 >= 8 ? v.PFMCoarseDetune / 1024 - 16 : v.PFMCoarseDetune / 1024;
+            const int modCoarse = v.PFMCoarseDetune % 1024 >= 512 ? v.PFMCoarseDetune % 1024 - 1024 : v.PFMCoarseDetune % 1024;
+            add((prefix + "modOctave").c_str(), "Modulator octave", modulationGroup.c_str(), "int",
+                modOctave, -8, 7, 0);
+            add((prefix + "modCoarse").c_str(), "Modulator coarse detune", modulationGroup.c_str(), "int",
+                modCoarse, -64, 63, 0);
+            add((prefix + "modDetuneType").c_str(), "Modulator detune type", modulationGroup.c_str(), "enum",
+                v.PFMDetuneType, 0, 4, 0, "Default,L35 cents,L10 cents,E100 cents,E1200 cents");
+            add((prefix + "sync").c_str(), "Hard sync", modulationGroup.c_str(), "bool", v.PsyncEnabled, 0, 1, 0);
+            add((prefix + "ampEnvelopeEnabled").c_str(), "Amplitude envelope", amplitudeGroup.c_str(), "bool",
+                v.PAmpEnvelopeEnabled, 0, 1, 1);
+            add((prefix + "ampLfoEnabled").c_str(), "Amplitude LFO", amplitudeGroup.c_str(), "bool",
+                v.PAmpLfoEnabled, 0, 1, 0);
+            add((prefix + "freqEnvelopeEnabled").c_str(), "Frequency envelope", frequencyGroup.c_str(), "bool",
+                v.PFreqEnvelopeEnabled, 0, 1, 0);
+            add((prefix + "freqLfoEnabled").c_str(), "Frequency LFO", frequencyGroup.c_str(), "bool",
+                v.PFreqLfoEnabled, 0, 1, 0);
+            add((prefix + "filterEnvelopeEnabled").c_str(), "Filter envelope", filterGroup.c_str(), "bool",
+                v.PFilterEnvelopeEnabled, 0, 1, 0);
+            add((prefix + "filterLfoEnabled").c_str(), "Filter LFO", filterGroup.c_str(), "bool",
+                v.PFilterLfoEnabled, 0, 1, 0);
+            add((prefix + "modAmpEnvelopeEnabled").c_str(), "Mod amplitude envelope", modulationGroup.c_str(), "bool",
+                v.PFMAmpEnvelopeEnabled, 0, 1, 0);
+            add((prefix + "modFreqEnvelopeEnabled").c_str(), "Mod frequency envelope", modulationGroup.c_str(), "bool",
+                v.PFMFreqEnvelopeEnabled, 0, 1, 0);
+            if (v.AmpEnvelope) envelopeValue((prefix + "ampEnvelope").c_str(),
+                (amplitudeGroup + " / Envelope").c_str(), *v.AmpEnvelope, true, true, false);
+            if (v.AmpLfo) lfoValue((prefix + "ampLfo").c_str(),
+                (amplitudeGroup + " / LFO").c_str(), *v.AmpLfo);
+            if (v.FreqEnvelope) envelopeValue((prefix + "freqEnvelope").c_str(),
+                (frequencyGroup + " / Envelope").c_str(), *v.FreqEnvelope, false, false, false);
+            if (v.FreqLfo) lfoValue((prefix + "freqLfo").c_str(),
+                (frequencyGroup + " / LFO").c_str(), *v.FreqLfo);
+            if (v.FilterEnvelope) envelopeValue((prefix + "filterEnvelope").c_str(),
+                (filterGroup + " / Envelope").c_str(), *v.FilterEnvelope, true, false, false);
+            if (v.FilterLfo) lfoValue((prefix + "filterLfo").c_str(),
+                (filterGroup + " / LFO").c_str(), *v.FilterLfo);
+            if (v.FMAmpEnvelope) envelopeValue((prefix + "modAmpEnvelope").c_str(),
+                (modulationGroup + " / Amplitude envelope").c_str(), *v.FMAmpEnvelope, true, true, false);
+            if (v.FMFreqEnvelope) envelopeValue((prefix + "modFreqEnvelope").c_str(),
+                (modulationGroup + " / Frequency envelope").c_str(), *v.FMFreqEnvelope, false, false, false);
+            if (v.VoiceFilter) {
+                const auto &filter = *v.VoiceFilter;
+                add((prefix + "filterCategory").c_str(), "Filter category", filterGroup.c_str(), "enum",
+                    filter.Pcategory, 0, 4, 0, "Analog,Formant,State variable,Moog,Comb");
+                add((prefix + "filterType").c_str(), "Filter type", filterGroup.c_str(), "enum",
+                    filter.Ptype, 0, 8, 0, "LPF1,HPF1,LPF2,HPF2,BPF1,Notch1,Peak1,Low shelf,High shelf");
+                add((prefix + "filterCutoff").c_str(), "Center frequency", filterGroup.c_str(), "int",
+                    std::clamp(static_cast<int>(std::lround(((std::log2(filter.basefreq) - 9.96578428f) / 5.0f + 1.0f) * 64.0f)), 0, 127), 0, 127, 94);
+                add((prefix + "filterQ").c_str(), "Q", filterGroup.c_str(), "int",
+                    std::clamp(static_cast<int>(std::lround(127.0f * std::sqrt(std::log(0.9f + filter.baseq) / std::log(1000.0f)))), 0, 127), 0, 127, 40);
+                add((prefix + "filterStages").c_str(), "Filter stages", filterGroup.c_str(), "int",
+                    filter.Pstages + 1, 1, 6, 1);
+                add((prefix + "filterTracking").c_str(), "Frequency tracking", filterGroup.c_str(), "int",
+                    std::clamp(static_cast<int>(std::lround(filter.freqtracking / 100.0f * 64.0f + 64.0f)), 0, 127), 0, 127, 64);
+                add((prefix + "filterGain").c_str(), "Filter gain", filterGroup.c_str(), "int",
+                    std::clamp(static_cast<int>(std::lround((filter.gain / 30.0f + 1.0f) * 64.0f)), 0, 127), 0, 127, 64);
+                add((prefix + "filterVelocityAmount").c_str(), "Velocity amount", filterGroup.c_str(), "int",
+                    v.PFilterVelocityScale, 0, 127, 0);
+                add((prefix + "filterVelocity").c_str(), "Velocity sensitivity", filterGroup.c_str(), "int",
+                    v.PFilterVelocityScaleFunction, 0, 127, 64);
+            }
             if (v.OscilGn) {
                 const auto &o = *v.OscilGn;
                 const std::string oscPrefix = prefix + "osc/";
@@ -749,7 +863,9 @@ bool ZynAndroidEngine::setParameter(int partIndex, int kitIndex, const std::stri
         else if (field == "depth") lfo.Pintensity = i(0, 127);
         else if (field == "start") lfo.Pstartphase = i(0, 127);
         else if (field == "delay") lfo.delay = 4.0f * i(0, 127) / 127.0f;
-        else if (field == "random") lfo.Prandomness = i(0, 127);
+        else if (field == "stretch") lfo.Pstretch = i(0, 127);
+        else if (field == "amplitudeRandom") lfo.Prandomness = i(0, 127);
+        else if (field == "frequencyRandom") lfo.Pfreqrand = i(0, 127);
         else if (field == "continuous") lfo.Pcontinous = b();
         else if (field == "waveform") lfo.PLFOtype = i(0, 7);
         else if (field == "type") lfo.fel = static_cast<zyn::consumer_location_type_t>(i(0, 2));
@@ -854,19 +970,96 @@ bool ZynAndroidEngine::setParameter(int partIndex, int kitIndex, const std::stri
             auto &v = kit.adpars->VoicePar[voice];
             const auto field = rest.substr(slash + 1);
             if (field == "enabled") v.Enabled = b();
+            else if (field == "delay") v.PDelay = i(0, 127);
+            else if (field == "oscillatorType") v.Type = i(0, 2);
+            else if (field == "oscillatorPhase") v.Poscilphase = i(-64, 63) + 64;
+            else if (field == "externalOscillator") v.Pextoscil = i(0, voice) - 1;
             else if (field == "unison") v.Unison_size = i(1, 50);
             else if (field == "spread") v.Unison_frequency_spread = i(0, 127);
             else if (field == "phaseRandom") v.Unison_phase_randomness = i(0, 127);
             else if (field == "stereoSpread") v.Unison_stereo_spread = i(0, 127);
             else if (field == "vibrato") v.Unison_vibratto = i(0, 127);
             else if (field == "vibratoSpeed") v.Unison_vibratto_speed = i(0, 127);
+            else if (field == "unisonInvert") v.Unison_invert_phase = i(0, 4);
             else if (field == "panning") v.PPanning = i(0, 127);
             else if (field == "volume") v.volume = -60.0f * (1.0f - i(0, 127) / 127.0f);
+            else if (field == "volumeMinus") v.PVolumeminus = b();
+            else if (field == "velocity") v.PAmpVelocityScaleFunction = i(0, 127);
             else if (field == "detune") v.PDetune = i(0, 16383);
+            else if (field == "octave") {
+                int octave = i(-8, 7);
+                if (octave < 0) octave += 16;
+                v.PCoarseDetune = octave * 1024 + v.PCoarseDetune % 1024;
+            } else if (field == "coarse") {
+                int coarse = i(-64, 63);
+                if (coarse < 0) coarse += 1024;
+                v.PCoarseDetune = coarse + (v.PCoarseDetune / 1024) * 1024;
+            }
+            else if (field == "detuneType") v.PDetuneType = i(0, 4);
             else if (field == "fixedFreq") v.Pfixedfreq = b();
+            else if (field == "fixedFreqEt") v.PfixedfreqET = i(0, 127);
+            else if (field == "bend") v.PBendAdjust = i(-64, 63) + 64;
+            else if (field == "offsetHz") v.POffsetHz = i(-64, 63) + 64;
             else if (field == "resonance") v.Presonance = b();
             else if (field == "filter") v.PFilterEnabled = b();
+            else if (field == "bypassGlobalFilter") v.Pfilterbypass = b();
             else if (field == "fmType") v.PFMEnabled = static_cast<zyn::FMTYPE>(i(0, 5));
+            else if (field == "externalModulator") v.PFMVoice = i(0, voice) - 1;
+            else if (field == "externalModOscillator") v.PextFMoscil = i(0, voice) - 1;
+            else if (field == "modPhase") v.PFMoscilphase = i(-64, 63) + 64;
+            else if (field == "modVolume") v.FMvolume = -60.0f * (1.0f - i(0, 127) / 127.0f);
+            else if (field == "modVelocity") v.PFMVelocityScaleFunction = i(0, 127);
+            else if (field == "modDamping") v.PFMVolumeDamp = i(-64, 63) + 64;
+            else if (field == "modDetune") v.PFMDetune = i(0, 16383);
+            else if (field == "modOctave") {
+                int octave = i(-8, 7);
+                if (octave < 0) octave += 16;
+                v.PFMCoarseDetune = octave * 1024 + v.PFMCoarseDetune % 1024;
+            } else if (field == "modCoarse") {
+                int coarse = i(-64, 63);
+                if (coarse < 0) coarse += 1024;
+                v.PFMCoarseDetune = coarse + (v.PFMCoarseDetune / 1024) * 1024;
+            }
+            else if (field == "modDetuneType") v.PFMDetuneType = i(0, 4);
+            else if (field == "sync") v.PsyncEnabled = b();
+            else if (field == "ampEnvelopeEnabled") v.PAmpEnvelopeEnabled = b();
+            else if (field == "ampLfoEnabled") v.PAmpLfoEnabled = b();
+            else if (field == "freqEnvelopeEnabled") v.PFreqEnvelopeEnabled = b();
+            else if (field == "freqLfoEnabled") v.PFreqLfoEnabled = b();
+            else if (field == "filterEnvelopeEnabled") v.PFilterEnvelopeEnabled = b();
+            else if (field == "filterLfoEnabled") v.PFilterLfoEnabled = b();
+            else if (field == "modAmpEnvelopeEnabled") v.PFMAmpEnvelopeEnabled = b();
+            else if (field == "modFreqEnvelopeEnabled") v.PFMFreqEnvelopeEnabled = b();
+            else if (field.rfind("ampEnvelope/", 0) == 0 && v.AmpEnvelope)
+                return writeEnvelope(*v.AmpEnvelope, field.substr(12));
+            else if (field.rfind("ampLfo/", 0) == 0 && v.AmpLfo)
+                return writeLfo(*v.AmpLfo, field.substr(7));
+            else if (field.rfind("freqEnvelope/", 0) == 0 && v.FreqEnvelope)
+                return writeEnvelope(*v.FreqEnvelope, field.substr(13));
+            else if (field.rfind("freqLfo/", 0) == 0 && v.FreqLfo)
+                return writeLfo(*v.FreqLfo, field.substr(8));
+            else if (field.rfind("filterEnvelope/", 0) == 0 && v.FilterEnvelope)
+                return writeEnvelope(*v.FilterEnvelope, field.substr(15));
+            else if (field.rfind("filterLfo/", 0) == 0 && v.FilterLfo)
+                return writeLfo(*v.FilterLfo, field.substr(10));
+            else if (field.rfind("modAmpEnvelope/", 0) == 0 && v.FMAmpEnvelope)
+                return writeEnvelope(*v.FMAmpEnvelope, field.substr(16));
+            else if (field.rfind("modFreqEnvelope/", 0) == 0 && v.FMFreqEnvelope)
+                return writeEnvelope(*v.FMFreqEnvelope, field.substr(17));
+            else if (field.rfind("filter", 0) == 0 && v.VoiceFilter) {
+                auto &filter = *v.VoiceFilter;
+                if (field == "filterCategory") filter.Pcategory = i(0, 4);
+                else if (field == "filterType") filter.Ptype = i(0, 8);
+                else if (field == "filterCutoff") filter.basefreq = zyn::FilterParams::basefreqFromOldPreq(i(0, 127));
+                else if (field == "filterQ") filter.baseq = zyn::FilterParams::baseqFromOldPq(i(0, 127));
+                else if (field == "filterStages") filter.Pstages = i(1, 6) - 1;
+                else if (field == "filterTracking") filter.freqtracking = 100.0f * (i(0, 127) - 64.0f) / 64.0f;
+                else if (field == "filterGain") filter.gain = zyn::FilterParams::gainFromOldPgain(i(0, 127));
+                else if (field == "filterVelocityAmount") v.PFilterVelocityScale = i(0, 127);
+                else if (field == "filterVelocity") v.PFilterVelocityScaleFunction = i(0, 127);
+                else return false;
+                filter.changed = true;
+            }
             else if (field.rfind("osc/", 0) == 0 && v.OscilGn) {
                 auto &o = *v.OscilGn;
                 const auto oscField = field.substr(4);
