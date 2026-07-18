@@ -10,6 +10,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -49,12 +50,14 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
@@ -69,6 +72,85 @@ import java.io.File
 import kotlin.math.roundToInt
 import kotlin.math.pow
 import kotlinx.coroutines.launch
+
+private enum class OscillatorEditorKind { Voice, Modulator }
+
+private data class OscillatorEditorTarget(
+    val kind: OscillatorEditorKind,
+    val ownerVoice: Int,
+)
+
+private sealed interface InstrumentEditorDestination {
+    data object VoiceDetail : InstrumentEditorDestination
+    data object Resonance : InstrumentEditorDestination
+    data class Oscillator(val target: OscillatorEditorTarget) : InstrumentEditorDestination
+}
+
+private val voiceEditorSections =
+    listOf("Voice", "Oscillator", "Amplitude", "Frequency", "Filter", "Modulation", "Unison")
+private val oscillatorEditorSections =
+    listOf("Preview", "Output", "Base function", "Shape & filter", "Harmonics")
+private val resonanceEditorSections = listOf("Curve", "Parameters")
+
+@Composable
+private fun SynthEditorScaffold(
+    title: String,
+    navigationLabel: String,
+    onNavigateUp: () -> Unit,
+    tabs: List<String>,
+    selectedTab: String,
+    onTabSelected: (String) -> Unit,
+    dirty: Boolean,
+    onActions: (() -> Unit)?,
+    heldNotes: Set<Int>,
+    keyboardOctaveShift: Int,
+    onPressKeyboardNote: (Int) -> Unit,
+    onReleaseKeyboardNote: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+    content: @Composable (Modifier) -> Unit,
+) {
+    Column(modifier.fillMaxSize()) {
+        Surface(color = Color(0xFF102329), shadowElevation = 5.dp) {
+            Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(onClick = onNavigateUp) { Text(navigationLabel) }
+                    Text(
+                        title,
+                        color = Color(0xFF8EF5EE),
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.weight(1f),
+                    )
+                    if (dirty) Text("●", color = Color(0xFFFFC857))
+                    onActions?.let { action ->
+                        TextButton(onClick = action) { Text("⋮") }
+                    }
+                }
+                Row(
+                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    tabs.forEach { tab ->
+                        Surface(
+                            color = if (selectedTab == tab) Color(0xFF23616A) else Color(0xFF182F35),
+                            shape = RoundedCornerShape(6.dp),
+                            modifier = Modifier.clickable { onTabSelected(tab) },
+                        ) {
+                            Text(tab, modifier = Modifier.padding(horizontal = 11.dp, vertical = 5.dp))
+                        }
+                    }
+                }
+            }
+        }
+        content(Modifier.weight(1f).fillMaxWidth())
+        ZynClassicKeyboardStrip(
+            heldNotes = heldNotes,
+            octaveShift = keyboardOctaveShift,
+            onPress = onPressKeyboardNote,
+            onRelease = onReleaseKeyboardNote,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 7.dp, vertical = 4.dp),
+        )
+    }
+}
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -89,13 +171,19 @@ fun FullInstrumentEditor(
     val model = remember(engine) { InstrumentEditorViewModel(engine) }
     val state = model.state
     var selector by remember { mutableStateOf<String?>(null) }
-    var specializedScreen by remember { mutableStateOf<String?>(null) }
+    var destination by remember { mutableStateOf<InstrumentEditorDestination?>(null) }
     var editedParameter by remember { mutableStateOf<SynthEngine.ParameterValue?>(null) }
     var exportedFile by remember { mutableStateOf<File?>(null) }
     var exportedRevision by remember { mutableStateOf(0L) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val contentScroll = rememberScrollState()
     val sectionOffsets = remember(module, state.kitIndex) { mutableStateOf<Map<String, Int>>(emptyMap()) }
+    val voiceDetailScroll = rememberScrollState()
+    val voiceSectionOffsets = remember(state.selectedVoice) { mutableStateOf<Map<String, Int>>(emptyMap()) }
+    val oscillatorScroll = rememberScrollState()
+    val oscillatorSectionOffsets = remember { mutableStateOf<Map<String, Int>>(emptyMap()) }
+    val resonanceScroll = rememberScrollState()
+    val resonanceSectionOffsets = remember { mutableStateOf<Map<String, Int>>(emptyMap()) }
     val scope = rememberCoroutineScope()
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/octet-stream")
@@ -116,27 +204,132 @@ fun FullInstrumentEditor(
         model.selectEngine(module)
     }
 
-    if (specializedScreen == "oscillator") {
-        AddOscillatorEditorScreen(model = model, onBack = { specializedScreen = null })
-        return
+    val sectionNames = populatedSections(state.snapshot?.values.orEmpty(), module)
+    val openSection: (String) -> Unit = { tab ->
+        destination = null
+        model.selectTab(tab)
+        scope.launch {
+            contentScroll.animateScrollTo(sectionOffsets.value[tab] ?: 0)
+        }
     }
-    if (specializedScreen == "resonance") {
-        AddResonanceEditorScreen(
-            model = model,
+    val currentDestination = destination
+    if (currentDestination is InstrumentEditorDestination.Oscillator) {
+        val oscillatorTitle = if (currentDestination.target.kind == OscillatorEditorKind.Modulator) {
+            "Modulator oscillator"
+        } else "Voice oscillator"
+        SynthEditorScaffold(
+            title = oscillatorTitle,
+            navigationLabel = "‹ Voice ${state.selectedVoice + 1}",
+            onNavigateUp = { destination = InstrumentEditorDestination.VoiceDetail },
+            tabs = oscillatorEditorSections,
+            selectedTab = activeAnchor(
+                oscillatorScroll.value,
+                oscillatorEditorSections,
+                oscillatorSectionOffsets.value,
+            ),
+            onTabSelected = { section ->
+                scope.launch {
+                    oscillatorScroll.animateScrollTo(oscillatorSectionOffsets.value[section] ?: 0)
+                }
+            },
+            dirty = state.dirty,
+            onActions = null,
             heldNotes = heldNotes,
             keyboardOctaveShift = keyboardOctaveShift,
             onPressKeyboardNote = onPressKeyboardNote,
             onReleaseKeyboardNote = onReleaseKeyboardNote,
-            onBack = { specializedScreen = null },
-        )
+            modifier = modifier,
+        ) { contentModifier ->
+            AddOscillatorEditorScreen(
+                model = model,
+                target = currentDestination.target,
+                modifier = contentModifier,
+                scrollState = oscillatorScroll,
+                onSectionPosition = { section, offset ->
+                    if (oscillatorSectionOffsets.value[section] != offset) {
+                        oscillatorSectionOffsets.value =
+                            oscillatorSectionOffsets.value + (section to offset)
+                    }
+                },
+            )
+        }
         return
     }
-    if (specializedScreen == "voiceDetail") {
-        AddVoiceDetailScreen(
-            model = model,
-            onBack = { specializedScreen = null },
-            onOpenOscillator = { specializedScreen = "oscillator" },
-        )
+    if (currentDestination == InstrumentEditorDestination.Resonance) {
+        SynthEditorScaffold(
+            title = "ADsynth Resonance",
+            navigationLabel = "‹ ADD",
+            onNavigateUp = { destination = null },
+            tabs = resonanceEditorSections,
+            selectedTab = activeAnchor(
+                resonanceScroll.value,
+                resonanceEditorSections,
+                resonanceSectionOffsets.value,
+            ),
+            onTabSelected = { section ->
+                scope.launch {
+                    resonanceScroll.animateScrollTo(resonanceSectionOffsets.value[section] ?: 0)
+                }
+            },
+            dirty = state.dirty,
+            onActions = null,
+            heldNotes = heldNotes,
+            keyboardOctaveShift = keyboardOctaveShift,
+            onPressKeyboardNote = onPressKeyboardNote,
+            onReleaseKeyboardNote = onReleaseKeyboardNote,
+            modifier = modifier,
+        ) { contentModifier ->
+            AddResonanceEditorScreen(
+                model = model,
+                modifier = contentModifier,
+                scrollState = resonanceScroll,
+                onSectionPosition = { section, offset ->
+                    if (resonanceSectionOffsets.value[section] != offset) {
+                        resonanceSectionOffsets.value = resonanceSectionOffsets.value + (section to offset)
+                    }
+                },
+            )
+        }
+        return
+    }
+    if (currentDestination == InstrumentEditorDestination.VoiceDetail) {
+        SynthEditorScaffold(
+            title = "Voice ${state.selectedVoice + 1}",
+            navigationLabel = "‹ Voices",
+            onNavigateUp = { destination = null },
+            tabs = voiceEditorSections,
+            selectedTab = activeAnchor(
+                voiceDetailScroll.value,
+                voiceEditorSections,
+                voiceSectionOffsets.value,
+            ),
+            onTabSelected = { section ->
+                scope.launch {
+                    voiceDetailScroll.animateScrollTo(voiceSectionOffsets.value[section] ?: 0)
+                }
+            },
+            dirty = state.dirty,
+            onActions = null,
+            heldNotes = heldNotes,
+            keyboardOctaveShift = keyboardOctaveShift,
+            onPressKeyboardNote = onPressKeyboardNote,
+            onReleaseKeyboardNote = onReleaseKeyboardNote,
+            modifier = modifier,
+        ) { contentModifier ->
+            AddVoiceDetailScreen(
+                model = model,
+                modifier = contentModifier,
+                scrollState = voiceDetailScroll,
+                onSectionPosition = { section, offset ->
+                    if (voiceSectionOffsets.value[section] != offset) {
+                        voiceSectionOffsets.value = voiceSectionOffsets.value + (section to offset)
+                    }
+                },
+                onOpenOscillator = {
+                    destination = InstrumentEditorDestination.Oscillator(it)
+                },
+            )
+        }
         return
     }
 
@@ -170,45 +363,23 @@ fun FullInstrumentEditor(
                     }
                 }
             }
-            Column(Modifier.weight(1f).fillMaxSize()) {
-                Surface(color = Color(0xFF102329), shadowElevation = 5.dp) {
-            Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(onClick = onBack) { Text("‹ Part") }
-                    Text(
-                        "$module · P${state.partIndex + 1} K${state.kitIndex + 1}",
-                        color = Color(0xFF8EF5EE),
-                        style = MaterialTheme.typography.titleMedium,
-                        modifier = Modifier.weight(1f),
-                    )
-                    if (state.dirty) Text("●", color = Color(0xFFFFC857))
-                    TextButton(onClick = { selector = "actions" }) { Text("⋮") }
-                }
-                val sectionNames = populatedSections(state.snapshot?.values.orEmpty(), module)
-                Row(
-                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    sectionNames.forEachIndexed { index, tab ->
-                        Surface(
-                            color = if (activeAnchor(contentScroll.value, sectionNames, sectionOffsets.value) == tab) Color(0xFF23616A) else Color(0xFF182F35),
-                            shape = RoundedCornerShape(6.dp),
-                            modifier = Modifier.combinedClickable(onClick = {
-                                model.selectTab(tab)
-                                scope.launch {
-                                    contentScroll.animateScrollTo(sectionOffsets.value[tab] ?: 0)
-                                }
-                            }),
-                        ) {
-                            Text(tab, modifier = Modifier.padding(horizontal = 11.dp, vertical = 5.dp))
-                        }
-                    }
-                }
-            }
-                }
-
+            SynthEditorScaffold(
+                title = "$module · P${state.partIndex + 1} K${state.kitIndex + 1}",
+                navigationLabel = "‹ Part",
+                onNavigateUp = onBack,
+                tabs = sectionNames,
+                selectedTab = activeAnchor(contentScroll.value, sectionNames, sectionOffsets.value),
+                onTabSelected = openSection,
+                dirty = state.dirty,
+                onActions = { selector = "actions" },
+                heldNotes = heldNotes,
+                keyboardOctaveShift = keyboardOctaveShift,
+                onPressKeyboardNote = onPressKeyboardNote,
+                onReleaseKeyboardNote = onReleaseKeyboardNote,
+                modifier = Modifier.weight(1f),
+            ) { contentModifier ->
                 Column(
-                    Modifier.weight(1f).verticalScroll(contentScroll).padding(7.dp),
+                    contentModifier.verticalScroll(contentScroll).padding(7.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     populatedSections(state.snapshot?.values.orEmpty(), module).forEach { section ->
@@ -231,8 +402,10 @@ fun FullInstrumentEditor(
                                 (module == "FX" && section != "Routing"),
                             onComplex = {
                                 model.selectTab(section)
-                                specializedScreen = if (section == "Resonance") "resonance" else null
-                                if (specializedScreen == null) selector = "complex"
+                                destination = if (section == "Resonance") {
+                                    InstrumentEditorDestination.Resonance
+                                } else null
+                                if (destination == null) selector = "complex"
                             },
                             onWrite = model::write,
                             onEdit = { editedParameter = it },
@@ -244,7 +417,7 @@ fun FullInstrumentEditor(
                                         onWrite = model::write,
                                         onOpenDetail = {
                                             model.selectVoice(it)
-                                            specializedScreen = "voiceDetail"
+                                            destination = InstrumentEditorDestination.VoiceDetail
                                         },
                                     )
                                 })
@@ -252,7 +425,7 @@ fun FullInstrumentEditor(
                                     Box(
                                         Modifier.fillMaxWidth().height(90.dp).clickable {
                                             model.selectTab(section)
-                                            specializedScreen = "resonance"
+                                            destination = InstrumentEditorDestination.Resonance
                                         },
                                     ) {
                                         val resonanceEnabled = state.snapshot?.values.orEmpty().firstOrNull {
@@ -279,13 +452,6 @@ fun FullInstrumentEditor(
                         )
                     }
                 }
-                ZynClassicKeyboardStrip(
-                    heldNotes = heldNotes,
-                    octaveShift = keyboardOctaveShift,
-                    onPress = onPressKeyboardNote,
-                    onRelease = onReleaseKeyboardNote,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 7.dp, vertical = 4.dp),
-                )
             }
         }
     }
@@ -426,39 +592,65 @@ private fun VoiceMatrixKnob(
 @Composable
 private fun AddVoiceDetailScreen(
     model: InstrumentEditorViewModel,
-    onBack: () -> Unit,
-    onOpenOscillator: () -> Unit,
+    modifier: Modifier = Modifier,
+    scrollState: ScrollState,
+    onSectionPosition: (String, Int) -> Unit,
+    onOpenOscillator: (OscillatorEditorTarget) -> Unit,
 ) {
     val state = model.state
-    val values = state.snapshot?.values.orEmpty().filter {
+    val snapshotValues = state.snapshot?.values.orEmpty()
+    val values = snapshotValues.filter {
         it.descriptor.path.startsWith("add/voice/${state.selectedVoice}/") &&
-            !it.descriptor.path.contains("/osc/")
+            !it.descriptor.path.contains("/osc/") &&
+            !it.descriptor.path.contains("/modOsc/")
     }
+    val voiceRoot = "ADD / Voice ${state.selectedVoice + 1}"
     val oscillatorGroup = "ADD / Voice ${state.selectedVoice + 1} / Oscillator"
-    val oscillatorMagnitudes = state.snapshot?.values.orEmpty().filter {
+    val oscillatorMagnitudes = snapshotValues.filter {
         it.descriptor.group == "$oscillatorGroup harmonics"
     }
-    val oscillatorPhases = state.snapshot?.values.orEmpty().filter {
+    val oscillatorPhases = snapshotValues.filter {
         it.descriptor.group == "$oscillatorGroup phases"
     }
-    val oscillatorMagnitudeType = state.snapshot?.values.orEmpty().firstOrNull {
+    val oscillatorMagnitudeType = snapshotValues.firstOrNull {
         it.descriptor.group == oscillatorGroup &&
             it.descriptor.path.endsWith("/magnitudeType")
     }?.value?.roundToInt() ?: 0
-    Column(Modifier.fillMaxSize()) {
-        EditorSubScreenHeader("Voice ${state.selectedVoice + 1} details", onBack)
-        Column(
-            Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(7.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            listOf("Voice", "Voice Oscillator", "Amplitude", "Frequency", "Filter", "Modulation", "Unison").forEach { section ->
+    val externalModulator = values.firstOrNull {
+        it.descriptor.path.endsWith("/externalModulator")
+    }?.value?.roundToInt() ?: 0
+    val externalModOscillator = values.firstOrNull {
+        it.descriptor.path.endsWith("/externalModOscillator")
+    }?.value?.roundToInt() ?: 0
+    val modulatorOscillatorOwner = if (externalModOscillator > 0) {
+        externalModOscillator - 1
+    } else state.selectedVoice
+    val modulatorOscillatorGroup =
+        "ADD / Voice ${modulatorOscillatorOwner + 1} / Modulator oscillator"
+    val modulatorMagnitudes = snapshotValues.filter {
+        it.descriptor.group == "$modulatorOscillatorGroup harmonics"
+    }
+    val modulatorPhases = snapshotValues.filter {
+        it.descriptor.group == "$modulatorOscillatorGroup phases"
+    }
+    val modulatorMagnitudeType = snapshotValues.firstOrNull {
+        it.descriptor.group == modulatorOscillatorGroup &&
+            it.descriptor.path.endsWith("/magnitudeType")
+    }?.value?.roundToInt() ?: 0
+    val modulatorPhase = values.firstOrNull {
+        it.descriptor.path.endsWith("/modPhase")
+    }?.value?.roundToInt() ?: 0
+    Column(
+        modifier.verticalScroll(scrollState).padding(7.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+            voiceEditorSections.forEach { section ->
                 val selected = values.filter { value ->
                     val group = value.descriptor.group
-                    val voiceRoot = "ADD / Voice ${state.selectedVoice + 1}"
                     when (section) {
                         "Voice" -> group.endsWith("/ Voice") &&
                             !value.descriptor.path.endsWith("/resonance")
-                        "Voice Oscillator" -> group.endsWith("/ Voice Oscillator") &&
+                        "Oscillator" -> group.endsWith("/ Voice Oscillator") &&
                             (state.selectedVoice > 0 ||
                                 !value.descriptor.path.endsWith("/externalOscillator"))
                         "Amplitude" -> group == "$voiceRoot / Amplitude" ||
@@ -485,11 +677,23 @@ private fun AddVoiceDetailScreen(
                     }
                 }.distinctBy { it.descriptor.path }
                 if (selected.isNotEmpty()) {
-                    ZynVoiceSection(section) {
-                        if (section == "Voice Oscillator") {
+                    ZynVoiceSection(
+                        title = section,
+                        modifier = Modifier.onGloballyPositioned {
+                            onSectionPosition(section, it.positionInParent().y.roundToInt())
+                        },
+                    ) {
+                        if (section == "Oscillator") {
                             Surface(
                                 modifier = Modifier.fillMaxWidth().height(118.dp)
-                                    .clickable(onClick = onOpenOscillator),
+                                    .clickable {
+                                        onOpenOscillator(
+                                            OscillatorEditorTarget(
+                                                OscillatorEditorKind.Voice,
+                                                state.selectedVoice,
+                                            )
+                                        )
+                                    },
                                 color = Color(0xFF10262C),
                                 border = BorderStroke(1.dp, Color(0xFF2E6973)),
                                 shape = RoundedCornerShape(8.dp),
@@ -515,6 +719,63 @@ private fun AddVoiceDetailScreen(
                                 }
                             }
                         }
+                        if (section == "Modulation") {
+                            if (externalModulator > 0) {
+                                Text(
+                                    "External modulator: Voice $externalModulator · internal frequency and oscillator disabled",
+                                    color = Color(0xFFFFB74D),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    modifier = Modifier.padding(horizontal = 3.dp),
+                                )
+                            }
+                            Row(
+                                Modifier.fillMaxWidth().padding(horizontal = 3.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                            ) {
+                                Text(
+                                    if (externalModOscillator > 0) {
+                                        "Oscillator shared from Voice $externalModOscillator"
+                                    } else "Internal modulator oscillator",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    style = MaterialTheme.typography.labelMedium,
+                                )
+                                Text(
+                                    "Phase $modulatorPhase",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    style = MaterialTheme.typography.labelMedium,
+                                )
+                            }
+                            Box(
+                                Modifier.fillMaxWidth().height(118.dp)
+                                    .alpha(if (externalModulator > 0) .45f else 1f)
+                                    .clickable(enabled = externalModulator == 0) {
+                                        onOpenOscillator(
+                                            OscillatorEditorTarget(
+                                                OscillatorEditorKind.Modulator,
+                                                modulatorOscillatorOwner,
+                                            )
+                                        )
+                                    },
+                            ) {
+                                OscillatorPreview(
+                                    modulatorMagnitudes,
+                                    modulatorPhases,
+                                    modulatorMagnitudeType,
+                                    Modifier.fillMaxSize(),
+                                )
+                                Surface(
+                                    modifier = Modifier.align(Alignment.TopEnd).padding(5.dp),
+                                    color = Color(0xCC18383E),
+                                    shape = RoundedCornerShape(5.dp),
+                                ) {
+                                    Text(
+                                        if (externalModulator > 0) "Oscillator inactive" else "Edit modulator oscillator ↗",
+                                        color = Color(0xFF8EF5EE),
+                                        modifier = Modifier.padding(6.dp),
+                                    )
+                                }
+                            }
+                        }
                         if (section == "Unison") {
                             val spread = selected.firstOrNull { it.descriptor.path.endsWith("/spread") }
                             val size = selected.firstOrNull { it.descriptor.path.endsWith("/unison") }
@@ -531,7 +792,9 @@ private fun AddVoiceDetailScreen(
                                 )
                             }
                         }
-                        selected.groupBy { it.descriptor.group }.forEach { (group, parameters) ->
+                        selected.groupBy { it.descriptor.group }.entries
+                            .sortedBy { voiceGroupOrder(section, it.key) }
+                            .forEach { (group, parameters) ->
                             val subsection = group.substringAfterLast('/').trim()
                             if (subsection != section && subsection !in setOf("Voice", "Amplitude", "Frequency", "Filter", "Modulation")) {
                                 Text(
@@ -548,6 +811,10 @@ private fun AddVoiceDetailScreen(
                                 onWrite = model::write,
                                 verticalLabels = true,
                                 onLongPress = { model.reset(it) },
+                                enabled = { parameter ->
+                                    externalModulator == 0 || section != "Modulation" ||
+                                        !isInternalModulatorFrequencyParameter(parameter.descriptor.path)
+                                },
                                 valueText = {
                                     if (it.descriptor.path.endsWith("/detune")) {
                                         "%.2f".format((it.value - 8192.0) / 8192.0 * 100.0)
@@ -560,8 +827,39 @@ private fun AddVoiceDetailScreen(
                     }
                 }
             }
-        }
     }
+}
+
+private fun voiceGroupOrder(section: String, group: String): Int = when (section) {
+    "Amplitude" -> when {
+        group.endsWith("/ Amplitude") -> 0
+        group.endsWith("/ Envelope") -> 1
+        else -> 2
+    }
+    "Frequency" -> when {
+        group.endsWith("/ Frequency") -> 0
+        group.endsWith("/ Envelope") -> 1
+        else -> 2
+    }
+    "Filter" -> when {
+        group.endsWith("/ Filter") -> 0
+        group.endsWith("/ Envelope") -> 1
+        else -> 2
+    }
+    "Modulation" -> when {
+        group.endsWith("/ Modulation") -> 0
+        group.endsWith("/ Amplitude envelope") -> 1
+        else -> 2
+    }
+    else -> 0
+}
+
+private fun isInternalModulatorFrequencyParameter(path: String): Boolean {
+    val field = path.substringAfterLast('/')
+    return path.contains("/modFreqEnvelope/") || field in setOf(
+        "externalModOscillator", "modPhase", "modFixedFreq", "modDetune",
+        "modOctave", "modCoarse", "modDetuneType", "modFreqEnvelopeEnabled",
+    )
 }
 
 private fun voiceParameterOrder(section: String, group: String, path: String): Int {
@@ -589,6 +887,32 @@ private fun voiceParameterOrder(section: String, group: String, path: String): I
             "freqLfoEnabled", "frequency", "depth", "start", "delay", "stretch", "continuous",
             "amplitudeRandom", "frequencyRandom", "waveform"
         )
+        section == "Filter" && group.endsWith("/ Filter") -> listOf(
+            "filter", "bypassGlobalFilter", "filterCategory", "filterType", "filterCutoff",
+            "filterQ", "filterStages", "filterTracking", "filterGain", "filterCombHpf",
+            "filterCombLpf", "filterVelocityAmount", "filterVelocity",
+        )
+        section == "Filter" && group.endsWith("/ Envelope") -> listOf(
+            "filterEnvelopeEnabled", "attackValue", "attackTime", "decayValue", "decayTime",
+            "releaseTime", "releaseValue", "stretch", "forceRelease",
+        )
+        section == "Filter" && group.endsWith("/ LFO") -> listOf(
+            "filterLfoEnabled", "frequency", "depth", "start", "delay", "stretch", "continuous",
+            "amplitudeRandom", "frequencyRandom", "waveform",
+        )
+        section == "Modulation" && group.endsWith("/ Modulation") -> listOf(
+            "fmType", "sync", "externalModulator", "externalModOscillator", "modPhase",
+            "modVolume", "modVelocity", "modDamping", "modFixedFreq", "modDetune",
+            "modOctave", "modCoarse", "modDetuneType", "modAmpEnvelopeEnabled",
+            "modFreqEnvelopeEnabled",
+        )
+        section == "Modulation" && group.endsWith("/ Amplitude envelope") -> listOf(
+            "attackValue", "attackTime", "decayValue", "decayTime", "sustain",
+            "releaseTime", "releaseValue", "stretch", "forceRelease",
+        )
+        section == "Modulation" && group.endsWith("/ Frequency envelope") -> listOf(
+            "attackValue", "attackTime", "releaseTime", "releaseValue", "stretch", "forceRelease",
+        )
         else -> emptyList()
     }
     val index = order.indexOf(field)
@@ -596,8 +920,12 @@ private fun voiceParameterOrder(section: String, group: String, path: String): I
 }
 
 @Composable
-private fun ZynVoiceSection(title: String, content: @Composable () -> Unit) {
-    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+private fun ZynVoiceSection(
+    title: String,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(title.uppercase(), color = Color(0xFF66F0E9), style = MaterialTheme.typography.labelSmall)
             Spacer(Modifier.width(7.dp))
@@ -612,50 +940,310 @@ private fun ZynVoiceSection(title: String, content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun AddOscillatorEditorScreen(model: InstrumentEditorViewModel, onBack: () -> Unit) {
+private fun AddOscillatorEditorScreen(
+    model: InstrumentEditorViewModel,
+    target: OscillatorEditorTarget,
+    modifier: Modifier = Modifier,
+    scrollState: ScrollState,
+    onSectionPosition: (String, Int) -> Unit,
+) {
     val values = model.state.snapshot?.values.orEmpty()
-    val voice = model.state.selectedVoice
-    val group = "ADD / Voice ${voice + 1} / Oscillator"
+    val modulator = target.kind == OscillatorEditorKind.Modulator
+    val group = "ADD / Voice ${target.ownerVoice + 1} / " +
+        if (modulator) "Modulator oscillator" else "Oscillator"
     val controls = values.filter { it.descriptor.group == group }
     val magnitudes = values.filter { it.descriptor.group == "$group harmonics" }
     val phases = values.filter { it.descriptor.group == "$group phases" }
-    Column(Modifier.fillMaxSize()) {
-        EditorSubScreenHeader("Voice ${voice + 1} oscillator", onBack)
-        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(7.dp)) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                OscillatorPreview(
-                    magnitudes,
-                    phases,
-                    controls.firstOrNull { it.descriptor.path.endsWith("/magnitudeType") }
-                        ?.value?.roundToInt() ?: 0,
-                    Modifier.weight(1f).height(150.dp),
+    var selectedHarmonic by remember(target) { mutableStateOf(0) }
+    var editedParameter by remember { mutableStateOf<SynthEngine.ParameterValue?>(null) }
+    val magnitude = magnitudes.getOrNull(selectedHarmonic)
+    val phase = phases.getOrNull(selectedHarmonic)
+    val field: (SynthEngine.ParameterValue) -> String = {
+        it.descriptor.path.substringAfterLast('/')
+    }
+    val outputControls = controls.filter { field(it) in setOf("magnitudeType", "randomness") }
+    val baseControls = controls.filter { field(it) in setOf("baseFunction", "baseShape") }
+    val shapingControls = controls.filter { field(it) == "waveshape" }
+    val filterControls = controls.filter { field(it) in setOf("filterType", "filter1", "filter2") }
+    val positionSection: (String) -> Modifier = { section ->
+        Modifier.onGloballyPositioned {
+            onSectionPosition(section, it.positionInParent().y.roundToInt())
+        }
+    }
+
+    BoxWithConstraints(modifier) {
+        val scrollBottomPadding = (maxHeight - 180.dp).coerceAtLeast(112.dp)
+        Column(
+            Modifier.fillMaxSize().verticalScroll(scrollState).padding(vertical = 7.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            if (target.ownerVoice != model.state.selectedVoice) {
+                Text(
+                    "Shared from Voice ${target.ownerVoice + 1}",
+                    color = Color(0xFFFFB74D),
+                    style = MaterialTheme.typography.labelMedium,
+                    modifier = Modifier.padding(horizontal = 7.dp),
                 )
-                BaseFunctionPreview(controls, Modifier.weight(1f).height(150.dp))
             }
-            Spacer(Modifier.height(6.dp))
-            DenseParameterGrid(controls, model::write) { model.reset(it) }
-            Text("HARMONICS", color = Color(0xFF66F0E9), modifier = Modifier.padding(vertical = 5.dp))
-            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                magnitudes.forEachIndexed { index, magnitude ->
-                    val phase = phases.getOrNull(index)
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        androidx.compose.material3.Slider(
-                            value = magnitude.value.toFloat(),
-                            onValueChange = { model.write(magnitude, it.toDouble()) },
-                            valueRange = 0f..127f,
-                            modifier = Modifier.width(76.dp),
+            ZynVoiceSection(
+                "Base + output preview",
+                modifier = positionSection("Preview").padding(horizontal = 7.dp),
+            ) {
+                OscillatorPreviewPanel(
+                    magnitudes = magnitudes,
+                    phases = phases,
+                    controls = controls,
+                    modifier = Modifier.fillMaxWidth().height(210.dp),
+                )
+            }
+
+            listOf(
+                "Output" to outputControls,
+                "Base function" to baseControls,
+                "Shape & filter" to (shapingControls + filterControls),
+            ).forEach { (title, parameters) ->
+                if (parameters.isNotEmpty()) {
+                    ZynVoiceSection(
+                        title,
+                        modifier = positionSection(title).padding(horizontal = 7.dp),
+                    ) {
+                        DenseParameterGrid(
+                            parameters = parameters,
+                            onWrite = model::write,
+                            onLongPress = { editedParameter = it },
                         )
-                        phase?.let {
-                            androidx.compose.material3.Slider(
-                                value = it.value.toFloat(),
-                                onValueChange = { v -> model.write(it, v.toDouble()) },
-                                valueRange = 0f..127f,
-                                modifier = Modifier.width(76.dp),
-                            )
-                        }
-                        Text("${index + 1}", style = MaterialTheme.typography.labelSmall)
                     }
                 }
+            }
+
+            ZynVoiceSection("Harmonics", modifier = positionSection("Harmonics")) {
+                if (magnitude != null && phase != null) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 7.dp),
+                        horizontalArrangement = Arrangement.spacedBy(5.dp),
+                    ) {
+                        HarmonicKnobCard(
+                            label = "Harmonic #",
+                            value = (selectedHarmonic + 1).toFloat(),
+                            minimum = 1f,
+                            maximum = magnitudes.size.coerceAtLeast(1).toFloat(),
+                            onValueChange = {
+                                selectedHarmonic = it.roundToInt().minus(1)
+                                    .coerceIn(magnitudes.indices)
+                            },
+                            modifier = Modifier.weight(1f),
+                        )
+                        HarmonicKnobCard(
+                            label = "Magnitude",
+                            value = magnitude.value.toFloat(),
+                            minimum = magnitude.descriptor.minimum.toFloat(),
+                            maximum = magnitude.descriptor.maximum.toFloat(),
+                            onValueChange = { model.write(magnitude, it.roundToInt().toDouble()) },
+                            modifier = Modifier.weight(1f),
+                        )
+                        HarmonicKnobCard(
+                            label = "Phase",
+                            value = phase.value.toFloat(),
+                            minimum = phase.descriptor.minimum.toFloat(),
+                            maximum = phase.descriptor.maximum.toFloat(),
+                            onValueChange = { model.write(phase, it.roundToInt().toDouble()) },
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
+                Text(
+                    "Swipe ↔ harmonic · ↕ magnitude · all ${magnitudes.size}",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.labelMedium,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp),
+                )
+                HarmonicOverview(
+                    magnitudes = magnitudes,
+                    selected = selectedHarmonic,
+                    onSelect = { selectedHarmonic = it },
+                    onMagnitudeChange = { index, value ->
+                        magnitudes.getOrNull(index)?.let { model.write(it, value) }
+                    },
+                    modifier = Modifier.fillMaxWidth().height(150.dp),
+                )
+                if (magnitude != null && phase != null) {
+                    OutlinedButton(
+                        onClick = {
+                            model.reset(magnitude)
+                            model.reset(phase)
+                        },
+                        modifier = Modifier.padding(horizontal = 7.dp),
+                    ) { Text("Reset harmonic ${selectedHarmonic + 1}") }
+                }
+            }
+            Spacer(Modifier.height(scrollBottomPadding))
+        }
+        if (scrollState.value > 120) {
+            OscillatorPreviewPanel(
+                magnitudes = magnitudes,
+                phases = phases,
+                controls = controls,
+                modifier = Modifier.align(Alignment.BottomCenter)
+                    .fillMaxWidth().height(112.dp).padding(horizontal = 7.dp, vertical = 4.dp),
+            )
+        }
+    }
+
+    editedParameter?.let { parameter ->
+        ParameterEditSheet(
+            parameter = parameter,
+            onDismiss = { editedParameter = null },
+            onValue = { model.write(parameter, it) },
+            onReset = { model.reset(parameter) },
+        )
+    }
+}
+
+@Composable
+private fun HarmonicKnobCard(
+    label: String,
+    value: Float,
+    minimum: Float,
+    maximum: Float,
+    onValueChange: (Float) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier,
+        color = Color(0xFF162D33),
+        shape = RoundedCornerShape(7.dp),
+        border = BorderStroke(1.dp, Color(0xFF274B54)),
+    ) {
+        Column(
+            Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 6.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            TinyKnob(
+                label = "",
+                value = value,
+                min = minimum,
+                max = maximum,
+                sensitivity = KnobSensitivity.Adjust,
+                onValueChange = onValueChange,
+            )
+            Text(label, style = MaterialTheme.typography.labelSmall, maxLines = 1)
+        }
+    }
+}
+
+@Composable
+private fun OscillatorPreviewPanel(
+    magnitudes: List<SynthEngine.ParameterValue>,
+    phases: List<SynthEngine.ParameterValue>,
+    controls: List<SynthEngine.ParameterValue>,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier,
+        color = Color.Black,
+        border = BorderStroke(1.dp, Color(0xFF2E6973)),
+        shape = RoundedCornerShape(8.dp),
+    ) {
+        Box(Modifier.fillMaxSize()) {
+            CombinedOscillatorPreview(
+                magnitudes = magnitudes,
+                phases = phases,
+                controls = controls,
+                modifier = Modifier.fillMaxSize(),
+            )
+            Row(
+                modifier = Modifier.align(Alignment.TopEnd).padding(7.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Text("Base", color = Color(0xFF65F55D), style = MaterialTheme.typography.labelSmall)
+                Text("Output", color = Color(0xFFFF4D57), style = MaterialTheme.typography.labelSmall)
+            }
+        }
+    }
+}
+
+@Composable
+private fun HarmonicOverview(
+    magnitudes: List<SynthEngine.ParameterValue>,
+    selected: Int,
+    onSelect: (Int) -> Unit,
+    onMagnitudeChange: (Int, Double) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var size by remember { mutableStateOf(IntSize.Zero) }
+    val currentSelected by rememberUpdatedState(selected)
+    val currentMagnitudes by rememberUpdatedState(magnitudes)
+    val currentOnSelect by rememberUpdatedState(onSelect)
+    val currentOnMagnitudeChange by rememberUpdatedState(onMagnitudeChange)
+    Canvas(
+        modifier.onSizeChanged { size = it }.pointerInput(magnitudes.size, size) {
+            var accumulatedHorizontalDrag = 0f
+            var dragSelection = currentSelected
+            var dragMagnitude = currentMagnitudes.getOrNull(dragSelection)?.value ?: 64.0
+            detectDragGestures(
+                onDragStart = {
+                    accumulatedHorizontalDrag = 0f
+                    dragSelection = currentSelected
+                    dragMagnitude = currentMagnitudes.getOrNull(dragSelection)?.value ?: 64.0
+                },
+                onDrag = { change, dragAmount ->
+                    if (magnitudes.isNotEmpty() && size.width > 0) {
+                        change.consume()
+                        accumulatedHorizontalDrag += dragAmount.x
+                        val stepWidth = (size.width / 24f).coerceAtLeast(8f)
+                        val steps = (accumulatedHorizontalDrag / stepWidth).toInt()
+                        if (steps != 0) {
+                            dragSelection = (dragSelection + steps).coerceIn(magnitudes.indices)
+                            currentOnSelect(dragSelection)
+                            dragMagnitude = currentMagnitudes.getOrNull(dragSelection)?.value ?: 64.0
+                            accumulatedHorizontalDrag -= steps * stepWidth
+                        }
+                        if (size.height > 0 && dragAmount.y != 0f) {
+                            val descriptor = currentMagnitudes.getOrNull(dragSelection)?.descriptor
+                            val minimum = descriptor?.minimum ?: 0.0
+                            val maximum = descriptor?.maximum ?: 127.0
+                            dragMagnitude = (dragMagnitude - dragAmount.y / size.height * (maximum - minimum))
+                                .coerceIn(minimum, maximum)
+                            currentOnMagnitudeChange(dragSelection, dragMagnitude.roundToInt().toDouble())
+                        }
+                    }
+                },
+                onDragEnd = { accumulatedHorizontalDrag = 0f },
+                onDragCancel = { accumulatedHorizontalDrag = 0f },
+            )
+        }
+    ) {
+        drawRect(Color(0xFF050A0C))
+        val centerY = size.height / 2f
+        drawLine(
+            Color(0xFF31515A),
+            start = androidx.compose.ui.geometry.Offset(0f, centerY),
+            end = androidx.compose.ui.geometry.Offset(size.width.toFloat(), centerY),
+            strokeWidth = 1f,
+        )
+        if (magnitudes.isNotEmpty()) {
+            val slot = size.width / magnitudes.size
+            magnitudes.forEachIndexed { index, harmonic ->
+                val normalized = ((harmonic.value - 64.0) / 63.0).coerceIn(-1.0, 1.0).toFloat()
+                val x = slot * (index + .5f)
+                val y = centerY - normalized * centerY * .88f
+                drawLine(
+                    color = Color(0xFF23434B),
+                    start = androidx.compose.ui.geometry.Offset(x, centerY * .12f),
+                    end = androidx.compose.ui.geometry.Offset(x, centerY * 1.88f),
+                    strokeWidth = maxOf(1f, slot * .16f),
+                )
+                drawLine(
+                    color = if (index == selected) Color(0xFFFFC857) else Color(0xFF36C5C9),
+                    start = androidx.compose.ui.geometry.Offset(x, centerY),
+                    end = androidx.compose.ui.geometry.Offset(x, y),
+                    strokeWidth = if (index == selected) maxOf(3f, slot * .8f) else maxOf(1f, slot * .55f),
+                )
+                drawCircle(
+                    color = if (index == selected) Color(0xFFFFC857) else Color(0xFF36C5C9),
+                    radius = if (index == selected) maxOf(2.5f, slot * .42f) else maxOf(1.2f, slot * .2f),
+                    center = androidx.compose.ui.geometry.Offset(x, y),
+                )
             }
         }
     }
@@ -664,11 +1252,9 @@ private fun AddOscillatorEditorScreen(model: InstrumentEditorViewModel, onBack: 
 @Composable
 private fun AddResonanceEditorScreen(
     model: InstrumentEditorViewModel,
-    heldNotes: Set<Int>,
-    keyboardOctaveShift: Int,
-    onPressKeyboardNote: (Int) -> Unit,
-    onReleaseKeyboardNote: (Int) -> Unit,
-    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
+    scrollState: ScrollState,
+    onSectionPosition: (String, Int) -> Unit,
 ) {
     val values = model.state.snapshot?.values.orEmpty()
     val controls = values.filter { it.descriptor.group == "ADD / Resonance" }
@@ -680,16 +1266,18 @@ private fun AddResonanceEditorScreen(
     val protect = controls.firstOrNull { it.descriptor.path.endsWith("/protectFundamental") }
     var graphSize by remember { mutableStateOf(IntSize.Zero) }
 
-    Column(Modifier.fillMaxSize()) {
-        EditorSubScreenHeader("ADsynth Resonance", onBack)
-        Column(
-            Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(7.dp),
-            verticalArrangement = Arrangement.spacedBy(7.dp),
-        ) {
+    Column(
+        modifier.verticalScroll(scrollState).padding(7.dp),
+        verticalArrangement = Arrangement.spacedBy(7.dp),
+    ) {
             ResonanceCurve(
                 points = points,
                 enabled = enabled?.value?.let { it >= .5 } == true,
-                modifier = Modifier.fillMaxWidth().height(260.dp).onSizeChanged { graphSize = it }.pointerInput(graphSize) {
+                modifier = Modifier.fillMaxWidth().height(260.dp)
+                    .onGloballyPositioned {
+                        onSectionPosition("Curve", it.positionInParent().y.roundToInt())
+                    }
+                    .onSizeChanged { graphSize = it }.pointerInput(graphSize) {
                     fun write(positionX: Float, positionY: Float) {
                         if (graphSize.width <= 0 || graphSize.height <= 0 || points.isEmpty()) return
                         val index = ((positionX / graphSize.width) * (points.size - 1))
@@ -732,33 +1320,31 @@ private fun AddResonanceEditorScreen(
                 }
             }
             val resonanceControls = listOfNotNull(enabled, maxDb, center, octaves, protect)
-            DenseParameterGrid(
-                parameters = resonanceControls,
-                onWrite = model::write,
-                verticalLabels = true,
-                onLongPress = { model.reset(it) },
-                valueText = { parameter ->
-                    when {
-                        parameter.descriptor.path.endsWith("/maxDb") ->
-                            parameter.value.roundToInt().toString()
-                        parameter.descriptor.path.endsWith("/center") -> {
-                            val hz = 10000.0 * 10.0.pow(-(1.0 - parameter.value / 127.0) * 2.0)
-                            if (hz >= 1000) "%.1fk".format(hz / 1000) else "%.0f".format(hz)
-                        }
-                        parameter.descriptor.path.endsWith("/octaves") ->
-                            "%.1f".format(0.25 + 10.0 * parameter.value / 127.0)
-                        else -> parameter.value.roundToInt().toString()
-                    }
+            Box(
+                Modifier.fillMaxWidth().onGloballyPositioned {
+                    onSectionPosition("Parameters", it.positionInParent().y.roundToInt())
                 },
-            )
-        }
-        ZynClassicKeyboardStrip(
-            heldNotes = heldNotes,
-            octaveShift = keyboardOctaveShift,
-            onPress = onPressKeyboardNote,
-            onRelease = onReleaseKeyboardNote,
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 7.dp, vertical = 4.dp),
-        )
+            ) {
+                DenseParameterGrid(
+                    parameters = resonanceControls,
+                    onWrite = model::write,
+                    verticalLabels = true,
+                    onLongPress = { model.reset(it) },
+                    valueText = { parameter ->
+                        when {
+                            parameter.descriptor.path.endsWith("/maxDb") ->
+                                parameter.value.roundToInt().toString()
+                            parameter.descriptor.path.endsWith("/center") -> {
+                                val hz = 10000.0 * 10.0.pow(-(1.0 - parameter.value / 127.0) * 2.0)
+                                if (hz >= 1000) "%.1fk".format(hz / 1000) else "%.0f".format(hz)
+                            }
+                            parameter.descriptor.path.endsWith("/octaves") ->
+                                "%.1f".format(0.25 + 10.0 * parameter.value / 127.0)
+                            else -> parameter.value.roundToInt().toString()
+                        }
+                    },
+                )
+            }
     }
 }
 
@@ -790,16 +1376,6 @@ private fun ResonanceCurve(
                 if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
             }
             drawPath(path, curveColor, style = androidx.compose.ui.graphics.drawscope.Stroke(2.5f))
-        }
-    }
-}
-
-@Composable
-private fun EditorSubScreenHeader(title: String, onBack: () -> Unit) {
-    Surface(color = Color(0xFF102329)) {
-        Row(Modifier.fillMaxWidth().padding(6.dp), verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = onBack) { Text("‹ Back") }
-            Text(title, color = Color(0xFF8EF5EE), style = MaterialTheme.typography.titleMedium)
         }
     }
 }
@@ -881,20 +1457,167 @@ private fun OscillatorPreview(
 }
 
 @Composable
-private fun BaseFunctionPreview(controls: List<SynthEngine.ParameterValue>, modifier: Modifier) {
-    val shape = controls.firstOrNull { it.descriptor.path.endsWith("/osc/baseShape") }?.value ?: 64.0
+private fun CombinedOscillatorPreview(
+    magnitudes: List<SynthEngine.ParameterValue>,
+    phases: List<SynthEngine.ParameterValue>,
+    controls: List<SynthEngine.ParameterValue>,
+    modifier: Modifier,
+) {
+    val control: (String, Double) -> Double = { field, fallback ->
+        controls.firstOrNull { it.descriptor.path.substringAfterLast('/') == field }?.value ?: fallback
+    }
+    val baseFunction = control("baseFunction", 0.0).roundToInt()
+    val baseShape = control("baseShape", 64.0)
+    val magnitudeType = control("magnitudeType", 0.0).roundToInt()
+    val waveshape = control("waveshape", 64.0)
+    val filterType = control("filterType", 0.0).roundToInt()
+    val filter1 = control("filter1", 64.0)
+    val filter2 = control("filter2", 64.0)
     Canvas(modifier) {
-        drawRect(Color.Black)
-        val path = Path()
-        repeat(128) { x ->
-            val px = size.width * x / 127f
-            val power = .5 + shape / 64.0
-            val y = kotlin.math.sin(x / 127.0 * Math.PI * 2)
-            val shaped = kotlin.math.sign(y) * kotlin.math.abs(y).pow(power)
-            val py = size.height * (.5f - shaped.toFloat() * .42f)
-            if (x == 0) path.moveTo(px, py) else path.lineTo(px, py)
+        drawRect(Color(0xFF050A0C))
+        repeat(9) { line ->
+            val x = size.width * line / 8f
+            drawLine(
+                Color(0xFF31515A),
+                start = androidx.compose.ui.geometry.Offset(x, 0f),
+                end = androidx.compose.ui.geometry.Offset(x, size.height),
+                strokeWidth = 1f,
+            )
         }
-        drawPath(path, Color.Green, style = androidx.compose.ui.graphics.drawscope.Stroke(2f))
+        repeat(5) { line ->
+            val y = size.height * line / 4f
+            drawLine(
+                Color(0xFF31515A),
+                start = androidx.compose.ui.geometry.Offset(0f, y),
+                end = androidx.compose.ui.geometry.Offset(size.width, y),
+                strokeWidth = 1f,
+            )
+        }
+        val sampleCount = 256
+        val baseSamples = DoubleArray(sampleCount) { index ->
+            oscillatorBaseSample(
+                type = baseFunction,
+                shape = baseShape,
+                phase = index.toDouble() / (sampleCount - 1),
+            )
+        }
+        val outputSamples = DoubleArray(sampleCount)
+        outputSamples.indices.forEach { index ->
+            val cycle = index.toDouble() / (sampleCount - 1)
+            var sample = 0.0
+            magnitudes.forEachIndexed { harmonic, parameter ->
+                val amplitude = harmonicAmplitude(parameter.value, magnitudeType)
+                if (amplitude == 0.0) return@forEachIndexed
+                val phase = ((phases.getOrNull(harmonic)?.value ?: 64.0) - 64.0) / 64.0
+                sample += amplitude * oscillatorFilterGain(
+                    type = filterType,
+                    harmonic = harmonic,
+                    harmonicCount = magnitudes.size,
+                    parameter1 = filter1,
+                    parameter2 = filter2,
+                ) * oscillatorBaseSample(
+                    type = baseFunction,
+                    shape = baseShape,
+                    phase = (harmonic + 1) * cycle + phase,
+                )
+            }
+            outputSamples[index] = sample
+        }
+        val peak = outputSamples.maxOfOrNull { kotlin.math.abs(it) }?.coerceAtLeast(.00001) ?: 1.0
+        outputSamples.indices.forEach { index ->
+            val normalized = outputSamples[index] / peak
+            outputSamples[index] = when {
+                waveshape > 64.0 -> {
+                    val drive = 1.0 + (waveshape - 64.0) / 10.0
+                    kotlin.math.tanh(normalized * drive) / kotlin.math.tanh(drive)
+                }
+                waveshape < 64.0 -> kotlin.math.sign(normalized) *
+                    kotlin.math.abs(normalized).pow(1.0 + (64.0 - waveshape) / 32.0)
+                else -> normalized
+            }
+        }
+        fun drawSamples(samples: DoubleArray, color: Color, strokeWidth: Float) {
+            val path = Path()
+            samples.forEachIndexed { index, sample ->
+                val px = size.width * index / (samples.size - 1)
+                val py = size.height * (.5f - sample.coerceIn(-1.0, 1.0).toFloat() * .42f)
+                if (index == 0) path.moveTo(px, py) else path.lineTo(px, py)
+            }
+            drawPath(path, color, style = androidx.compose.ui.graphics.drawscope.Stroke(strokeWidth))
+        }
+        drawSamples(baseSamples, Color(0xFF65F55D), 5f)
+        drawSamples(outputSamples, Color(0xFFFF4D57), 2.5f)
+    }
+}
+
+private fun harmonicAmplitude(rawMagnitude: Double, magnitudeType: Int): Double {
+    if (rawMagnitude == 64.0) return 0.0
+    val normalizedDistance = 1.0 - kotlin.math.abs(rawMagnitude / 64.0 - 1.0)
+    val amplitude = when (magnitudeType) {
+        1 -> kotlin.math.exp(normalizedDistance * kotlin.math.ln(0.01))
+        2 -> kotlin.math.exp(normalizedDistance * kotlin.math.ln(0.001))
+        3 -> kotlin.math.exp(normalizedDistance * kotlin.math.ln(0.0001))
+        4 -> kotlin.math.exp(normalizedDistance * kotlin.math.ln(0.00001))
+        else -> 1.0 - normalizedDistance
+    }
+    return amplitude * if (rawMagnitude < 64.0) -1.0 else 1.0
+}
+
+private fun oscillatorBaseSample(type: Int, shape: Double, phase: Double): Double {
+    val cycle = phase - kotlin.math.floor(phase)
+    val amount = ((shape + .5) / 128.0).coerceIn(.01, .99)
+    val sine = kotlin.math.sin(cycle * Math.PI * 2.0)
+    return when (type) {
+        1 -> 1.0 - 4.0 * kotlin.math.abs(cycle - .5)
+        2 -> if (cycle < amount) 1.0 else -1.0
+        3 -> cycle * 2.0 - 1.0
+        4 -> kotlin.math.sign(sine) * kotlin.math.abs(sine).pow(.15 + amount * 3.5)
+        5 -> 2.0 * kotlin.math.exp(-(((cycle - .5) / (.08 + amount * .32)).pow(2.0))) - 1.0
+        6 -> (sine + (amount * 2.0 - 1.0)).coerceAtLeast(0.0) * 2.0 - 1.0
+        7 -> kotlin.math.abs(sine) * 2.0 - 1.0
+        8 -> sine * if (cycle < amount) 1.0 else -1.0
+        9 -> kotlin.math.sin(cycle.pow(.35 + amount * 2.5) * Math.PI * 2.0)
+        10 -> kotlin.math.sin((cycle + cycle * cycle * amount * 5.0) * Math.PI * 2.0)
+        11 -> kotlin.math.abs(kotlin.math.sin(cycle.pow(.35 + amount * 2.5) * Math.PI * 2.0)) * 2.0 - 1.0
+        12 -> kotlin.math.cos((1 + (amount * 10).roundToInt()) * kotlin.math.acos(sine.coerceIn(-1.0, 1.0)))
+        13 -> if (sine >= 0.0) 1.0 else -1.0
+        14 -> kotlin.math.sign(sine) * kotlin.math.exp(-(1.0 - kotlin.math.abs(sine)) * (4.0 + amount * 24.0))
+        15 -> {
+            val x = cycle * 2.0 - 1.0
+            kotlin.math.sign(sine) * kotlin.math.sqrt((1.0 - x * x).coerceAtLeast(0.0))
+        }
+        else -> sine
+    }
+}
+
+private fun oscillatorFilterGain(
+    type: Int,
+    harmonic: Int,
+    harmonicCount: Int,
+    parameter1: Double,
+    parameter2: Double,
+): Double {
+    if (type == 0) return 1.0
+    val frequency = (harmonic + 1).toDouble() / harmonicCount.coerceAtLeast(1)
+    val center = (1.0 - parameter1 / 127.0).coerceIn(.01, .99)
+    val width = (.03 + parameter2 / 127.0 * .45).coerceAtMost(.5)
+    val lowPass = 1.0 / (1.0 + (frequency / center).pow(4.0))
+    val highPass = 1.0 - lowPass
+    val bandPass = kotlin.math.exp(-(((frequency - center) / width).pow(2.0)))
+    return when (type) {
+        1 -> kotlin.math.sqrt(lowPass)
+        2, 13 -> lowPass
+        3 -> kotlin.math.sqrt(highPass)
+        4 -> highPass
+        5 -> kotlin.math.sqrt(bandPass)
+        6 -> bandPass
+        7 -> kotlin.math.abs(kotlin.math.cos(frequency * Math.PI * (1.0 + parameter2 / 16.0)))
+        8 -> kotlin.math.abs(kotlin.math.sin(frequency * Math.PI * (1.0 + parameter2 / 16.0)))
+        9 -> .35 + .65 * lowPass
+        10 -> .2 + .8 / (1.0 + kotlin.math.exp((frequency - center) / width * 8.0))
+        11 -> .25 + .75 * kotlin.math.abs(kotlin.math.cos(frequency * Math.PI / width))
+        12 -> .15 + .85 * bandPass
+        else -> 1.0
     }
 }
 
@@ -1032,6 +1755,7 @@ private fun DenseParameterGrid(
     onWrite: (SynthEngine.ParameterValue, Double) -> Unit,
     verticalLabels: Boolean = false,
     valueText: (SynthEngine.ParameterValue) -> String = { it.value.roundToInt().toString() },
+    enabled: (SynthEngine.ParameterValue) -> Boolean = { true },
     onLongPress: (SynthEngine.ParameterValue) -> Unit,
 ) {
     BoxWithConstraints {
@@ -1059,6 +1783,7 @@ private fun DenseParameterGrid(
                                 onLongPress,
                                 verticalLabels,
                                 valueText(parameter),
+                                enabled(parameter),
                             )
                         }
                     }
@@ -1079,10 +1804,12 @@ private fun DenseParameterControl(
     onLongPress: (SynthEngine.ParameterValue) -> Unit,
     verticalLabel: Boolean = false,
     valueText: String = parameter.value.roundToInt().toString(),
+    enabled: Boolean = true,
 ) {
     val descriptor = parameter.descriptor
     Surface(
-        modifier = Modifier.fillMaxWidth().combinedClickable(
+        modifier = Modifier.fillMaxWidth().alpha(if (enabled) 1f else .45f).combinedClickable(
+            enabled = enabled,
             onClick = {
                 if (descriptor.type == SynthEngine.ParameterType.BOOLEAN) {
                     onWrite(parameter, if (parameter.value >= .5) 0.0 else 1.0)
@@ -1125,7 +1852,8 @@ private fun DenseParameterControl(
                 when (descriptor.type) {
                 SynthEngine.ParameterType.BOOLEAN -> Switch(
                     checked = parameter.value >= .5,
-                    onCheckedChange = { onWrite(parameter, if (it) 1.0 else 0.0) },
+                    onCheckedChange = { if (enabled) onWrite(parameter, if (it) 1.0 else 0.0) },
+                    enabled = enabled,
                 )
                 SynthEngine.ParameterType.ENUM -> if (verticalLabel) {
                     TinyKnob(
@@ -1134,7 +1862,9 @@ private fun DenseParameterControl(
                         min = descriptor.minimum.toFloat(),
                         max = descriptor.maximum.toFloat(),
                         sensitivity = KnobSensitivity.Adjust,
-                        onValueChange = { onWrite(parameter, it.roundToInt().toDouble()) },
+                        onValueChange = {
+                            if (enabled) onWrite(parameter, it.roundToInt().toDouble())
+                        },
                     )
                     Text(
                         descriptor.options.getOrNull(parameter.value.roundToInt())
@@ -1148,7 +1878,7 @@ private fun DenseParameterControl(
                         label = "",
                         value = descriptor.options.getOrNull(parameter.value.roundToInt())
                             ?: parameter.value.roundToInt().toString(),
-                        onClick = { onLongPress(parameter) },
+                        onClick = { if (enabled) onLongPress(parameter) },
                     )
                 }
                 SynthEngine.ParameterType.INTEGER -> TinyKnob(
@@ -1162,7 +1892,9 @@ private fun DenseParameterControl(
                         KnobSensitivity.Default
                     },
                     valueText = valueText,
-                    onValueChange = { onWrite(parameter, it.roundToInt().toDouble()) },
+                    onValueChange = {
+                        if (enabled) onWrite(parameter, it.roundToInt().toDouble())
+                    },
                 )
                 }
                     if (!verticalLabel) {
@@ -1276,6 +2008,7 @@ private fun ComplexEditorLauncher(name: String, onClick: () -> Unit) {
 }
 
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
 private fun ParameterEditSheet(
     parameter: SynthEngine.ParameterValue,
     onDismiss: () -> Unit,
@@ -1285,14 +2018,41 @@ private fun ParameterEditSheet(
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(parameter.descriptor.label, style = MaterialTheme.typography.titleMedium)
-            Text("Current: ${parameter.value.roundToInt()}")
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = { onValue(parameter.value - 1) }) { Text("−") }
-                OutlinedButton(onClick = { onValue(parameter.value + 1) }) { Text("+") }
-                Button(onClick = {
+            if (parameter.descriptor.type == SynthEngine.ParameterType.ENUM) {
+                val selected = parameter.value.roundToInt()
+                Text(
+                    parameter.descriptor.options.getOrNull(selected) ?: "Option ${selected + 1}",
+                    color = Color(0xFF8EF5EE),
+                )
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    parameter.descriptor.options.forEachIndexed { index, option ->
+                        if (index == selected) {
+                            Button(onClick = {
+                                onValue(index.toDouble())
+                                onDismiss()
+                            }) { Text(option) }
+                        } else {
+                            OutlinedButton(onClick = {
+                                onValue(index.toDouble())
+                                onDismiss()
+                            }) { Text(option) }
+                        }
+                    }
+                }
+                OutlinedButton(onClick = {
                     onReset()
                     onDismiss()
                 }) { Text("Reset") }
+            } else {
+                Text("Current: ${parameter.value.roundToInt()}")
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = { onValue(parameter.value - 1) }) { Text("−") }
+                    OutlinedButton(onClick = { onValue(parameter.value + 1) }) { Text("+") }
+                    Button(onClick = {
+                        onReset()
+                        onDismiss()
+                    }) { Text("Reset") }
+                }
             }
         }
     }

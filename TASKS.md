@@ -86,13 +86,98 @@ Le support MIDI est differe apres le MVP sans MIDI.
 - [ ] Eviter locks/allocations sur audio thread
 
 ### M5 - Refonte UX Compose complete
-- [ ] Definir navigation et ecrans (Library / Synth / Performance / Settings)
-- [ ] Composants synth (knobs/sliders/enveloppes)
-- [ ] Gestion etat via `ViewModel`
+- [x] Definir une navigation Android de base (Performance / Presets / Instrument Editor / FX)
+- [x] Composants synth de base (knobs, sliders, switches, selectors, clavier, courbes)
+- [x] Gestion etat de l’editeur via `InstrumentEditorViewModel`
 - [ ] Portrait/paysage + tablette
 - [ ] Mode clavier plein ecran avec UX audio minimale
-- [ ] UX de sauvegarde/restauration d’etat
+- [x] Export XIZ depuis l’editeur d’instrument
+- [ ] Import XIZ/banques via SAF
+- [ ] UX de sauvegarde/restauration d’etat complete
 - [ ] UX master controls, insertion/system effects, sends, microtonal configuration, MIDI mapping, and full bank management.
+
+## UI - Inventaire des ecrans natifs et parite Android
+
+Cette matrice recense les surfaces UI fonctionnelles du frontend FLTK natif (`third_party/zynaddsubfx/src/UI/`) et leur equivalent Android actuel. Les statuts sont :
+
+- **Implemente** : parcours Android utilisable et branche au moteur.
+- **Partiel** : une partie de l’ecran ou des parametres est disponible.
+- **Absent** : aucun equivalent Android complet.
+- **Hors perimetre initial** : explicitement reporte (MIDI/VST, par exemple).
+
+Les chemins Android de cette matrice suivent une notation stable :
+
+- `.` represente une navigation vers un ecran.
+- `/` represente une section ou un controleur embarque dans l'ecran parent.
+- `[]` represente une collection et indique sa cardinalite.
+
+Exemples :
+
+- ecran Voice : `Main.Part.Part[1..16].Add.Voice[1..8]` ;
+- cutoff du filtre : `Main.Part.Part[1..16].Add.Voice[1..8]/Filter/Cutoff` ;
+- preview du modulateur : `Main.Part.Part[1..16].Add.Voice[1..8]/Modulation/OscillatorPreview` ;
+- editeur ouvert au tap : `Main.Part.Part[1..16].Add.Voice[1..8].ModulatorOscillator`.
+
+### Navigation principale et performance
+
+| Surface native | Nature Android | Ecran parent Android | Chemin Android | Etat | Suite logique |
+|---|---|---|---|---|---|
+| Master / Main window | Ecran | Application | `Main` | **Partiel** | Completer effets, sends, meters, menus et etat global |
+| Simple Master window | Ecran alternatif | Application | `Main.Performance` | **Absent** | Decider si Performance remplace ce mode |
+| Panel window | Section | `Main` | `/Parts` | **Partiel** | Consolider mixer, VU et selection de partie |
+| Virtual Keyboard | Controleur | Variable | `/Keyboard` | **Implemente** | Ajouter mode plein ecran et velocity avancee |
+| Bank window / BankView | Ecran | `Main` | `.Presets` | **Partiel** | Favoris, tags, recherche et import/export |
+| PresetsUI | Dialogue / actions | Variable | `/PresetActions` | **Partiel** | Copy/paste Voice et modules, reset/undo coherent |
+| About / Copyright | Ecran | `Main` | `.About` | **Absent** | Ajouter About/Licences GPL Android |
+| ConfigUI / Settings | Ecran | `Main` | `.Settings` | **Absent** | Definir le perimetre Settings Android |
+| MicrotonalUI | Ecran | `Main` | `.Microtonal` | **Absent** | Porter apres les controles master de base |
+| NioUI | Remplacement plateforme | Application | Configuration audio Android | **Hors perimetre initial** | Remplace par Android/Oboe-AAudio |
+| MIDI learn / MIDI settings | Ecran | `Main` | `.Midi` | **Hors perimetre initial** | M7 - Android MIDI |
+
+### Editeurs d’instruments et moteurs
+
+| Surface native | Nature Android | Ecran parent Android | Chemin Android | Etat | Suite logique |
+|---|---|---|---|---|---|
+| PartUI / Instrument Kit | Ecran | `Main.Part` | `.Part[1..16]` | **Partiel** | Stabiliser Kit et activations ADD/SUB/PAD |
+| ADnoteUI - Global Parameters | Sections | `Main.Part.Part[1..16].Add` | `/Amplitude`, `/Frequency`, `/Filter` | **Partiel** | Verifier whitelist, couleurs et parite |
+| ADnoteUI - Voice list | Section / navigation | `Main.Part.Part[1..16].Add` | `/VoiceList` | **Implemente** | Affiner densite et indicateurs |
+| ADnoteUI - Voice Parameters | Ecran | `Main.Part.Part[1..16].Add` | `.Voice[1..8]` | **Partiel** | Copy/paste et champs restants |
+| Voice Filter | Section | `Main.Part.Part[1..16].Add.Voice[1..8]` | `/Filter` | **Implemente** | Editeur Formant avance differe |
+| Voice Modulator | Section | `Main.Part.Part[1..16].Add.Voice[1..8]` | `/Modulation` | **Implemente** | QA des modes et routages |
+| ADnoteUI - Voice Oscillator | Preview + ecran | `Main.Part.Part[1..16].Add.Voice[1..8]` | `/OscillatorPreview` -> `.Oscillator` | **Partiel** | OscilGen avance |
+| ADnoteUI - Modulator Oscillator | Preview + ecran | `Main.Part.Part[1..16].Add.Voice[1..8]` | `/Modulation/OscillatorPreview` -> `.ModulatorOscillator` | **Implemente** | OscilGen avance |
+| OscilGenUI / OscilEditor | Controleur d'ecran | Ecrans Oscillator | `/Parameters`, `/Harmonics`, `/Phases` | **Partiel** | Completer OscilGen et preview fidele |
+| ResonanceUI | Preview + ecran | `Main.Part.Part[1..16].Add` | `/ResonancePreview` -> `.Resonance` | **Implemente** | QA valeurs et gestes |
+| EnvelopeUI / EnvelopeFreeEdit | Controleur | Variable | `/Amplitude|Frequency|Filter|Modulation/Envelope` | **Partiel** | Mode libre et edition graphique |
+| LFOUI | Controleur | Variable | `/Amplitude|Frequency|Filter/LFO` | **Partiel** | Parite fine des instances et labels |
+| FilterUI | Section reutilisable | Variable | `/Filter` | **Partiel** | Editeur Formant avance |
+| SUBnoteUI | Ecran moteur | `Main.Part.Part[1..16]` | `.Sub` | **Partiel** | Reprendre apres ADsynth/Voice |
+| PADnoteUI | Ecran moteur | `Main.Part.Part[1..16]` | `.Pad` | **Partiel** | Completer Profile/Spectrum/Quality |
+
+### Effets et outils graphiques
+
+| Surface native | Nature Android | Ecran parent Android | Chemin Android | Etat | Suite logique |
+|---|---|---|---|---|---|
+| EffUI - Reverb | Section FX | `Main.Part.Part[1..16].Fx` | `/Fx[1..3]/Reverb` | **Partiel** | Parametres effectifs et presets |
+| EffUI - Echo | Section FX | `Main.Part.Part[1..16].Fx` | `/Fx[1..3]/Echo` | **Partiel** | Parametres effectifs et presets |
+| EffUI - Chorus/Flange | Section FX | `Main.Part.Part[1..16].Fx` | `/Fx[1..3]/Chorus` | **Partiel** | Parametres effectifs et presets |
+| EffUI - Phaser | Section FX | `Main.Part.Part[1..16].Fx` | `/Fx[1..3]/Phaser` | **Partiel** | Parametres effectifs et presets |
+| EffUI - Alienwah | Section FX | `Main.Part.Part[1..16].Fx` | `/Fx[1..3]/Alienwah` | **Partiel** | Parametres effectifs et presets |
+| EffUI - Distortion/Overdrive | Section FX | `Main.Part.Part[1..16].Fx` | `/Fx[1..3]/Distortion` | **Partiel** | Exposer les parametres natifs |
+| EffUI - EQ | Section + controleur | `Main.Part.Part[1..16].Fx` | `/Fx[1..3]/Eq` | **Partiel** | Courbe EQ et bandes |
+| EffUI - Dynamic Filter | Section FX | `Main.Part.Part[1..16].Fx` | `/Fx[1..3]/DynamicFilter` | **Partiel** | UI specialisee et modulation |
+| EffUI - Sympathetic strings | Section FX | `Main.Part.Part[1..16].Fx` | `/Fx[1..3]/Sympathetic` | **Partiel** | UI specialisee et presets |
+| Formant Filter window | Ecran specialise | Section Filter concernee | `.FormantEditor` | **Absent** | Planifier avec FilterUI avance |
+| PAD harmonic profile / overtone graph | Controleur graphique | `Main.Part.Part[1..16].Pad` | `/Profile`, `/Spectrum` | **Absent** | Porter apres le moteur PAD principal |
+
+### Priorite UI recommandee
+
+1. Finir la parite ADsynth Voice : Filter Voice, puis Modulator et Modulator Oscillator.
+2. Stabiliser les composants communs `EnvelopeUI`, `LFOUI`, filtres, previews et copy/paste.
+3. Completer Kit/Part et les controles globaux de l’instrument.
+4. Porter SUBsynth et PADsynth avec leurs graphes natifs.
+5. Porter les effets et leurs routages.
+6. Ajouter Settings, About/Licences, microtonalite et gestion complete des banques.
 
 ### M6 - Presets historiques (compatibilite)
 - [ ] Inventorier formats historiques supportes upstream

@@ -652,6 +652,12 @@ std::string ZynAndroidEngine::parameterSnapshot(int partIndex, int kitIndex) con
             const std::string amplitudeGroup = group + " / Amplitude";
             const std::string filterGroup = group + " / Filter";
             const std::string modulationGroup = group + " / Modulation";
+            std::string priorVoiceOptions = "Off";
+            for (int source = 0; source < voice; ++source)
+                priorVoiceOptions += ",Voice " + std::to_string(source + 1);
+            std::string priorOscillatorOptions = "Internal";
+            for (int source = 0; source < voice; ++source)
+                priorOscillatorOptions += ",Voice " + std::to_string(source + 1);
             add((prefix + "enabled").c_str(), "Enabled", group.c_str(), "bool", v.Enabled, 0, 1, voice == 0);
             add((prefix + "delay").c_str(), "Delay", voiceGroup.c_str(), "int", v.PDelay, 0, 127, 0);
             add((prefix + "resonance").c_str(), "Resonance", voiceGroup.c_str(), "bool", v.Presonance, 0, 1, 1);
@@ -699,14 +705,14 @@ std::string ZynAndroidEngine::parameterSnapshot(int partIndex, int kitIndex) con
                 static_cast<int>(v.PFMEnabled), 0, 5, 0, "Off,Mix,Ring,Phase,Frequency,PWM");
             add((prefix + "externalModulator").c_str(), "External modulator", modulationGroup.c_str(), "enum",
                 v.PFMVoice + 1, 0, voice, 0,
-                voice == 0 ? "Off" : "Off,Voice 1,Voice 2,Voice 3,Voice 4,Voice 5,Voice 6,Voice 7");
+                priorVoiceOptions.c_str());
             add((prefix + "externalModOscillator").c_str(), "External mod oscillator", modulationGroup.c_str(), "enum",
                 v.PextFMoscil + 1, 0, voice, 0,
-                voice == 0 ? "Internal" : "Internal,Voice 1,Voice 2,Voice 3,Voice 4,Voice 5,Voice 6,Voice 7");
+                priorOscillatorOptions.c_str());
             add((prefix + "modPhase").c_str(), "Modulator phase", modulationGroup.c_str(), "int",
                 static_cast<int>(v.PFMoscilphase) - 64, -64, 63, 0);
             add((prefix + "modVolume").c_str(), "Modulator volume", modulationGroup.c_str(), "int",
-                std::clamp(static_cast<int>(std::lround(127.0f * (1.0f + v.FMvolume / 60.0f))), 0, 127), 0, 127, 90);
+                std::clamp(static_cast<int>(std::lround(127.0f * v.FMvolume / 100.0f)), 0, 127), 0, 127, 89);
             add((prefix + "modVelocity").c_str(), "Modulator velocity", modulationGroup.c_str(), "int",
                 v.PFMVelocityScaleFunction, 0, 127, 64);
             add((prefix + "modDamping").c_str(), "Frequency damping", modulationGroup.c_str(), "int",
@@ -721,6 +727,8 @@ std::string ZynAndroidEngine::parameterSnapshot(int partIndex, int kitIndex) con
                 modCoarse, -64, 63, 0);
             add((prefix + "modDetuneType").c_str(), "Modulator detune type", modulationGroup.c_str(), "enum",
                 v.PFMDetuneType, 0, 4, 0, "Default,L35 cents,L10 cents,E100 cents,E1200 cents");
+            add((prefix + "modFixedFreq").c_str(), "Modulator fixed frequency", modulationGroup.c_str(), "bool",
+                v.PFMFixedFreq, 0, 1, 0);
             add((prefix + "sync").c_str(), "Hard sync", modulationGroup.c_str(), "bool", v.PsyncEnabled, 0, 1, 0);
             add((prefix + "ampEnvelopeEnabled").c_str(), "Enable", (amplitudeGroup + " / Envelope").c_str(), "bool",
                 v.PAmpEnvelopeEnabled, 0, 1, 1);
@@ -758,8 +766,15 @@ std::string ZynAndroidEngine::parameterSnapshot(int partIndex, int kitIndex) con
                 const auto &filter = *v.VoiceFilter;
                 add((prefix + "filterCategory").c_str(), "Filter category", filterGroup.c_str(), "enum",
                     filter.Pcategory, 0, 4, 0, "Analog,Formant,State variable,Moog,Comb");
-                add((prefix + "filterType").c_str(), "Filter type", filterGroup.c_str(), "enum",
-                    filter.Ptype, 0, 8, 0, "LPF1,HPF1,LPF2,HPF2,BPF1,Notch1,Peak1,Low shelf,High shelf");
+                if (filter.Pcategory != 1) {
+                    const char *filterTypes = filter.Pcategory == 0 ? "LPF1,HPF1,LPF2,HPF2,BPF1,Notch1,Peak1,Low shelf,High shelf" :
+                        filter.Pcategory == 2 ? "Low pass,High pass,Band pass,Notch" :
+                        filter.Pcategory == 3 ? "Low pass,Band pass,High pass" :
+                        "Feedback,Feedforward,Both,Negative feedback,Negative feedforward,Negative both";
+                    const int filterTypeMax = filter.Pcategory == 0 ? 8 : filter.Pcategory == 2 ? 3 : filter.Pcategory == 3 ? 2 : 5;
+                    add((prefix + "filterType").c_str(), "Filter type", filterGroup.c_str(), "enum",
+                        std::min<int>(filter.Ptype, filterTypeMax), 0, filterTypeMax, 0, filterTypes);
+                }
                 add((prefix + "filterCutoff").c_str(), "Center frequency", filterGroup.c_str(), "int",
                     std::clamp(static_cast<int>(std::lround(((std::log2(filter.basefreq) - 9.96578428f) / 5.0f + 1.0f) * 64.0f)), 0, 127), 0, 127, 94);
                 add((prefix + "filterQ").c_str(), "Q", filterGroup.c_str(), "int",
@@ -774,11 +789,14 @@ std::string ZynAndroidEngine::parameterSnapshot(int partIndex, int kitIndex) con
                     v.PFilterVelocityScale, 0, 127, 0);
                 add((prefix + "filterVelocity").c_str(), "Velocity sensitivity", filterGroup.c_str(), "int",
                     v.PFilterVelocityScaleFunction, 0, 127, 64);
+                if (filter.Pcategory == 4) {
+                    add((prefix + "filterCombHpf").c_str(), "Comb high pass", filterGroup.c_str(), "int",
+                        filter.Phpf, 0, 127, 0);
+                    add((prefix + "filterCombLpf").c_str(), "Comb low pass", filterGroup.c_str(), "int",
+                        filter.Plpf, 0, 127, 127);
+                }
             }
-            if (v.OscilGn) {
-                const auto &o = *v.OscilGn;
-                const std::string oscPrefix = prefix + "osc/";
-                const std::string oscGroup = group + " / Oscillator";
+            auto addOscillator = [&](const zyn::OscilGen &o, const std::string &oscPrefix, const std::string &oscGroup) {
                 add((oscPrefix + "magnitudeType").c_str(), "Magnitude scale", oscGroup.c_str(), "enum", o.Phmagtype, 0, 4, 0,
                     "Linear,-40 dB,-60 dB,-80 dB,-100 dB");
                 add((oscPrefix + "baseFunction").c_str(), "Base function", oscGroup.c_str(), "enum", o.Pcurrentbasefunc, 0, 15, 0,
@@ -798,7 +816,9 @@ std::string ZynAndroidEngine::parameterSnapshot(int partIndex, int kitIndex) con
                         ("Phase " + std::to_string(h + 1)).c_str(), (oscGroup + " phases").c_str(),
                         "int", o.Phphase[h], 0, 127, 64);
                 }
-            }
+            };
+            if (v.OscilGn) addOscillator(*v.OscilGn, prefix + "osc/", group + " / Oscillator");
+            if (v.FmGn) addOscillator(*v.FmGn, prefix + "modOsc/", group + " / Modulator oscillator");
         }
     }
     if (kit.subpars) {
@@ -1004,10 +1024,11 @@ bool ZynAndroidEngine::setParameter(int partIndex, int kitIndex, const std::stri
             else if (field == "filter") v.PFilterEnabled = b();
             else if (field == "bypassGlobalFilter") v.Pfilterbypass = b();
             else if (field == "fmType") v.PFMEnabled = static_cast<zyn::FMTYPE>(i(0, 5));
+            // Upstream only permits a preceding voice as an external source.
             else if (field == "externalModulator") v.PFMVoice = i(0, voice) - 1;
             else if (field == "externalModOscillator") v.PextFMoscil = i(0, voice) - 1;
             else if (field == "modPhase") v.PFMoscilphase = i(-64, 63) + 64;
-            else if (field == "modVolume") v.FMvolume = -60.0f * (1.0f - i(0, 127) / 127.0f);
+            else if (field == "modVolume") v.FMvolume = 100.0f * i(0, 127) / 127.0f;
             else if (field == "modVelocity") v.PFMVelocityScaleFunction = i(0, 127);
             else if (field == "modDamping") v.PFMVolumeDamp = i(-64, 63) + 64;
             else if (field == "modDetune") v.PFMDetune = i(0, 16383);
@@ -1021,6 +1042,7 @@ bool ZynAndroidEngine::setParameter(int partIndex, int kitIndex, const std::stri
                 v.PFMCoarseDetune = coarse + (v.PFMCoarseDetune / 1024) * 1024;
             }
             else if (field == "modDetuneType") v.PFMDetuneType = i(0, 4);
+            else if (field == "modFixedFreq") v.PFMFixedFreq = b();
             else if (field == "sync") v.PsyncEnabled = b();
             else if (field == "ampEnvelopeEnabled") v.PAmpEnvelopeEnabled = b();
             else if (field == "ampLfoEnabled") v.PAmpLfoEnabled = b();
@@ -1049,7 +1071,11 @@ bool ZynAndroidEngine::setParameter(int partIndex, int kitIndex, const std::stri
             else if (field.rfind("filter", 0) == 0 && v.VoiceFilter) {
                 auto &filter = *v.VoiceFilter;
                 if (field == "filterCategory") filter.Pcategory = i(0, 4);
-                else if (field == "filterType") filter.Ptype = i(0, 8);
+                else if (field == "filterType") {
+                    const int maxType = filter.Pcategory == 0 ? 8 : filter.Pcategory == 2 ? 3 :
+                        filter.Pcategory == 3 ? 2 : filter.Pcategory == 4 ? 5 : 0;
+                    filter.Ptype = i(0, maxType);
+                }
                 else if (field == "filterCutoff") filter.basefreq = zyn::FilterParams::basefreqFromOldPreq(i(0, 127));
                 else if (field == "filterQ") filter.baseq = zyn::FilterParams::baseqFromOldPq(i(0, 127));
                 else if (field == "filterStages") filter.Pstages = i(1, 6) - 1;
@@ -1057,12 +1083,15 @@ bool ZynAndroidEngine::setParameter(int partIndex, int kitIndex, const std::stri
                 else if (field == "filterGain") filter.gain = zyn::FilterParams::gainFromOldPgain(i(0, 127));
                 else if (field == "filterVelocityAmount") v.PFilterVelocityScale = i(0, 127);
                 else if (field == "filterVelocity") v.PFilterVelocityScaleFunction = i(0, 127);
+                else if (field == "filterCombHpf") filter.Phpf = i(0, 127);
+                else if (field == "filterCombLpf") filter.Plpf = i(0, 127);
                 else return false;
                 filter.changed = true;
             }
-            else if (field.rfind("osc/", 0) == 0 && v.OscilGn) {
-                auto &o = *v.OscilGn;
-                const auto oscField = field.substr(4);
+            else if ((field.rfind("osc/", 0) == 0 && v.OscilGn) ||
+                     (field.rfind("modOsc/", 0) == 0 && v.FmGn)) {
+                auto &o = field.rfind("modOsc/", 0) == 0 ? *v.FmGn : *v.OscilGn;
+                const auto oscField = field.rfind("modOsc/", 0) == 0 ? field.substr(7) : field.substr(4);
                 if (oscField == "magnitudeType") o.Phmagtype = i(0, 4);
                 else if (oscField == "baseFunction") o.Pcurrentbasefunc = i(0, 15);
                 else if (oscField == "baseShape") o.Pbasefuncpar = i(0, 127);
