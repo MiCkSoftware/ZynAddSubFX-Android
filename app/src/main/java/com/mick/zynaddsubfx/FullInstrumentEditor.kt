@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
@@ -64,6 +65,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -168,6 +170,7 @@ fun FullInstrumentEditor(
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
+    val density = LocalDensity.current
     val model = remember(engine) { InstrumentEditorViewModel(engine) }
     val state = model.state
     var selector by remember { mutableStateOf<String?>(null) }
@@ -182,6 +185,7 @@ fun FullInstrumentEditor(
     val voiceSectionOffsets = remember(state.selectedVoice) { mutableStateOf<Map<String, Int>>(emptyMap()) }
     val oscillatorScroll = rememberScrollState()
     val oscillatorSectionOffsets = remember { mutableStateOf<Map<String, Int>>(emptyMap()) }
+    val oscillatorPreviewOcclusion = with(density) { 112.dp.roundToPx() }
     val resonanceScroll = rememberScrollState()
     val resonanceSectionOffsets = remember { mutableStateOf<Map<String, Int>>(emptyMap()) }
     val scope = rememberCoroutineScope()
@@ -223,13 +227,19 @@ fun FullInstrumentEditor(
             onNavigateUp = { destination = InstrumentEditorDestination.VoiceDetail },
             tabs = oscillatorEditorSections,
             selectedTab = activeAnchor(
-                oscillatorScroll.value,
+                oscillatorScroll.value +
+                    if (oscillatorScroll.value > 0) oscillatorPreviewOcclusion else 0,
                 oscillatorEditorSections,
                 oscillatorSectionOffsets.value,
             ),
             onTabSelected = { section ->
                 scope.launch {
-                    oscillatorScroll.animateScrollTo(oscillatorSectionOffsets.value[section] ?: 0)
+                    val sectionOffset = oscillatorSectionOffsets.value[section] ?: 0
+                    oscillatorScroll.animateScrollTo(
+                        if (section == "Preview") 0 else {
+                            (sectionOffset - oscillatorPreviewOcclusion).coerceAtLeast(0)
+                        }
+                    )
                 }
             },
             dirty = state.dirty,
@@ -973,6 +983,15 @@ private fun AddOscillatorEditorScreen(
 
     BoxWithConstraints(modifier) {
         val scrollBottomPadding = (maxHeight - 180.dp).coerceAtLeast(112.dp)
+        val previewTransition = (scrollState.value / 360f).coerceIn(0f, 1f)
+        val expandedPreviewHeight = 210.dp
+        val compactPreviewHeight = 104.dp
+        val previewHeight = expandedPreviewHeight +
+            (compactPreviewHeight - expandedPreviewHeight) * previewTransition
+        val expandedPreviewTop = 30.dp
+        val compactPreviewTop = 4.dp
+        val previewTop = expandedPreviewTop +
+            (compactPreviewTop - expandedPreviewTop) * previewTransition
         Column(
             Modifier.fillMaxSize().verticalScroll(scrollState).padding(vertical = 7.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -989,12 +1008,7 @@ private fun AddOscillatorEditorScreen(
                 "Base + output preview",
                 modifier = positionSection("Preview").padding(horizontal = 7.dp),
             ) {
-                OscillatorPreviewPanel(
-                    magnitudes = magnitudes,
-                    phases = phases,
-                    controls = controls,
-                    modifier = Modifier.fillMaxWidth().height(210.dp),
-                )
+                Spacer(Modifier.fillMaxWidth().height(expandedPreviewHeight))
             }
 
             listOf(
@@ -1078,15 +1092,16 @@ private fun AddOscillatorEditorScreen(
             }
             Spacer(Modifier.height(scrollBottomPadding))
         }
-        if (scrollState.value > 120) {
-            OscillatorPreviewPanel(
-                magnitudes = magnitudes,
-                phases = phases,
-                controls = controls,
-                modifier = Modifier.align(Alignment.BottomCenter)
-                    .fillMaxWidth().height(112.dp).padding(horizontal = 7.dp, vertical = 4.dp),
-            )
-        }
+        OscillatorPreviewPanel(
+            magnitudes = magnitudes,
+            phases = phases,
+            controls = controls,
+            modifier = Modifier.align(Alignment.TopCenter)
+                .offset(y = previewTop)
+                .fillMaxWidth()
+                .height(previewHeight)
+                .padding(horizontal = 7.dp),
+        )
     }
 
     editedParameter?.let { parameter ->

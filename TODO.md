@@ -71,8 +71,11 @@ https://zynaddsubfx.sourceforge.io/doc_2.html
   | Modulator Oscillator | Global | Phase | Modulator oscillator phase | Slider | — |
   | Modulator Oscillator | Waveform display | Waveform | Modulator oscillator waveform preview | Graph
 
-
+- Parts : all on same screen (selected on is unfloded)
+- Parts:  ch keys mode , rndgrp action not clear + duplicated + missing mini keyboard.
+- Parts: 3 dot menu is werid ; why save to ? remove nav to kit X
 - en tete INST>PART>KIT top à reproduire partout mais le back doti etre plus clair. (< ins)
+- ad synth resonance : add parameter to hide tab nav for this scaffold
 
 - Main
   - bouton edit save sur main à droite de stereo (et retirer save des top app bar)
@@ -83,8 +86,6 @@ https://zynaddsubfx.sourceforge.io/doc_2.html
     - Screen blink during loading
 
 - ADDSYNTH
-  - voice detail update + add keyboard
-  - oscillo rework+ preview
 - sub synth todo
 - pad synth todo
 - FX todo (main and parts ...)
