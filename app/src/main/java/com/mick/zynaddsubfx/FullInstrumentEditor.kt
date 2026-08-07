@@ -54,6 +54,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -86,6 +88,45 @@ private sealed interface InstrumentEditorDestination {
     data object VoiceDetail : InstrumentEditorDestination
     data object Resonance : InstrumentEditorDestination
     data class Oscillator(val target: OscillatorEditorTarget) : InstrumentEditorDestination
+    data class Envelope(val address: ModuleAddress.Envelope) : InstrumentEditorDestination
+    data class Formant(val address: ModuleAddress.Filter) : InstrumentEditorDestination
+}
+
+private fun InstrumentEditorDestination.encode(): String = when (this) {
+    InstrumentEditorDestination.VoiceDetail -> "voice"
+    InstrumentEditorDestination.Resonance -> "resonance"
+    is InstrumentEditorDestination.Oscillator ->
+        "osc:${target.kind.name}:${target.ownerVoice}"
+    is InstrumentEditorDestination.Envelope ->
+        "env:${address.index}:${address.envelopeRole.name}"
+    is InstrumentEditorDestination.Formant -> "formant:${address.index}:${address.vowel}"
+}
+
+private fun decodeDestination(value: String): InstrumentEditorDestination? {
+    val fields = value.split(':')
+    return when (fields.firstOrNull()) {
+        "voice" -> InstrumentEditorDestination.VoiceDetail
+        "resonance" -> InstrumentEditorDestination.Resonance
+        "osc" -> InstrumentEditorDestination.Oscillator(
+            OscillatorEditorTarget(
+                runCatching { OscillatorEditorKind.valueOf(fields[1]) }.getOrDefault(OscillatorEditorKind.Voice),
+                fields.getOrNull(2)?.toIntOrNull()?.coerceIn(0, 7) ?: 0,
+            )
+        )
+        "env" -> InstrumentEditorDestination.Envelope(
+            ModuleAddress.Envelope(
+                fields.getOrNull(1)?.toIntOrNull()?.coerceIn(-1, 7) ?: -1,
+                runCatching { EnvelopeRole.valueOf(fields[2]) }.getOrDefault(EnvelopeRole.AMPLITUDE),
+            )
+        )
+        "formant" -> InstrumentEditorDestination.Formant(
+            ModuleAddress.Filter(
+                fields.getOrNull(1)?.toIntOrNull()?.coerceIn(-1, 7) ?: -1,
+                fields.getOrNull(2)?.toIntOrNull()?.coerceIn(0, 5) ?: 0,
+            )
+        )
+        else -> null
+    }
 }
 
 private val voiceEditorSections =
@@ -93,6 +134,8 @@ private val voiceEditorSections =
 private val oscillatorEditorSections =
     listOf("Preview", "Output", "Base function", "Shape & filter", "Harmonics")
 private val resonanceEditorSections = listOf("Curve", "Parameters")
+private val envelopeEditorSections = listOf("Curve", "Points", "Options")
+private val formantEditorSections = listOf("Preview", "Vowels", "Sequence")
 
 @Composable
 private fun SynthEditorScaffold(
@@ -173,8 +216,14 @@ fun FullInstrumentEditor(
     val density = LocalDensity.current
     val model = remember(engine) { InstrumentEditorViewModel(engine) }
     val state = model.state
+    var savedVoice by rememberSaveable { mutableStateOf(0) }
     var selector by remember { mutableStateOf<String?>(null) }
-    var destination by remember { mutableStateOf<InstrumentEditorDestination?>(null) }
+    var destination by rememberSaveable(
+        stateSaver = Saver(
+            save = { destination: InstrumentEditorDestination? -> destination?.encode().orEmpty() },
+            restore = ::decodeDestination,
+        )
+    ) { mutableStateOf<InstrumentEditorDestination?>(null) }
     var editedParameter by remember { mutableStateOf<SynthEngine.ParameterValue?>(null) }
     var exportedFile by remember { mutableStateOf<File?>(null) }
     var exportedRevision by remember { mutableStateOf(0L) }
@@ -206,7 +255,10 @@ fun FullInstrumentEditor(
     LaunchedEffect(partIndex, kitIndex, module) {
         model.open(partIndex, kitIndex)
         model.selectEngine(module)
+        model.selectVoice(savedVoice)
     }
+
+    LaunchedEffect(state.selectedVoice) { savedVoice = state.selectedVoice }
 
     val sectionNames = populatedSections(state.snapshot?.values.orEmpty(), module)
     val openSection: (String) -> Unit = { tab ->
@@ -302,6 +354,97 @@ fun FullInstrumentEditor(
         }
         return
     }
+    if (currentDestination is InstrumentEditorDestination.Envelope) {
+        var envelopeTab by rememberSaveable(currentDestination.address.toString()) {
+            mutableStateOf(envelopeEditorSections.first())
+        }
+        val envelope = EnvelopeModel.from(
+            state.snapshot?.values.orEmpty(),
+            currentDestination.address,
+        )
+        SynthEditorScaffold(
+            title = envelope?.title ?: "Envelope",
+            navigationLabel = if (currentDestination.address.index >= 0) {
+                "‹ Voice ${currentDestination.address.index + 1}"
+            } else "‹ ADD",
+            onNavigateUp = {
+                destination = if (currentDestination.address.index >= 0) {
+                    InstrumentEditorDestination.VoiceDetail
+                } else null
+            },
+            tabs = envelopeEditorSections,
+            selectedTab = envelopeTab,
+            onTabSelected = { envelopeTab = it },
+            dirty = state.dirty,
+            onActions = null,
+            heldNotes = heldNotes,
+            keyboardOctaveShift = keyboardOctaveShift,
+            onPressKeyboardNote = onPressKeyboardNote,
+            onReleaseKeyboardNote = onReleaseKeyboardNote,
+            modifier = modifier,
+        ) { contentModifier ->
+            if (envelope != null) {
+                FreeEnvelopeEditor(
+                    model = envelope,
+                    preview = model.preview(currentDestination.address, 192),
+                    selectedTab = envelopeTab,
+                    onWrite = model::write,
+                    onCommit = model::commitEdits,
+                    onAction = model::performPath,
+                    onCopy = { model.copyModule(currentDestination.address) },
+                    onPaste = { model.pasteModule(currentDestination.address) },
+                    canPaste = model.canPasteModule(currentDestination.address),
+                    modifier = contentModifier,
+                )
+            }
+        }
+        return
+    }
+    if (currentDestination is InstrumentEditorDestination.Formant) {
+        var formantTab by rememberSaveable(currentDestination.address.toString()) {
+            mutableStateOf(formantEditorSections.first())
+        }
+        val filter = FilterModel.from(state.snapshot?.values.orEmpty(), currentDestination.address)
+        SynthEditorScaffold(
+            title = "Formant filter",
+            navigationLabel = if (currentDestination.address.index >= 0) {
+                "‹ Voice ${currentDestination.address.index + 1}"
+            } else "‹ ADD",
+            onNavigateUp = {
+                destination = if (currentDestination.address.index >= 0) {
+                    InstrumentEditorDestination.VoiceDetail
+                } else null
+            },
+            tabs = formantEditorSections,
+            selectedTab = formantTab,
+            onTabSelected = { formantTab = it },
+            dirty = state.dirty,
+            onActions = null,
+            heldNotes = heldNotes,
+            keyboardOctaveShift = keyboardOctaveShift,
+            onPressKeyboardNote = onPressKeyboardNote,
+            onReleaseKeyboardNote = onReleaseKeyboardNote,
+            modifier = modifier,
+        ) { contentModifier ->
+            if (filter != null) {
+                FormantFilterEditor(
+                    model = filter,
+                    preview = model.preview(currentDestination.address, 192),
+                    selectedTab = formantTab,
+                    onWrite = model::write,
+                    onPreviewVowel = { model.preview(currentDestination.address.copy(vowel = it), 192) },
+                    onCopyFilter = { model.copyModule(currentDestination.address) },
+                    onPasteFilter = { model.pasteModule(currentDestination.address) },
+                    canPasteFilter = model.canPasteModule(currentDestination.address),
+                    onCopyVowel = { model.copyModule(ModuleAddress.Vowel(currentDestination.address.index, it)) },
+                    onPasteVowel = { model.pasteModule(ModuleAddress.Vowel(currentDestination.address.index, it)) },
+                    canPasteVowel = { model.canPasteModule(ModuleAddress.Vowel(currentDestination.address.index, it)) },
+                    modifier = contentModifier,
+                )
+            }
+        }
+        return
+    }
     if (currentDestination == InstrumentEditorDestination.VoiceDetail) {
         SynthEditorScaffold(
             title = "Voice ${state.selectedVoice + 1}",
@@ -337,6 +480,12 @@ fun FullInstrumentEditor(
                 },
                 onOpenOscillator = {
                     destination = InstrumentEditorDestination.Oscillator(it)
+                },
+                onOpenEnvelope = {
+                    destination = InstrumentEditorDestination.Envelope(it)
+                },
+                onOpenFormant = {
+                    destination = InstrumentEditorDestination.Formant(it)
                 },
             )
         }
@@ -393,12 +542,22 @@ fun FullInstrumentEditor(
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     populatedSections(state.snapshot?.values.orEmpty(), module).forEach { section ->
-                        val parameters = parametersFor(
+                        val rawParameters = parametersFor(
                             state.snapshot?.values.orEmpty(),
                             module,
                             section,
                             state.selectedVoice,
                         ).let { if (section == "Voices") emptyList() else it }
+                        val parameters = if (module == "ADD") {
+                            when (section) {
+                                "Amplitude", "Frequency" -> rawParameters.filterNot {
+                                    it.descriptor.group.endsWith("/ Envelope") ||
+                                        it.descriptor.group.endsWith("/ LFO")
+                                }
+                                "Filter" -> emptyList()
+                                else -> rawParameters
+                            }
+                        } else rawParameters
                         ZynEditorSection(
                             title = section,
                             parameters = parameters,
@@ -457,6 +616,18 @@ fun FullInstrumentEditor(
                                         }
                                     }
                                 })
+                                "Amplitude", "Frequency", "Filter" -> if (module == "ADD") ({
+                                    CommonSynthModules(
+                                        model = model,
+                                        section = section,
+                                        onOpenEnvelope = {
+                                            destination = InstrumentEditorDestination.Envelope(it)
+                                        },
+                                        onOpenFormant = {
+                                            destination = InstrumentEditorDestination.Formant(it)
+                                        },
+                                    )
+                                }) else null
                                 else -> null
                             },
                         )
@@ -606,6 +777,8 @@ private fun AddVoiceDetailScreen(
     scrollState: ScrollState,
     onSectionPosition: (String, Int) -> Unit,
     onOpenOscillator: (OscillatorEditorTarget) -> Unit,
+    onOpenEnvelope: (ModuleAddress.Envelope) -> Unit,
+    onOpenFormant: (ModuleAddress.Filter) -> Unit,
 ) {
     val state = model.state
     val snapshotValues = state.snapshot?.values.orEmpty()
@@ -654,6 +827,12 @@ private fun AddVoiceDetailScreen(
         modifier.verticalScroll(scrollState).padding(7.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
+            val voiceAddress = ModuleAddress.Voice(state.selectedVoice)
+            ModuleClipboardActions(
+                onCopy = { model.copyModule(voiceAddress) },
+                onPaste = { model.pasteModule(voiceAddress) },
+                canPaste = model.canPasteModule(voiceAddress),
+            )
             voiceEditorSections.forEach { section ->
                 val selected = values.filter { value ->
                     val group = value.descriptor.group
@@ -802,9 +981,30 @@ private fun AddVoiceDetailScreen(
                                 )
                             }
                         }
+                        if (section in setOf("Amplitude", "Frequency", "Filter", "Modulation")) {
+                            CommonSynthModules(
+                                model = model,
+                                section = section,
+                                voiceIndex = state.selectedVoice,
+                                onOpenEnvelope = onOpenEnvelope,
+                                onOpenFormant = onOpenFormant,
+                            )
+                        }
                         selected.groupBy { it.descriptor.group }.entries
                             .sortedBy { voiceGroupOrder(section, it.key) }
+                            .filterNot { (group, _) ->
+                                group.endsWith("/ Envelope") || group.endsWith("/ LFO") ||
+                                    group.endsWith("/ Amplitude envelope") ||
+                                    group.endsWith("/ Frequency envelope") ||
+                                    (section == "Filter" && group.startsWith("$voiceRoot / Filter"))
+                            }
                             .forEach { (group, parameters) ->
+                            val displayedParameters = parameters.filterNot {
+                                section == "Modulation" &&
+                                    it.descriptor.path.substringAfterLast('/') in setOf(
+                                        "modAmpEnvelopeEnabled", "modFreqEnvelopeEnabled"
+                                    )
+                            }
                             val subsection = group.substringAfterLast('/').trim()
                             if (subsection != section && subsection !in setOf("Voice", "Amplitude", "Frequency", "Filter", "Modulation")) {
                                 Text(
@@ -815,7 +1015,7 @@ private fun AddVoiceDetailScreen(
                                 )
                             }
                             DenseParameterGrid(
-                                parameters = parameters.sortedBy {
+                                parameters = displayedParameters.sortedBy {
                                     voiceParameterOrder(section, group, it.descriptor.path)
                                 },
                                 onWrite = model::write,
@@ -959,6 +1159,10 @@ private fun AddOscillatorEditorScreen(
 ) {
     val values = model.state.snapshot?.values.orEmpty()
     val modulator = target.kind == OscillatorEditorKind.Modulator
+    val oscillatorAddress = ModuleAddress.Oscillator(target.ownerVoice, modulator)
+    val exactPreview = remember(model.state.revision, oscillatorAddress) {
+        model.preview(oscillatorAddress, 256)
+    }
     val group = "ADD / Voice ${target.ownerVoice + 1} / " +
         if (modulator) "Modulator oscillator" else "Oscillator"
     val controls = values.filter { it.descriptor.group == group }
@@ -996,6 +1200,12 @@ private fun AddOscillatorEditorScreen(
             Modifier.fillMaxSize().verticalScroll(scrollState).padding(vertical = 7.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            ModuleClipboardActions(
+                onCopy = { model.copyModule(oscillatorAddress) },
+                onPaste = { model.pasteModule(oscillatorAddress) },
+                canPaste = model.canPasteModule(oscillatorAddress),
+                modifier = Modifier.padding(horizontal = 7.dp),
+            )
             if (target.ownerVoice != model.state.selectedVoice) {
                 Text(
                     "Shared from Voice ${target.ownerVoice + 1}",
@@ -1093,9 +1303,7 @@ private fun AddOscillatorEditorScreen(
             Spacer(Modifier.height(scrollBottomPadding))
         }
         OscillatorPreviewPanel(
-            magnitudes = magnitudes,
-            phases = phases,
-            controls = controls,
+            preview = exactPreview,
             modifier = Modifier.align(Alignment.TopCenter)
                 .offset(y = previewTop)
                 .fillMaxWidth()
@@ -1148,9 +1356,7 @@ private fun HarmonicKnobCard(
 
 @Composable
 private fun OscillatorPreviewPanel(
-    magnitudes: List<SynthEngine.ParameterValue>,
-    phases: List<SynthEngine.ParameterValue>,
-    controls: List<SynthEngine.ParameterValue>,
+    preview: PreviewSeries,
     modifier: Modifier = Modifier,
 ) {
     Surface(
@@ -1160,18 +1366,12 @@ private fun OscillatorPreviewPanel(
         shape = RoundedCornerShape(8.dp),
     ) {
         Box(Modifier.fillMaxSize()) {
-            CombinedOscillatorPreview(
-                magnitudes = magnitudes,
-                phases = phases,
-                controls = controls,
-                modifier = Modifier.fillMaxSize(),
-            )
+            ModulePreview(preview, Modifier.fillMaxSize(), accent = Color(0xFFFF4D57))
             Row(
                 modifier = Modifier.align(Alignment.TopEnd).padding(7.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                Text("Base", color = Color(0xFF65F55D), style = MaterialTheme.typography.labelSmall)
-                Text("Output", color = Color(0xFFFF4D57), style = MaterialTheme.typography.labelSmall)
+                Text("Native output", color = Color(0xFFFF4D57), style = MaterialTheme.typography.labelSmall)
             }
         }
     }
@@ -1468,171 +1668,6 @@ private fun OscillatorPreview(
             if (x == 0) path.moveTo(px, py) else path.lineTo(px, py)
         }
         drawPath(path, curveColor, style = androidx.compose.ui.graphics.drawscope.Stroke(2.5f))
-    }
-}
-
-@Composable
-private fun CombinedOscillatorPreview(
-    magnitudes: List<SynthEngine.ParameterValue>,
-    phases: List<SynthEngine.ParameterValue>,
-    controls: List<SynthEngine.ParameterValue>,
-    modifier: Modifier,
-) {
-    val control: (String, Double) -> Double = { field, fallback ->
-        controls.firstOrNull { it.descriptor.path.substringAfterLast('/') == field }?.value ?: fallback
-    }
-    val baseFunction = control("baseFunction", 0.0).roundToInt()
-    val baseShape = control("baseShape", 64.0)
-    val magnitudeType = control("magnitudeType", 0.0).roundToInt()
-    val waveshape = control("waveshape", 64.0)
-    val filterType = control("filterType", 0.0).roundToInt()
-    val filter1 = control("filter1", 64.0)
-    val filter2 = control("filter2", 64.0)
-    Canvas(modifier) {
-        drawRect(Color(0xFF050A0C))
-        repeat(9) { line ->
-            val x = size.width * line / 8f
-            drawLine(
-                Color(0xFF31515A),
-                start = androidx.compose.ui.geometry.Offset(x, 0f),
-                end = androidx.compose.ui.geometry.Offset(x, size.height),
-                strokeWidth = 1f,
-            )
-        }
-        repeat(5) { line ->
-            val y = size.height * line / 4f
-            drawLine(
-                Color(0xFF31515A),
-                start = androidx.compose.ui.geometry.Offset(0f, y),
-                end = androidx.compose.ui.geometry.Offset(size.width, y),
-                strokeWidth = 1f,
-            )
-        }
-        val sampleCount = 256
-        val baseSamples = DoubleArray(sampleCount) { index ->
-            oscillatorBaseSample(
-                type = baseFunction,
-                shape = baseShape,
-                phase = index.toDouble() / (sampleCount - 1),
-            )
-        }
-        val outputSamples = DoubleArray(sampleCount)
-        outputSamples.indices.forEach { index ->
-            val cycle = index.toDouble() / (sampleCount - 1)
-            var sample = 0.0
-            magnitudes.forEachIndexed { harmonic, parameter ->
-                val amplitude = harmonicAmplitude(parameter.value, magnitudeType)
-                if (amplitude == 0.0) return@forEachIndexed
-                val phase = ((phases.getOrNull(harmonic)?.value ?: 64.0) - 64.0) / 64.0
-                sample += amplitude * oscillatorFilterGain(
-                    type = filterType,
-                    harmonic = harmonic,
-                    harmonicCount = magnitudes.size,
-                    parameter1 = filter1,
-                    parameter2 = filter2,
-                ) * oscillatorBaseSample(
-                    type = baseFunction,
-                    shape = baseShape,
-                    phase = (harmonic + 1) * cycle + phase,
-                )
-            }
-            outputSamples[index] = sample
-        }
-        val peak = outputSamples.maxOfOrNull { kotlin.math.abs(it) }?.coerceAtLeast(.00001) ?: 1.0
-        outputSamples.indices.forEach { index ->
-            val normalized = outputSamples[index] / peak
-            outputSamples[index] = when {
-                waveshape > 64.0 -> {
-                    val drive = 1.0 + (waveshape - 64.0) / 10.0
-                    kotlin.math.tanh(normalized * drive) / kotlin.math.tanh(drive)
-                }
-                waveshape < 64.0 -> kotlin.math.sign(normalized) *
-                    kotlin.math.abs(normalized).pow(1.0 + (64.0 - waveshape) / 32.0)
-                else -> normalized
-            }
-        }
-        fun drawSamples(samples: DoubleArray, color: Color, strokeWidth: Float) {
-            val path = Path()
-            samples.forEachIndexed { index, sample ->
-                val px = size.width * index / (samples.size - 1)
-                val py = size.height * (.5f - sample.coerceIn(-1.0, 1.0).toFloat() * .42f)
-                if (index == 0) path.moveTo(px, py) else path.lineTo(px, py)
-            }
-            drawPath(path, color, style = androidx.compose.ui.graphics.drawscope.Stroke(strokeWidth))
-        }
-        drawSamples(baseSamples, Color(0xFF65F55D), 5f)
-        drawSamples(outputSamples, Color(0xFFFF4D57), 2.5f)
-    }
-}
-
-private fun harmonicAmplitude(rawMagnitude: Double, magnitudeType: Int): Double {
-    if (rawMagnitude == 64.0) return 0.0
-    val normalizedDistance = 1.0 - kotlin.math.abs(rawMagnitude / 64.0 - 1.0)
-    val amplitude = when (magnitudeType) {
-        1 -> kotlin.math.exp(normalizedDistance * kotlin.math.ln(0.01))
-        2 -> kotlin.math.exp(normalizedDistance * kotlin.math.ln(0.001))
-        3 -> kotlin.math.exp(normalizedDistance * kotlin.math.ln(0.0001))
-        4 -> kotlin.math.exp(normalizedDistance * kotlin.math.ln(0.00001))
-        else -> 1.0 - normalizedDistance
-    }
-    return amplitude * if (rawMagnitude < 64.0) -1.0 else 1.0
-}
-
-private fun oscillatorBaseSample(type: Int, shape: Double, phase: Double): Double {
-    val cycle = phase - kotlin.math.floor(phase)
-    val amount = ((shape + .5) / 128.0).coerceIn(.01, .99)
-    val sine = kotlin.math.sin(cycle * Math.PI * 2.0)
-    return when (type) {
-        1 -> 1.0 - 4.0 * kotlin.math.abs(cycle - .5)
-        2 -> if (cycle < amount) 1.0 else -1.0
-        3 -> cycle * 2.0 - 1.0
-        4 -> kotlin.math.sign(sine) * kotlin.math.abs(sine).pow(.15 + amount * 3.5)
-        5 -> 2.0 * kotlin.math.exp(-(((cycle - .5) / (.08 + amount * .32)).pow(2.0))) - 1.0
-        6 -> (sine + (amount * 2.0 - 1.0)).coerceAtLeast(0.0) * 2.0 - 1.0
-        7 -> kotlin.math.abs(sine) * 2.0 - 1.0
-        8 -> sine * if (cycle < amount) 1.0 else -1.0
-        9 -> kotlin.math.sin(cycle.pow(.35 + amount * 2.5) * Math.PI * 2.0)
-        10 -> kotlin.math.sin((cycle + cycle * cycle * amount * 5.0) * Math.PI * 2.0)
-        11 -> kotlin.math.abs(kotlin.math.sin(cycle.pow(.35 + amount * 2.5) * Math.PI * 2.0)) * 2.0 - 1.0
-        12 -> kotlin.math.cos((1 + (amount * 10).roundToInt()) * kotlin.math.acos(sine.coerceIn(-1.0, 1.0)))
-        13 -> if (sine >= 0.0) 1.0 else -1.0
-        14 -> kotlin.math.sign(sine) * kotlin.math.exp(-(1.0 - kotlin.math.abs(sine)) * (4.0 + amount * 24.0))
-        15 -> {
-            val x = cycle * 2.0 - 1.0
-            kotlin.math.sign(sine) * kotlin.math.sqrt((1.0 - x * x).coerceAtLeast(0.0))
-        }
-        else -> sine
-    }
-}
-
-private fun oscillatorFilterGain(
-    type: Int,
-    harmonic: Int,
-    harmonicCount: Int,
-    parameter1: Double,
-    parameter2: Double,
-): Double {
-    if (type == 0) return 1.0
-    val frequency = (harmonic + 1).toDouble() / harmonicCount.coerceAtLeast(1)
-    val center = (1.0 - parameter1 / 127.0).coerceIn(.01, .99)
-    val width = (.03 + parameter2 / 127.0 * .45).coerceAtMost(.5)
-    val lowPass = 1.0 / (1.0 + (frequency / center).pow(4.0))
-    val highPass = 1.0 - lowPass
-    val bandPass = kotlin.math.exp(-(((frequency - center) / width).pow(2.0)))
-    return when (type) {
-        1 -> kotlin.math.sqrt(lowPass)
-        2, 13 -> lowPass
-        3 -> kotlin.math.sqrt(highPass)
-        4 -> highPass
-        5 -> kotlin.math.sqrt(bandPass)
-        6 -> bandPass
-        7 -> kotlin.math.abs(kotlin.math.cos(frequency * Math.PI * (1.0 + parameter2 / 16.0)))
-        8 -> kotlin.math.abs(kotlin.math.sin(frequency * Math.PI * (1.0 + parameter2 / 16.0)))
-        9 -> .35 + .65 * lowPass
-        10 -> .2 + .8 / (1.0 + kotlin.math.exp((frequency - center) / width * 8.0))
-        11 -> .25 + .75 * kotlin.math.abs(kotlin.math.cos(frequency * Math.PI / width))
-        12 -> .15 + .85 * bandPass
-        else -> 1.0
     }
 }
 

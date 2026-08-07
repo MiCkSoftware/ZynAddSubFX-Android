@@ -29,6 +29,13 @@ object NativeSynthBridge {
     external fun nativeGetCurrentMixerSummary(): String
     external fun nativeGetParameterSnapshot(partIndex: Int, kitIndex: Int): String
     external fun nativeSetParameter(partIndex: Int, kitIndex: Int, path: String, value: Double): Boolean
+    external fun nativeGetModulePreview(
+        partIndex: Int, kitIndex: Int, kind: Int, index: Int, role: Int, resolution: Int
+    ): String
+    external fun nativeCopyModule(partIndex: Int, kitIndex: Int, kind: Int, index: Int, role: Int): Boolean
+    external fun nativeCanPasteModule(kind: Int, role: Int): Boolean
+    external fun nativePasteModule(partIndex: Int, kitIndex: Int, kind: Int, index: Int, role: Int): Boolean
+    external fun nativeGetClipboardType(): String
     external fun nativeExportInstrument(partIndex: Int, path: String): Boolean
     external fun nativeSetPart0Enabled(enabled: Boolean): Boolean
     external fun nativeSetPartEnabled(partIndex: Int, enabled: Boolean): Boolean

@@ -59,7 +59,7 @@ Le support MIDI est differe apres le MVP sans MIDI.
 - [x] Compiler `Effects/*`, `Part.cpp`, `Bank.cpp`, `BankDb.cpp`, `Recorder.cpp` et `Master.cpp` dans `zynbridge` (avec stubs Android temporaires pour `Nio`/`PresetExtractor`/`bankPorts`)
 
 ### M2 - Audio temps reel Android (premier son)
-- [ ] Integrer Oboe (optionnel pour robustesse/portabilite; non bloquant pour MIDI Android)
+- [OPT] Integrer Oboe (optionnel pour robustesse/portabilite; non bloquant pour MIDI Android)
 - [x] Mettre en place pipeline audio callback natif
 - [x] Produire un son test (sinus si moteur Zyn non pret)
 - [x] UI Compose minimale: init/start/test/stop
@@ -92,6 +92,8 @@ Le support MIDI est differe apres le MVP sans MIDI.
 - [ ] Portrait/paysage + tablette
 - [ ] Mode clavier plein ecran avec UX audio minimale
 - [x] Export XIZ depuis l’editeur d’instrument
+- [x] Parite ADsynth Voice ciblee : Filter, Modulator et Modulator Oscillator
+- [x] QA UX rapide ADsynth Voice (navigation, sections, oscillateurs et gestes)
 - [ ] Import XIZ/banques via SAF
 - [ ] UX de sauvegarde/restauration d’etat complete
 - [ ] UX master controls, insertion/system effects, sends, microtonal configuration, MIDI mapping, and full bank management.
@@ -140,10 +142,10 @@ Exemples :
 |---|---|---|---|---|---|
 | PartUI / Instrument Kit | Ecran | `Main.Part` | `.Part[1..16]` | **Partiel** | Stabiliser Kit et activations ADD/SUB/PAD |
 | ADnoteUI - Global Parameters | Sections | `Main.Part.Part[1..16].Add` | `/Amplitude`, `/Frequency`, `/Filter` | **Partiel** | Verifier whitelist, couleurs et parite |
-| ADnoteUI - Voice list | Section / navigation | `Main.Part.Part[1..16].Add` | `/VoiceList` | **Implemente** | Affiner densite et indicateurs |
+| ADnoteUI - Voice list | Section / navigation | `Main.Part.Part[1..16].Add` | `/VoiceList` | **Implemente** | Affiner densite, indicateurs et libelle Resonance |
 | ADnoteUI - Voice Parameters | Ecran | `Main.Part.Part[1..16].Add` | `.Voice[1..8]` | **Partiel** | Copy/paste et champs restants |
 | Voice Filter | Section | `Main.Part.Part[1..16].Add.Voice[1..8]` | `/Filter` | **Implemente** | Editeur Formant avance differe |
-| Voice Modulator | Section | `Main.Part.Part[1..16].Add.Voice[1..8]` | `/Modulation` | **Implemente** | QA des modes et routages |
+| Voice Modulator | Section | `Main.Part.Part[1..16].Add.Voice[1..8]` | `/Modulation` | **Implemente** | QA audio approfondie des modes et routages |
 | ADnoteUI - Voice Oscillator | Preview + ecran | `Main.Part.Part[1..16].Add.Voice[1..8]` | `/OscillatorPreview` -> `.Oscillator` | **Partiel** | OscilGen avance |
 | ADnoteUI - Modulator Oscillator | Preview + ecran | `Main.Part.Part[1..16].Add.Voice[1..8]` | `/Modulation/OscillatorPreview` -> `.ModulatorOscillator` | **Implemente** | OscilGen avance |
 | OscilGenUI / OscilEditor | Controleur d'ecran | Ecrans Oscillator | `/Parameters`, `/Harmonics`, `/Phases` | **Partiel** | Completer OscilGen et preview fidele |
@@ -170,14 +172,16 @@ Exemples :
 | Formant Filter window | Ecran specialise | Section Filter concernee | `.FormantEditor` | **Absent** | Planifier avec FilterUI avance |
 | PAD harmonic profile / overtone graph | Controleur graphique | `Main.Part.Part[1..16].Pad` | `/Profile`, `/Spectrum` | **Absent** | Porter apres le moteur PAD principal |
 
-### Priorite UI recommandee
+### Avancement et priorites UI
 
-1. Finir la parite ADsynth Voice : Filter Voice, puis Modulator et Modulator Oscillator.
-2. Stabiliser les composants communs `EnvelopeUI`, `LFOUI`, filtres, previews et copy/paste.
-3. Completer Kit/Part et les controles globaux de l’instrument.
-4. Porter SUBsynth et PADsynth avec leurs graphes natifs.
-5. Porter les effets et leurs routages.
-6. Ajouter Settings, About/Licences, microtonalite et gestion complete des banques.
+
+Priorites suivantes :
+
+1. Stabiliser les composants communs `EnvelopeUI`, `LFOUI`, filtres, previews et copy/paste.
+2. Completer Kit/Part et les controles globaux de l’instrument.
+3. Porter SUBsynth et PADsynth avec leurs graphes natifs.
+4. Porter les effets et leurs routages.
+5. Ajouter Settings, About/Licences, microtonalite et gestion complete des banques.
 
 ### M6 - Presets historiques (compatibilite)
 - [ ] Inventorier formats historiques supportes upstream

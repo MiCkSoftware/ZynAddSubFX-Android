@@ -373,6 +373,38 @@ Java_com_mick_zynaddsubfx_NativeSynthBridge_nativeSetParameter(
     return gEngine.setParameter(partIndex, kitIndex, pathValue, value) ? JNI_TRUE : JNI_FALSE;
 }
 
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_mick_zynaddsubfx_NativeSynthBridge_nativeGetModulePreview(
+        JNIEnv *env, jobject, jint partIndex, jint kitIndex, jint kind, jint index, jint role,
+        jint resolution) {
+    const std::string value = gEngine.modulePreview(partIndex, kitIndex, kind, index, role, resolution);
+    return env->NewStringUTF(value.c_str());
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_mick_zynaddsubfx_NativeSynthBridge_nativeCopyModule(
+        JNIEnv *, jobject, jint partIndex, jint kitIndex, jint kind, jint index, jint role) {
+    return gEngine.copyModule(partIndex, kitIndex, kind, index, role) ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_mick_zynaddsubfx_NativeSynthBridge_nativeCanPasteModule(
+        JNIEnv *, jobject, jint kind, jint role) {
+    return gEngine.canPasteModule(kind, role) ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_mick_zynaddsubfx_NativeSynthBridge_nativePasteModule(
+        JNIEnv *, jobject, jint partIndex, jint kitIndex, jint kind, jint index, jint role) {
+    return gEngine.pasteModule(partIndex, kitIndex, kind, index, role) ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_mick_zynaddsubfx_NativeSynthBridge_nativeGetClipboardType(JNIEnv *env, jobject) {
+    const std::string value = gEngine.clipboardType();
+    return env->NewStringUTF(value.c_str());
+}
+
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_mick_zynaddsubfx_NativeSynthBridge_nativeExportInstrument(
         JNIEnv *env, jobject, jint partIndex, jstring path) {

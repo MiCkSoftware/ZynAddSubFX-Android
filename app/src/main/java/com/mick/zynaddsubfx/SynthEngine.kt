@@ -321,6 +321,27 @@ class SynthEngine(private val context: Context) {
             NativeSynthBridge.nativeSetParameter(partIndex, kitIndex, write.path, write.value)
         }.getOrDefault(false)
 
+    fun preview(partIndex: Int, kitIndex: Int, address: ModuleAddress, resolution: Int = 128): PreviewSeries =
+        runCatching {
+            NativeSynthBridge.nativeGetModulePreview(
+                partIndex, kitIndex, address.kind, address.index, address.role, resolution.coerceIn(16, 512)
+            ).split(',').mapNotNull(String::toFloatOrNull).let(::PreviewSeries)
+        }.getOrDefault(PreviewSeries.Empty)
+
+    fun copyModule(partIndex: Int, kitIndex: Int, address: ModuleAddress): Boolean = runCatching {
+        NativeSynthBridge.nativeCopyModule(partIndex, kitIndex, address.kind, address.index, address.role)
+    }.getOrDefault(false)
+
+    fun canPasteModule(address: ModuleAddress): Boolean = runCatching {
+        NativeSynthBridge.nativeCanPasteModule(address.kind, address.role)
+    }.getOrDefault(false)
+
+    fun pasteModule(partIndex: Int, kitIndex: Int, address: ModuleAddress): Boolean = runCatching {
+        NativeSynthBridge.nativePasteModule(partIndex, kitIndex, address.kind, address.index, address.role)
+    }.getOrDefault(false)
+
+    fun clipboardType(): String = runCatching { NativeSynthBridge.nativeGetClipboardType() }.getOrDefault("")
+
     fun exportInstrument(partIndex: Int, destination: File): Boolean =
         runCatching {
             destination.parentFile?.mkdirs()

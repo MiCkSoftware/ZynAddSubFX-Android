@@ -17,7 +17,7 @@ android {
         minSdk = 29
         targetSdk = 36
         versionCode = getVersionCode()
-        versionName = "0.1_alpha"
+        versionName = "alpha.${versionCode}"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -34,6 +34,11 @@ android {
     }
 
     buildTypes {
+        debug {
+            // Keep the development build installable next to the release app.
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
+        }
         release {
             isMinifyEnabled = false
             proguardFiles(

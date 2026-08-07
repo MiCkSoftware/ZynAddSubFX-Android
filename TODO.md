@@ -1,7 +1,6 @@
 
 https://wiki.linuxaudio.org/wiki/zynaddsubfx_manual
 https://zynaddsubfx.sourceforge.io/doc_2.html
-- addsynth voices colmun not aligned
   | Filter | Global | Enable | Enable voice filter | Checkbox | on |
   | Filter | Global | Bypass Global Filter | Bypass global filter | Checkbox | off |
   | Filter | Filter Parameters | Category | Filter category | Combo | Analog |
@@ -71,6 +70,8 @@ https://zynaddsubfx.sourceforge.io/doc_2.html
   | Modulator Oscillator | Global | Phase | Modulator oscillator phase | Slider | — |
   | Modulator Oscillator | Waveform display | Waveform | Modulator oscillator waveform preview | Graph
 
+- addsynth voices colmun not aligned
+- finish parity with legacy voices list
 - Parts : all on same screen (selected on is unfloded)
 - Parts:  ch keys mode , rndgrp action not clear + duplicated + missing mini keyboard.
 - Parts: 3 dot menu is werid ; why save to ? remove nav to kit X

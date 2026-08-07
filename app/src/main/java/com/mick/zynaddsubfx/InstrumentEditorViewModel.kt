@@ -49,7 +49,7 @@ class InstrumentEditorViewModel(private val engine: SynthEngine) : ViewModel() {
         state = state.copy(selectedVoice = voice.coerceIn(0, 7))
     }
 
-    fun write(parameter: SynthEngine.ParameterValue, value: Double) {
+    fun write(parameter: SynthEngine.ParameterValue, value: Double, refresh: Boolean = true) {
         val descriptor = parameter.descriptor
         val normalized = when (descriptor.type) {
             SynthEngine.ParameterType.BOOLEAN -> if (value >= 0.5) 1.0 else 0.0
@@ -64,12 +64,61 @@ class InstrumentEditorViewModel(private val engine: SynthEngine) : ViewModel() {
             state = state.copy(operation = SynthEngine.OperationState.Failed("Could not update ${descriptor.label}"))
             return
         }
-        val refreshed = engine.parameterSnapshot(state.partIndex, state.kitIndex)
+        val optimistic = state.snapshot?.copy(values = state.snapshot?.values.orEmpty().map {
+            if (it.descriptor.path == descriptor.path) it.copy(value = normalized) else it
+        })
+        val refreshed = if (refresh) engine.parameterSnapshot(state.partIndex, state.kitIndex) else optimistic
         state = state.copy(
             snapshot = refreshed,
             dirty = true,
             revision = state.revision + 1,
             operation = SynthEngine.OperationState.Idle,
+        )
+    }
+
+    fun commitEdits() {
+        state = state.copy(snapshot = engine.parameterSnapshot(state.partIndex, state.kitIndex))
+    }
+
+    fun performPath(path: String, value: Double = 1.0) {
+        if (engine.writeParameter(
+                state.partIndex,
+                state.kitIndex,
+                SynthEngine.ParameterWrite(path, value),
+            )
+        ) {
+            state = state.copy(
+                snapshot = engine.parameterSnapshot(state.partIndex, state.kitIndex),
+                dirty = true,
+                revision = state.revision + 1,
+                operation = SynthEngine.OperationState.Idle,
+            )
+        } else {
+            state = state.copy(operation = SynthEngine.OperationState.Failed("Could not update module"))
+        }
+    }
+
+    fun preview(address: ModuleAddress, resolution: Int = 128): PreviewSeries =
+        engine.preview(state.partIndex, state.kitIndex, address, resolution)
+
+    fun copyModule(address: ModuleAddress) {
+        state = state.copy(operation = if (engine.copyModule(state.partIndex, state.kitIndex, address)) {
+            SynthEngine.OperationState.Succeeded
+        } else SynthEngine.OperationState.Failed("Could not copy module"))
+    }
+
+    fun canPasteModule(address: ModuleAddress): Boolean = engine.canPasteModule(address)
+
+    fun pasteModule(address: ModuleAddress) {
+        if (!engine.pasteModule(state.partIndex, state.kitIndex, address)) {
+            state = state.copy(operation = SynthEngine.OperationState.Failed("Clipboard type is not compatible"))
+            return
+        }
+        state = state.copy(
+            snapshot = engine.parameterSnapshot(state.partIndex, state.kitIndex),
+            dirty = true,
+            revision = state.revision + 1,
+            operation = SynthEngine.OperationState.Succeeded,
         )
     }
 

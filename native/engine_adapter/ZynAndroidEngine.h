@@ -11,6 +11,7 @@ namespace zyn {
 struct SYNTH_T;
 class Config;
 class Master;
+class PresetsStore;
 }
 
 class ZynAndroidEngine {
@@ -42,6 +43,12 @@ public:
     std::string mixerSummary() const;
     std::string parameterSnapshot(int partIndex, int kitIndex) const;
     bool setParameter(int partIndex, int kitIndex, const std::string &path, double value);
+    std::string modulePreview(int partIndex, int kitIndex, int kind, int index, int role,
+                              int resolution);
+    bool copyModule(int partIndex, int kitIndex, int kind, int index, int role);
+    bool canPasteModule(int kind, int role) const;
+    bool pasteModule(int partIndex, int kitIndex, int kind, int index, int role);
+    std::string clipboardType() const;
     bool exportInstrument(int partIndex, const std::string &path);
     bool setPart0Enabled(bool enabled);
     bool setPartEnabled(int partIndex, bool enabled);
@@ -120,6 +127,9 @@ private:
     std::unique_ptr<zyn::SYNTH_T> synth_;
     std::unique_ptr<zyn::Config> config_;
     std::unique_ptr<zyn::Master> master_;
+    std::unique_ptr<zyn::PresetsStore> presetsStore_;
+    std::string clipboardKind_;
+    int clipboardRole_ = -1;
     std::vector<float> zynLeft_;
     std::vector<float> zynRight_;
     std::string lastLoadedPresetPath_;

@@ -14,12 +14,15 @@
 #include "Misc/Config.h"
 #include "Misc/Master.h"
 #include "Misc/Part.h"
+#include "Misc/XMLwrapper.h"
 #include "Effects/EffectMgr.h"
 #include "Params/ADnoteParameters.h"
 #include "Params/EnvelopeParams.h"
 #include "Params/LFOParams.h"
 #include "Params/SUBnoteParameters.h"
 #include "Params/PADnoteParameters.h"
+#include "Params/PresetsStore.h"
+#include "Params/FilterParams.h"
 #include "Synth/OscilGen.h"
 #include "Synth/Resonance.h"
 
@@ -90,6 +93,7 @@ bool ZynAndroidEngine::initialize(int sampleRate, int framesPerBurst) {
     zynReady_.store(false);
 
     master_.reset();
+    presetsStore_.reset();
     config_.reset();
     synth_.reset();
     zynLeft_.clear();
@@ -107,11 +111,13 @@ bool ZynAndroidEngine::initialize(int sampleRate, int framesPerBurst) {
         config->cfg.SoundBufferSize = synth->buffersize;
         config->cfg.OscilSize = synth->oscilsize;
 
+        auto presetsStore = std::make_unique<zyn::PresetsStore>(*config);
         auto master = std::make_unique<zyn::Master>(*synth, config.get());
         master->initialize_rt();
 
         synth_ = std::move(synth);
         config_ = std::move(config);
+        presetsStore_ = std::move(presetsStore);
         master_ = std::move(master);
         setMasterVolumeNormalized(masterVolumeNorm_.load());
         ensureTempBuffers(std::max(framesPerBurst, synth_->buffersize));
@@ -135,6 +141,7 @@ void ZynAndroidEngine::shutdown() {
     noteHeld_.store(false);
     zynReady_.store(false);
     master_.reset();
+    presetsStore_.reset();
     config_.reset();
     synth_.reset();
     zynLeft_.clear();
@@ -529,6 +536,54 @@ std::string ZynAndroidEngine::parameterSnapshot(int partIndex, int kitIndex) con
         if (loop)
             add((std::string(prefix) + "/loop").c_str(), "Envelope loop", group, "bool", env.Prepeating, 0, 1, 0);
         add((std::string(prefix) + "/forceRelease").c_str(), "Force release", group, "bool", env.Pforcedrelease, 0, 1, 0);
+        add((std::string(prefix) + "/freeMode").c_str(), "Free mode", group, "bool", env.Pfreemode, 0, 1, 0);
+        add((std::string(prefix) + "/linear").c_str(), "Linear envelope", group, "bool", env.Plinearenvelope, 0, 1, 0);
+        add((std::string(prefix) + "/pointCount").c_str(), "Envelope points", group, "int", env.Penvpoints, 3,
+            MAX_ENVELOPE_POINTS, 4);
+        add((std::string(prefix) + "/sustainPoint").c_str(), "Sustain point", group, "int", env.Penvsustain, 0, 127, 127);
+        for (int point = 0; point < env.Penvpoints && point < MAX_ENVELOPE_POINTS; ++point) {
+            const auto pointPrefix = std::string(prefix) + "/point/" + std::to_string(point);
+            add((pointPrefix + "/time").c_str(), ("Point " + std::to_string(point + 1) + " time").c_str(),
+                group, "int", point == 0 ? 0 : time127(env.envdt[point]), 0, 127, 0);
+            add((pointPrefix + "/value").c_str(), ("Point " + std::to_string(point + 1) + " value").c_str(),
+                group, "int", env.Penvval[point], 0, 127, 64);
+        }
+    };
+    auto formantValue = [&](const char *prefix, const char *group, const zyn::FilterParams &filter) {
+        add((std::string(prefix) + "/formant/count").c_str(), "Formant count", group, "int",
+            filter.Pnumformants, 1, FF_MAX_FORMANTS, 3);
+        add((std::string(prefix) + "/formant/slowness").c_str(), "Formant slowness", group, "int",
+            filter.Pformantslowness, 0, 127, 64);
+        add((std::string(prefix) + "/formant/clearness").c_str(), "Vowel clearness", group, "int",
+            filter.Pvowelclearness, 0, 127, 64);
+        add((std::string(prefix) + "/formant/center").c_str(), "Center frequency", group, "int",
+            filter.Pcenterfreq, 0, 127, 64);
+        add((std::string(prefix) + "/formant/octaves").c_str(), "Octave span", group, "int",
+            filter.Poctavesfreq, 0, 127, 64);
+        add((std::string(prefix) + "/formant/sequenceSize").c_str(), "Sequence size", group, "int",
+            filter.Psequencesize, 1, FF_MAX_SEQUENCE, 3);
+        add((std::string(prefix) + "/formant/sequenceStretch").c_str(), "Sequence stretch", group, "int",
+            filter.Psequencestretch, 0, 127, 40);
+        add((std::string(prefix) + "/formant/sequenceReversed").c_str(), "Reverse sequence", group, "bool",
+            filter.Psequencereversed, 0, 1, 0);
+        for (int vowel = 0; vowel < FF_MAX_VOWELS; ++vowel) {
+            for (int formant = 0; formant < FF_MAX_FORMANTS; ++formant) {
+                const auto item = std::string(prefix) + "/formant/vowel/" + std::to_string(vowel) +
+                    "/" + std::to_string(formant);
+                add((item + "/frequency").c_str(), "Frequency", group, "int",
+                    filter.Pvowels[vowel].formants[formant].freq, 0, 127, 64);
+                add((item + "/amplitude").c_str(), "Amplitude", group, "int",
+                    filter.Pvowels[vowel].formants[formant].amp, 0, 127, 127);
+                add((item + "/q").c_str(), "Q", group, "int",
+                    filter.Pvowels[vowel].formants[formant].q, 0, 127, 64);
+            }
+        }
+        for (int position = 0; position < FF_MAX_SEQUENCE; ++position) {
+            add((std::string(prefix) + "/formant/sequence/" + std::to_string(position)).c_str(),
+                ("Sequence " + std::to_string(position + 1)).c_str(), group, "enum",
+                filter.Psequence[position].nvowel, 0, FF_MAX_VOWELS - 1, 0,
+                "Vowel 1,Vowel 2,Vowel 3,Vowel 4,Vowel 5,Vowel 6");
+        }
     };
     auto lfoValue = [&](const char *prefix, const char *group, const zyn::LFOParams &lfo) {
         const int frequency = std::clamp(static_cast<int>(std::lround(
@@ -618,6 +673,8 @@ std::string ZynAndroidEngine::parameterSnapshot(int partIndex, int kitIndex) con
             add("add/filter/tracking", "Frequency tracking", "ADD / Filter / Parameters", "int", tracking, 0, 127, 64);
             add("add/filter/gain", "Filter gain", "ADD / Filter / Parameters", "int", gain, 0, 127, 64);
             add("add/filter/stages", "Filter stages", "ADD / Filter / Parameters", "int", filter.Pstages + 1, 1, 6, 1);
+            if (filter.Pcategory == 1)
+                formantValue("add/filter", "ADD / Filter / Formant", filter);
         }
         if (g.FilterEnvelope)
             envelopeValue("add/filterEnvelope", "ADD / Filter / Envelope", *g.FilterEnvelope, true, false, false);
@@ -795,6 +852,8 @@ std::string ZynAndroidEngine::parameterSnapshot(int partIndex, int kitIndex) con
                     add((prefix + "filterCombLpf").c_str(), "Comb low pass", filterGroup.c_str(), "int",
                         filter.Plpf, 0, 127, 127);
                 }
+                if (filter.Pcategory == 1)
+                    formantValue((prefix + "filter").c_str(), (filterGroup + " / Formant").c_str(), filter);
             }
             auto addOscillator = [&](const zyn::OscilGen &o, const std::string &oscPrefix, const std::string &oscGroup) {
                 add((oscPrefix + "magnitudeType").c_str(), "Magnitude scale", oscGroup.c_str(), "enum", o.Phmagtype, 0, 4, 0,
@@ -874,8 +933,95 @@ bool ZynAndroidEngine::setParameter(int partIndex, int kitIndex, const std::stri
         else if (field == "stretch") env.Penvstretch = i(0, 127);
         else if (field == "loop") env.Prepeating = b();
         else if (field == "forceRelease") env.Pforcedrelease = b();
+        else if (field == "freeMode") {
+            if (b() && !env.Pfreemode) env.converttofree();
+            else env.Pfreemode = b();
+        }
+        else if (field == "linear") env.Plinearenvelope = b();
+        else if (field == "sustainPoint") {
+            const int sustain = i(0, 127);
+            env.Penvsustain = sustain < env.Penvpoints ? sustain : 127;
+            env.Pfreemode = true;
+        }
+        else if (field.rfind("point/", 0) == 0) {
+            const auto pointSpec = field.substr(6);
+            const auto slash = pointSpec.find('/');
+            if (slash == std::string::npos) return false;
+            const int point = std::atoi(pointSpec.substr(0, slash).c_str());
+            if (point < 0 || point >= env.Penvpoints || point >= MAX_ENVELOPE_POINTS) return false;
+            const auto pointField = pointSpec.substr(slash + 1);
+            if (pointField == "time" && point > 0) env.envdt[point] = seconds(i(0, 127));
+            else if (pointField == "value") env.Penvval[point] = i(0, 127);
+            else return false;
+            env.Pfreemode = true;
+        }
+        else if (field.rfind("insert/", 0) == 0) {
+            const int after = std::clamp(std::atoi(field.substr(7).c_str()), 0,
+                static_cast<int>(env.Penvpoints) - 2);
+            if (env.Penvpoints >= MAX_ENVELOPE_POINTS) return false;
+            const int inserted = after + 1;
+            for (int point = env.Penvpoints; point > inserted; --point) {
+                env.envdt[point] = env.envdt[point - 1];
+                env.Penvval[point] = env.Penvval[point - 1];
+            }
+            env.envdt[inserted] = std::max(0.0f, env.envdt[inserted + 1] * .5f);
+            env.envdt[inserted + 1] = std::max(0.0f, env.envdt[inserted + 1] * .5f);
+            env.Penvval[inserted] = static_cast<unsigned char>((
+                static_cast<int>(env.Penvval[after]) + static_cast<int>(env.Penvval[inserted + 1])) / 2);
+            ++env.Penvpoints;
+            if (env.Penvsustain != 127 && inserted <= env.Penvsustain) ++env.Penvsustain;
+            env.Pfreemode = true;
+        }
+        else if (field.rfind("delete/", 0) == 0) {
+            const int point = std::atoi(field.substr(7).c_str());
+            if (point <= 0 || point >= env.Penvpoints - 1 || env.Penvpoints <= 3) return false;
+            env.envdt[point + 1] += env.envdt[point];
+            for (int next = point + 1; next < env.Penvpoints; ++next) {
+                env.envdt[next - 1] = env.envdt[next];
+                env.Penvval[next - 1] = env.Penvval[next];
+            }
+            --env.Penvpoints;
+            if (env.Penvsustain != 127) {
+                if (env.Penvsustain == point) env.Penvsustain = 127;
+                else if (point < env.Penvsustain) --env.Penvsustain;
+            }
+            env.Pfreemode = true;
+        }
         else return false;
-        env.converttofree();
+        if (!env.Pfreemode && field != "freeMode") env.converttofree();
+        return true;
+    };
+    auto writeFormant = [&](zyn::FilterParams &filter, const std::string &field) {
+        if (field == "count") filter.Pnumformants = i(1, FF_MAX_FORMANTS);
+        else if (field == "slowness") filter.Pformantslowness = i(0, 127);
+        else if (field == "clearness") filter.Pvowelclearness = i(0, 127);
+        else if (field == "center") filter.Pcenterfreq = i(0, 127);
+        else if (field == "octaves") filter.Poctavesfreq = i(0, 127);
+        else if (field == "sequenceSize") filter.Psequencesize = i(1, FF_MAX_SEQUENCE);
+        else if (field == "sequenceStretch") filter.Psequencestretch = i(0, 127);
+        else if (field == "sequenceReversed") filter.Psequencereversed = b();
+        else if (field.rfind("vowel/", 0) == 0) {
+            const auto spec = field.substr(6);
+            const auto first = spec.find('/');
+            const auto second = first == std::string::npos ? std::string::npos : spec.find('/', first + 1);
+            if (second == std::string::npos) return false;
+            const int vowel = std::atoi(spec.substr(0, first).c_str());
+            const int formant = std::atoi(spec.substr(first + 1, second - first - 1).c_str());
+            if (vowel < 0 || vowel >= FF_MAX_VOWELS || formant < 0 || formant >= FF_MAX_FORMANTS) return false;
+            auto &item = filter.Pvowels[vowel].formants[formant];
+            const auto itemField = spec.substr(second + 1);
+            if (itemField == "frequency") item.freq = i(0, 127);
+            else if (itemField == "amplitude") item.amp = i(0, 127);
+            else if (itemField == "q") item.q = i(0, 127);
+            else return false;
+        }
+        else if (field.rfind("sequence/", 0) == 0) {
+            const int position = std::atoi(field.substr(9).c_str());
+            if (position < 0 || position >= FF_MAX_SEQUENCE) return false;
+            filter.Psequence[position].nvowel = i(0, FF_MAX_VOWELS - 1);
+        }
+        else return false;
+        filter.changed = true;
         return true;
     };
     auto writeLfo = [&](zyn::LFOParams &lfo, const std::string &field) {
@@ -950,7 +1096,8 @@ bool ZynAndroidEngine::setParameter(int partIndex, int kitIndex, const std::stri
         } else if (path.rfind("add/filter/", 0) == 0 && g.GlobalFilter) {
             auto &filter = *g.GlobalFilter;
             const auto field = path.substr(11);
-            if (field == "category") filter.Pcategory = i(0, 4);
+            if (field.rfind("formant/", 0) == 0) return writeFormant(filter, field.substr(8));
+            else if (field == "category") filter.Pcategory = i(0, 4);
             else if (field == "type") filter.Ptype = i(0, 8);
             else if (field == "cutoff") filter.basefreq = zyn::FilterParams::basefreqFromOldPreq(i(0, 127));
             else if (field == "q") filter.baseq = zyn::FilterParams::baseqFromOldPq(i(0, 127));
@@ -1070,7 +1217,9 @@ bool ZynAndroidEngine::setParameter(int partIndex, int kitIndex, const std::stri
                 return writeEnvelope(*v.FMFreqEnvelope, field.substr(17));
             else if (field.rfind("filter", 0) == 0 && v.VoiceFilter) {
                 auto &filter = *v.VoiceFilter;
-                if (field == "filterCategory") filter.Pcategory = i(0, 4);
+                if (field.rfind("filter/formant/", 0) == 0)
+                    return writeFormant(filter, field.substr(15));
+                else if (field == "filterCategory") filter.Pcategory = i(0, 4);
                 else if (field == "filterType") {
                     const int maxType = filter.Pcategory == 0 ? 8 : filter.Pcategory == 2 ? 3 :
                         filter.Pcategory == 3 ? 2 : filter.Pcategory == 4 ? 5 : 0;
@@ -1153,6 +1302,251 @@ bool ZynAndroidEngine::setParameter(int partIndex, int kitIndex, const std::stri
         else return false;
     } else return false;
     return true;
+}
+
+namespace {
+int normalizedEnvelopeRole(int role) {
+    if (role == 3) return 0;
+    if (role == 4) return 1;
+    return role;
+}
+
+const char *moduleKindName(int kind) {
+    switch (kind) {
+        case 0: return "voice";
+        case 1: return "oscillator";
+        case 2: return "envelope";
+        case 3: return "lfo";
+        case 4: return "filter";
+        case 5: return "resonance";
+        case 6: return "vowel";
+        default: return "";
+    }
+}
+}
+
+bool ZynAndroidEngine::copyModule(int partIndex, int kitIndex, int kind, int index, int role) {
+    if (!zynReady_.load() || !master_ || !presetsStore_ || partIndex < 0 || partIndex >= NUM_MIDI_PARTS ||
+        kitIndex < 0 || kitIndex >= NUM_KIT_ITEMS || !master_->part[partIndex]) return false;
+    auto &kit = master_->part[partIndex]->kit[kitIndex];
+    if (!kit.adpars) return false;
+    auto &global = kit.adpars->GlobalPar;
+    if (kind == 0) {
+        if (index < 0 || index >= NUM_VOICES) return false;
+        kit.adpars->copy(*presetsStore_, index, nullptr);
+    } else if (kind == 1) {
+        if (index < 0 || index >= NUM_VOICES) return false;
+        auto *oscillator = role == 1 ? kit.adpars->VoicePar[index].FmGn : kit.adpars->VoicePar[index].OscilGn;
+        if (!oscillator) return false;
+        oscillator->copy(*presetsStore_, nullptr);
+    } else if (kind == 2) {
+        zyn::EnvelopeParams *envelope = nullptr;
+        if (index < 0) envelope = role == 0 ? global.AmpEnvelope : role == 1 ? global.FreqEnvelope : global.FilterEnvelope;
+        else if (index < NUM_VOICES) {
+            auto &voice = kit.adpars->VoicePar[index];
+            envelope = role == 0 ? voice.AmpEnvelope : role == 1 ? voice.FreqEnvelope :
+                role == 2 ? voice.FilterEnvelope : role == 3 ? voice.FMAmpEnvelope : voice.FMFreqEnvelope;
+        }
+        if (!envelope) return false;
+        envelope->copy(*presetsStore_, nullptr);
+    } else if (kind == 3) {
+        zyn::LFOParams *lfo = nullptr;
+        if (index < 0) lfo = role == 0 ? global.AmpLfo : role == 1 ? global.FreqLfo : global.FilterLfo;
+        else if (index < NUM_VOICES) {
+            auto &voice = kit.adpars->VoicePar[index];
+            lfo = role == 0 ? voice.AmpLfo : role == 1 ? voice.FreqLfo : voice.FilterLfo;
+        }
+        if (!lfo) return false;
+        lfo->copy(*presetsStore_, nullptr);
+    } else if (kind == 4 || kind == 6) {
+        zyn::FilterParams *filter = index < 0 ? global.GlobalFilter :
+            index < NUM_VOICES ? kit.adpars->VoicePar[index].VoiceFilter : nullptr;
+        if (!filter) return false;
+        if (kind == 6) {
+            if (role < 0 || role >= FF_MAX_VOWELS) return false;
+            filter->copy(*presetsStore_, role, nullptr);
+        } else filter->copy(*presetsStore_, nullptr);
+    } else if (kind == 5) {
+        if (!global.Reson) return false;
+        global.Reson->copy(*presetsStore_, nullptr);
+    } else return false;
+    clipboardKind_ = moduleKindName(kind);
+    clipboardRole_ = kind == 2 ? normalizedEnvelopeRole(role) : role;
+    return !presetsStore_->clipboard.data.empty();
+}
+
+bool ZynAndroidEngine::canPasteModule(int kind, int role) const {
+    if (!presetsStore_ || presetsStore_->clipboard.data.empty() || clipboardKind_ != moduleKindName(kind)) return false;
+    if (kind == 2) return clipboardRole_ == normalizedEnvelopeRole(role);
+    return kind == 3 || kind == 1 || kind == 0 || kind == 4 || kind == 5 || kind == 6;
+}
+
+bool ZynAndroidEngine::pasteModule(int partIndex, int kitIndex, int kind, int index, int role) {
+    if (!canPasteModule(kind, role) || !zynReady_.load() || !master_ || partIndex < 0 ||
+        partIndex >= NUM_MIDI_PARTS || kitIndex < 0 || kitIndex >= NUM_KIT_ITEMS ||
+        !master_->part[partIndex]) return false;
+    auto &kit = master_->part[partIndex]->kit[kitIndex];
+    if (!kit.adpars) return false;
+    zyn::XMLwrapper xml;
+    if (!xml.putXMLdata(presetsStore_->clipboard.data.c_str())) return false;
+    if (!xml.enterbranch(presetsStore_->clipboard.type.c_str())) return false;
+    master_->ShutUp();
+    auto &global = kit.adpars->GlobalPar;
+    if (kind == 0) {
+        if (index < 0 || index >= NUM_VOICES) return false;
+        kit.adpars->defaults(index);
+        kit.adpars->getfromXMLsection(xml, index);
+    } else if (kind == 1) {
+        if (index < 0 || index >= NUM_VOICES) return false;
+        auto *oscillator = role == 1 ? kit.adpars->VoicePar[index].FmGn : kit.adpars->VoicePar[index].OscilGn;
+        if (!oscillator) return false;
+        oscillator->defaults();
+        oscillator->getfromXML(xml);
+        oscillator->prepare();
+    } else if (kind == 2) {
+        zyn::EnvelopeParams *envelope = nullptr;
+        if (index < 0) envelope = role == 0 ? global.AmpEnvelope : role == 1 ? global.FreqEnvelope : global.FilterEnvelope;
+        else if (index < NUM_VOICES) {
+            auto &voice = kit.adpars->VoicePar[index];
+            envelope = role == 0 ? voice.AmpEnvelope : role == 1 ? voice.FreqEnvelope :
+                role == 2 ? voice.FilterEnvelope : role == 3 ? voice.FMAmpEnvelope : voice.FMFreqEnvelope;
+        }
+        if (!envelope) return false;
+        envelope->defaults();
+        envelope->getfromXML(xml);
+    } else if (kind == 3) {
+        zyn::LFOParams *lfo = nullptr;
+        if (index < 0) lfo = role == 0 ? global.AmpLfo : role == 1 ? global.FreqLfo : global.FilterLfo;
+        else if (index < NUM_VOICES) {
+            auto &voice = kit.adpars->VoicePar[index];
+            lfo = role == 0 ? voice.AmpLfo : role == 1 ? voice.FreqLfo : voice.FilterLfo;
+        }
+        if (!lfo) return false;
+        lfo->defaults();
+        lfo->getfromXML(xml);
+    } else if (kind == 4 || kind == 6) {
+        auto *filter = index < 0 ? global.GlobalFilter :
+            index < NUM_VOICES ? kit.adpars->VoicePar[index].VoiceFilter : nullptr;
+        if (!filter) return false;
+        if (kind == 6) {
+            if (role < 0 || role >= FF_MAX_VOWELS) return false;
+            filter->defaults(role);
+            filter->getfromXMLsection(xml, role);
+        } else {
+            filter->defaults();
+            filter->getfromXML(xml);
+        }
+        filter->changed = true;
+    } else if (kind == 5) {
+        if (!global.Reson) return false;
+        global.Reson->defaults();
+        global.Reson->getfromXML(xml);
+    } else return false;
+    xml.exitbranch();
+    return true;
+}
+
+std::string ZynAndroidEngine::clipboardType() const {
+    if (!presetsStore_ || presetsStore_->clipboard.data.empty()) return {};
+    return clipboardKind_;
+}
+
+std::string ZynAndroidEngine::modulePreview(
+        int partIndex, int kitIndex, int kind, int index, int role, int resolution) {
+    if (!zynReady_.load() || !master_ || partIndex < 0 || partIndex >= NUM_MIDI_PARTS ||
+        kitIndex < 0 || kitIndex >= NUM_KIT_ITEMS || !master_->part[partIndex]) return {};
+    auto &kit = master_->part[partIndex]->kit[kitIndex];
+    if (!kit.adpars) return {};
+    const int count = std::clamp(resolution, 16, 512);
+    std::vector<float> points(count, 0.0f);
+    auto &global = kit.adpars->GlobalPar;
+    if (kind == 1) {
+        if (index < 0 || index >= NUM_VOICES || !synth_) return {};
+        auto *oscillator = role == 1 ? kit.adpars->VoicePar[index].FmGn : kit.adpars->VoicePar[index].OscilGn;
+        if (!oscillator) return {};
+        std::vector<float> samples(synth_->oscilsize, 0.0f);
+        const int offset = oscillator->get(samples.data(), -1.0f, 0);
+        float peak = 0.000001f;
+        for (float sample : samples) peak = std::max(peak, std::fabs(sample));
+        for (int n = 0; n < count; ++n)
+            points[n] = samples[(offset + n * samples.size() / count) % samples.size()] / peak;
+    } else if (kind == 2) {
+        zyn::EnvelopeParams *envelope = nullptr;
+        if (index < 0) envelope = role == 0 ? global.AmpEnvelope : role == 1 ? global.FreqEnvelope : global.FilterEnvelope;
+        else if (index < NUM_VOICES) {
+            auto &voice = kit.adpars->VoicePar[index];
+            envelope = role == 0 ? voice.AmpEnvelope : role == 1 ? voice.FreqEnvelope :
+                role == 2 ? voice.FilterEnvelope : role == 3 ? voice.FMAmpEnvelope : voice.FMFreqEnvelope;
+        }
+        if (!envelope || envelope->Penvpoints < 2) return {};
+        float total = 0.0f;
+        for (int p = 1; p < envelope->Penvpoints; ++p) total += std::max(.0001f, envelope->envdt[p]);
+        for (int n = 0; n < count; ++n) {
+            float target = total * n / static_cast<float>(count - 1), elapsed = 0.0f;
+            int segment = 1;
+            while (segment < envelope->Penvpoints - 1 && elapsed + envelope->envdt[segment] < target)
+                elapsed += envelope->envdt[segment++];
+            const float fraction = std::clamp((target - elapsed) / std::max(.0001f, envelope->envdt[segment]), 0.0f, 1.0f);
+            points[n] = (envelope->Penvval[segment - 1] * (1.0f - fraction) +
+                envelope->Penvval[segment] * fraction) / 63.5f - 1.0f;
+        }
+    } else if (kind == 3) {
+        zyn::LFOParams *lfo = nullptr;
+        if (index < 0) lfo = role == 0 ? global.AmpLfo : role == 1 ? global.FreqLfo : global.FilterLfo;
+        else if (index < NUM_VOICES) {
+            auto &voice = kit.adpars->VoicePar[index];
+            lfo = role == 0 ? voice.AmpLfo : role == 1 ? voice.FreqLfo : voice.FilterLfo;
+        }
+        if (!lfo) return {};
+        for (int n = 0; n < count; ++n) {
+            const float phase = n / static_cast<float>(count - 1);
+            const float sine = std::sin(static_cast<float>(kTwoPi) * phase);
+            switch (lfo->PLFOtype) {
+                case 1: points[n] = 1.0f - 4.0f * std::fabs(phase - .5f); break;
+                case 2: points[n] = phase < .5f ? 1.0f : -1.0f; break;
+                case 3: points[n] = phase * 2.0f - 1.0f; break;
+                case 4: points[n] = 1.0f - phase * 2.0f; break;
+                case 5: points[n] = 2.0f * std::exp(-phase * 5.0f) - 1.0f; break;
+                case 6: points[n] = 2.0f * std::exp(-phase * 10.0f) - 1.0f; break;
+                case 7: points[n] = std::sin((n * 1103515245u + 12345u) * .000001f); break;
+                default: points[n] = sine; break;
+            }
+        }
+    } else if (kind == 4) {
+        auto *filter = index < 0 ? global.GlobalFilter :
+            index < NUM_VOICES ? kit.adpars->VoicePar[index].VoiceFilter : nullptr;
+        if (!filter) return {};
+        for (int n = 0; n < count; ++n) {
+            const float x = n / static_cast<float>(count - 1);
+            if (filter->Pcategory == 1) {
+                float response = 0.0f;
+                const int vowel = std::clamp(role, 0, FF_MAX_VOWELS - 1);
+                for (int f = 0; f < filter->Pnumformants; ++f) {
+                    const auto &formant = filter->Pvowels[vowel].formants[f];
+                    const float center = formant.freq / 127.0f;
+                    const float width = .01f + (127 - formant.q) / 127.0f * .12f;
+                    response += formant.amp / 127.0f * std::exp(-std::pow((x - center) / width, 2.0f));
+                }
+                points[n] = std::clamp(response / std::max(1, static_cast<int>(filter->Pnumformants)) * 2.0f - 1.0f, -1.0f, 1.0f);
+            } else {
+                const float cutoff = std::clamp((std::log2(filter->basefreq) - 4.0f) / 11.0f, 0.0f, 1.0f);
+                const float slope = 8.0f + filter->Pstages * 4.0f;
+                const bool highPass = filter->Ptype == 1 || filter->Ptype == 3;
+                const float low = 1.0f / (1.0f + std::exp((x - cutoff) * slope));
+                points[n] = (highPass ? 1.0f - low : low) * 2.0f - 1.0f;
+            }
+        }
+    } else if (kind == 5) {
+        if (!global.Reson) return {};
+        for (int n = 0; n < count; ++n)
+            points[n] = global.Reson->getfreqresponse(global.Reson->getfreqx(n / static_cast<float>(count - 1)));
+    } else return {};
+    std::ostringstream out;
+    for (int n = 0; n < count; ++n) {
+        if (n) out << ',';
+        out << points[n];
+    }
+    return out.str();
 }
 
 bool ZynAndroidEngine::exportInstrument(int partIndex, const std::string &path) {

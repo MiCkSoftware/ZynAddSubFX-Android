@@ -33,6 +33,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.input.pointer.pointerInput
@@ -642,10 +643,12 @@ fun LuminousActionButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     accent: Color = Color(0xFF33C8C8),
+    enabled: Boolean = true,
 ) {
     Surface(
         modifier = modifier
-            .clickable { onClick() }
+            .clickable(enabled = enabled) { onClick() }
+            .alpha(if (enabled) 1f else .42f)
             .border(
                 width = 1.5.dp,
                 color = accent.copy(alpha = 0.85f),
