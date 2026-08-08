@@ -36,6 +36,115 @@ constexpr auto kInstrumentApplyTimeout = std::chrono::milliseconds(1200);
 constexpr const char *kEngineLogTag = "zynbridge";
 #endif
 
+struct ParameterMetadata {
+    const char *module = "unknown";
+    const char *scope = "global";
+    int ownerIndex = -1;
+    const char *section = "other";
+    const char *family = "basic";
+};
+
+ParameterMetadata parameterMetadata(std::string_view path, std::string_view group) {
+    ParameterMetadata metadata;
+    if (path.rfind("part/", 0) == 0) metadata.module = "part";
+    else if (path.rfind("kit/", 0) == 0) metadata.module = "kit";
+    else if (path.rfind("add/", 0) == 0) metadata.module = "add";
+    else if (path.rfind("sub/", 0) == 0) metadata.module = "sub";
+    else if (path.rfind("pad/", 0) == 0) metadata.module = "pad";
+    else if (path.rfind("fx/", 0) == 0) metadata.module = "fx";
+
+    constexpr std::string_view voicePrefix = "add/voice/";
+    if (path.rfind(voicePrefix, 0) == 0) {
+        const auto owner = path.substr(voicePrefix.size()).substr(0, path.substr(voicePrefix.size()).find('/'));
+        int index = 0;
+        bool valid = !owner.empty();
+        for (const char digit : owner) {
+            if (digit < '0' || digit > '9') {
+                valid = false;
+                break;
+            }
+            index = index * 10 + digit - '0';
+        }
+        metadata.scope = valid ? "voice" : "unknown";
+        metadata.ownerIndex = valid ? index : -1;
+    } else if (path.find("/harmonic/") != std::string_view::npos) {
+        metadata.scope = "harmonic";
+    } else if (path.rfind("fx/", 0) == 0) {
+        metadata.scope = "effect";
+    }
+
+    bool sectionFromPath = false;
+    if (path.rfind("add/", 0) == 0) {
+        auto field = path.substr(4);
+        if (field.rfind("voice/", 0) == 0) {
+            field = field.substr(field.find('/') + 1);
+            field = field.substr(field.find('/') + 1);
+            if (field.rfind("mod", 0) == 0 || field.rfind("fmType", 0) == 0 ||
+                field.rfind("externalMod", 0) == 0 || field.rfind("sync", 0) == 0) {
+                metadata.section = "modulation";
+            } else if (field.rfind("amp", 0) == 0 || field.rfind("panning", 0) == 0 ||
+                       field.rfind("volume", 0) == 0 || field.rfind("velocity", 0) == 0) {
+                metadata.section = "amplitude";
+            } else if (field.rfind("freq", 0) == 0 || field.rfind("detune", 0) == 0 ||
+                       field.rfind("octave", 0) == 0 || field.rfind("coarse", 0) == 0 ||
+                       field.rfind("fixedFreq", 0) == 0 || field.rfind("bend", 0) == 0 ||
+                       field.rfind("offsetHz", 0) == 0) {
+                metadata.section = "frequency";
+            } else if (field.rfind("filter", 0) == 0 || field.rfind("bypassGlobalFilter", 0) == 0) {
+                metadata.section = "filter";
+            } else if (field.rfind("osc", 0) == 0 || field.rfind("externalOscillator", 0) == 0) {
+                metadata.section = "oscillator";
+            } else if (field.rfind("unison", 0) == 0 || field.rfind("spread", 0) == 0 ||
+                       field.rfind("phaseRandom", 0) == 0 || field.rfind("stereoSpread", 0) == 0 ||
+                       field.rfind("vibrato", 0) == 0) {
+                metadata.section = "unison";
+            } else {
+                metadata.section = "voice";
+            }
+        } else if (field.rfind("amp", 0) == 0 || field.rfind("volume", 0) == 0 ||
+                   field.rfind("panning", 0) == 0 || field.rfind("velocity", 0) == 0 ||
+                   field.rfind("punch", 0) == 0) {
+            metadata.section = "amplitude";
+        } else if (field.rfind("freq", 0) == 0 || field.rfind("detune", 0) == 0 ||
+                   field.rfind("octave", 0) == 0 || field.rfind("coarse", 0) == 0) {
+            metadata.section = "frequency";
+        } else if (field.rfind("filter", 0) == 0) {
+            metadata.section = "filter";
+        } else if (field.rfind("resonance", 0) == 0) {
+            metadata.section = "resonance";
+        } else {
+            metadata.section = "global";
+        }
+        sectionFromPath = true;
+    }
+    if (!sectionFromPath) {
+        if (group.find("Amplitude") != std::string_view::npos) metadata.section = "amplitude";
+        else if (group.find("Frequency") != std::string_view::npos) metadata.section = "frequency";
+        else if (group.find("Filter") != std::string_view::npos) metadata.section = "filter";
+        else if (group.find("Oscillator") != std::string_view::npos ||
+                 group.find("oscillator") != std::string_view::npos) metadata.section = "oscillator";
+        else if (group.find("Modulation") != std::string_view::npos) metadata.section = "modulation";
+        else if (group.find("Resonance") != std::string_view::npos) metadata.section = "resonance";
+        else if (group.find("Harmonic") != std::string_view::npos) metadata.section = "harmonics";
+        else if (group.find("Profile") != std::string_view::npos) metadata.section = "profile";
+        else if (group.find("Spectrum") != std::string_view::npos) metadata.section = "spectrum";
+        else if (group.find("Quality") != std::string_view::npos) metadata.section = "quality";
+        else if (group.find("Routing") != std::string_view::npos) metadata.section = "routing";
+        else if (group.find("Global") != std::string_view::npos) metadata.section = "global";
+    }
+
+    if (path.find("Envelope") != std::string_view::npos) metadata.family = "envelope";
+    else if (path.find("Lfo") != std::string_view::npos) metadata.family = "lfo";
+    else if (path.find("/formant/") != std::string_view::npos) metadata.family = "formant";
+    else if (path.find("/osc/") != std::string_view::npos ||
+             path.find("/modOsc/") != std::string_view::npos) metadata.family = "oscillator";
+    else if (path.find("resonance") != std::string_view::npos) metadata.family = "resonance";
+    else if (path.find("/harmonic/") != std::string_view::npos) metadata.family = "harmonic";
+    else if (path.find("filter") != std::string_view::npos ||
+             path.find("Filter") != std::string_view::npos) metadata.family = "filter";
+    return metadata;
+}
+
 const char *effectTypeNameNative(int typeId) {
     switch (typeId) {
         case 1: return "Reverb";
@@ -513,8 +622,11 @@ std::string ZynAndroidEngine::parameterSnapshot(int partIndex, int kitIndex) con
     std::ostringstream out;
     auto add = [&](const char *path, const char *label, const char *group, const char *type,
                    double value, double min, double max, double def, const char *options = "") {
+        const auto metadata = parameterMetadata(path, group);
         out << path << '|' << label << '|' << group << '|' << type << '|'
-            << value << '|' << min << '|' << max << '|' << def << '|' << options << '\n';
+            << value << '|' << min << '|' << max << '|' << def << '|' << options << '|'
+            << metadata.module << '|' << metadata.scope << '|' << metadata.ownerIndex << '|'
+            << metadata.section << '|' << metadata.family << '\n';
     };
     auto envelopeValue = [&](const char *prefix, const char *group, const zyn::EnvelopeParams &env,
                              bool decay, bool sustain, bool loop) {

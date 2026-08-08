@@ -31,6 +31,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -228,8 +231,7 @@ fun FullInstrumentEditor(
     var exportedFile by remember { mutableStateOf<File?>(null) }
     var exportedRevision by remember { mutableStateOf(0L) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val contentScroll = rememberScrollState()
-    val sectionOffsets = remember(module, state.kitIndex) { mutableStateOf<Map<String, Int>>(emptyMap()) }
+    val contentScroll = remember(module, state.kitIndex) { LazyListState() }
     val voiceDetailScroll = rememberScrollState()
     val voiceSectionOffsets = remember(state.selectedVoice) { mutableStateOf<Map<String, Int>>(emptyMap()) }
     val oscillatorScroll = rememberScrollState()
@@ -265,7 +267,8 @@ fun FullInstrumentEditor(
         destination = null
         model.selectTab(tab)
         scope.launch {
-            contentScroll.animateScrollTo(sectionOffsets.value[tab] ?: 0)
+            val index = sectionNames.indexOf(tab)
+            if (index >= 0) contentScroll.animateScrollToItem(index)
         }
     }
     val currentDestination = destination
@@ -527,7 +530,8 @@ fun FullInstrumentEditor(
                 navigationLabel = "‹ Part",
                 onNavigateUp = onBack,
                 tabs = sectionNames,
-                selectedTab = activeAnchor(contentScroll.value, sectionNames, sectionOffsets.value),
+                selectedTab = sectionNames.getOrNull(contentScroll.firstVisibleItemIndex)
+                    ?: sectionNames.firstOrNull().orEmpty(),
                 onTabSelected = openSection,
                 dirty = state.dirty,
                 onActions = { selector = "actions" },
@@ -537,11 +541,13 @@ fun FullInstrumentEditor(
                 onReleaseKeyboardNote = onReleaseKeyboardNote,
                 modifier = Modifier.weight(1f),
             ) { contentModifier ->
-                Column(
-                    contentModifier.verticalScroll(contentScroll).padding(7.dp),
+                LazyColumn(
+                    modifier = contentModifier.fillMaxSize(),
+                    state = contentScroll,
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(7.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    populatedSections(state.snapshot?.values.orEmpty(), module).forEach { section ->
+                    items(sectionNames, key = { it }) { section ->
                         val rawParameters = parametersFor(
                             state.snapshot?.values.orEmpty(),
                             module,
@@ -550,9 +556,11 @@ fun FullInstrumentEditor(
                         ).let { if (section == "Voices") emptyList() else it }
                         val parameters = if (module == "ADD") {
                             when (section) {
-                                "Amplitude", "Frequency" -> rawParameters.filterNot {
-                                    it.descriptor.group.endsWith("/ Envelope") ||
-                                        it.descriptor.group.endsWith("/ LFO")
+                                "Amp", "Frequency" -> rawParameters.filterNot {
+                                    it.descriptor.family in setOf(
+                                        SynthEngine.ParameterFamily.ENVELOPE,
+                                        SynthEngine.ParameterFamily.LFO,
+                                    )
                                 }
                                 "Filter" -> emptyList()
                                 else -> rawParameters
@@ -561,12 +569,7 @@ fun FullInstrumentEditor(
                         ZynEditorSection(
                             title = section,
                             parameters = parameters,
-                            modifier = Modifier.onGloballyPositioned {
-                                val offset = it.positionInParent().y.roundToInt()
-                                if (sectionOffsets.value[section] != offset) {
-                                    sectionOffsets.value = sectionOffsets.value + (section to offset)
-                                }
-                            },
+                            modifier = Modifier,
                             complex = section == "Spectrum" ||
                                 (module == "FX" && section != "Routing"),
                             onComplex = {
@@ -578,6 +581,8 @@ fun FullInstrumentEditor(
                             },
                             onWrite = model::write,
                             onEdit = { editedParameter = it },
+                            onDrag = model::dragParameter,
+                            onCommit = model::finishParameterDrag,
                             verticalLabels = module == "ADD",
                             leadingContent = when (section) {
                                 "Voices" -> ({
@@ -616,10 +621,14 @@ fun FullInstrumentEditor(
                                         }
                                     }
                                 })
-                                "Amplitude", "Frequency", "Filter" -> if (module == "ADD") ({
+                                "Amp", "Frequency", "Filter" -> if (module == "ADD") ({
                                     CommonSynthModules(
                                         model = model,
-                                        section = section,
+                                        section = when (section) {
+                                            "Amp" -> SynthEngine.ParameterSection.AMPLITUDE
+                                            "Frequency" -> SynthEngine.ParameterSection.FREQUENCY
+                                            else -> SynthEngine.ParameterSection.FILTER
+                                        },
                                         onOpenEnvelope = {
                                             destination = InstrumentEditorDestination.Envelope(it)
                                         },
@@ -984,7 +993,12 @@ private fun AddVoiceDetailScreen(
                         if (section in setOf("Amplitude", "Frequency", "Filter", "Modulation")) {
                             CommonSynthModules(
                                 model = model,
-                                section = section,
+                                section = when (section) {
+                                    "Amplitude" -> SynthEngine.ParameterSection.AMPLITUDE
+                                    "Frequency" -> SynthEngine.ParameterSection.FREQUENCY
+                                    "Filter" -> SynthEngine.ParameterSection.FILTER
+                                    else -> SynthEngine.ParameterSection.MODULATION
+                                },
                                 voiceIndex = state.selectedVoice,
                                 onOpenEnvelope = onOpenEnvelope,
                                 onOpenFormant = onOpenFormant,
@@ -1019,6 +1033,8 @@ private fun AddVoiceDetailScreen(
                                     voiceParameterOrder(section, group, it.descriptor.path)
                                 },
                                 onWrite = model::write,
+                                onDrag = model::dragParameter,
+                                onCommit = model::finishParameterDrag,
                                 verticalLabels = true,
                                 onLongPress = { model.reset(it) },
                                 enabled = { parameter ->
@@ -1234,6 +1250,8 @@ private fun AddOscillatorEditorScreen(
                         DenseParameterGrid(
                             parameters = parameters,
                             onWrite = model::write,
+                            onDrag = model::dragParameter,
+                            onCommit = model::finishParameterDrag,
                             onLongPress = { editedParameter = it },
                         )
                     }
@@ -1543,6 +1561,8 @@ private fun AddResonanceEditorScreen(
                 DenseParameterGrid(
                     parameters = resonanceControls,
                     onWrite = model::write,
+                    onDrag = model::dragParameter,
+                    onCommit = model::finishParameterDrag,
                     verticalLabels = true,
                     onLongPress = { model.reset(it) },
                     valueText = { parameter ->
@@ -1698,6 +1718,8 @@ private fun ZynEditorSection(
     onEdit: (SynthEngine.ParameterValue) -> Unit,
     verticalLabels: Boolean = false,
     leadingContent: (@Composable () -> Unit)? = null,
+    onDrag: (SynthEngine.ParameterValue, Double) -> Unit = onWrite,
+    onCommit: () -> Unit = {},
 ) {
     Column(
         modifier = modifier.fillMaxWidth(),
@@ -1737,6 +1759,8 @@ private fun ZynEditorSection(
                             onWrite,
                             verticalLabels = true,
                             onLongPress = onEdit,
+                            onDrag = onDrag,
+                            onCommit = onCommit,
                         )
                     }
                 } else {
@@ -1745,6 +1769,8 @@ private fun ZynEditorSection(
                         onWrite,
                         verticalLabels = false,
                         onLongPress = onEdit,
+                        onDrag = onDrag,
+                        onCommit = onCommit,
                     )
                 }
             }
@@ -1769,12 +1795,29 @@ private fun addSubsectionLabel(group: String): String = when {
     else -> group.substringAfterLast('/')
 }
 
-private fun parametersFor(
+internal fun parametersFor(
     all: List<SynthEngine.ParameterValue>,
     module: String,
     tab: String,
     voice: Int,
 ): List<SynthEngine.ParameterValue> = all.filter { parameter ->
+    val descriptor = parameter.descriptor
+    if (module == "ADD") {
+        if (descriptor.module != SynthEngine.ParameterModule.ADD) return@filter false
+        return@filter when (tab) {
+            "Amp" -> descriptor.scope == SynthEngine.ParameterScope.GLOBAL &&
+                descriptor.section == SynthEngine.ParameterSection.AMPLITUDE
+            "Frequency" -> descriptor.scope == SynthEngine.ParameterScope.GLOBAL &&
+                descriptor.section == SynthEngine.ParameterSection.FREQUENCY
+            "Filter" -> descriptor.scope == SynthEngine.ParameterScope.GLOBAL &&
+                descriptor.section == SynthEngine.ParameterSection.FILTER
+            "Voices" -> descriptor.scope == SynthEngine.ParameterScope.VOICE &&
+                descriptor.ownerIndex == voice
+            "Resonance" -> descriptor.scope == SynthEngine.ParameterScope.GLOBAL &&
+                descriptor.section == SynthEngine.ParameterSection.RESONANCE
+            else -> false
+        }
+    }
     val group = parameter.descriptor.group
     if (!group.startsWith(module, ignoreCase = true)) return@filter false
     if (module == "ADD" && parameter.descriptor.path == "add/stereo") return@filter false
@@ -1807,6 +1850,8 @@ private fun DenseParameterGrid(
     valueText: (SynthEngine.ParameterValue) -> String = { it.value.roundToInt().toString() },
     enabled: (SynthEngine.ParameterValue) -> Boolean = { true },
     onLongPress: (SynthEngine.ParameterValue) -> Unit,
+    onDrag: (SynthEngine.ParameterValue, Double) -> Unit = onWrite,
+    onCommit: () -> Unit = {},
 ) {
     BoxWithConstraints {
         val columns = when {
@@ -1834,6 +1879,8 @@ private fun DenseParameterGrid(
                                 verticalLabels,
                                 valueText(parameter),
                                 enabled(parameter),
+                                onDrag,
+                                onCommit,
                             )
                         }
                     }
@@ -1855,6 +1902,8 @@ private fun DenseParameterControl(
     verticalLabel: Boolean = false,
     valueText: String = parameter.value.roundToInt().toString(),
     enabled: Boolean = true,
+    onDrag: (SynthEngine.ParameterValue, Double) -> Unit = onWrite,
+    onCommit: () -> Unit = {},
 ) {
     val descriptor = parameter.descriptor
     Surface(
@@ -1913,8 +1962,9 @@ private fun DenseParameterControl(
                         max = descriptor.maximum.toFloat(),
                         sensitivity = KnobSensitivity.Adjust,
                         onValueChange = {
-                            if (enabled) onWrite(parameter, it.roundToInt().toDouble())
+                            if (enabled) onDrag(parameter, it.roundToInt().toDouble())
                         },
+                        onValueChangeFinished = onCommit,
                     )
                     Text(
                         descriptor.options.getOrNull(parameter.value.roundToInt())
@@ -1943,8 +1993,9 @@ private fun DenseParameterControl(
                     },
                     valueText = valueText,
                     onValueChange = {
-                        if (enabled) onWrite(parameter, it.roundToInt().toDouble())
+                        if (enabled) onDrag(parameter, it.roundToInt().toDouble())
                     },
+                    onValueChangeFinished = onCommit,
                 )
                 }
                     if (!verticalLabel) {

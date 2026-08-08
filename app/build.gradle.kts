@@ -1,4 +1,16 @@
 import java.util.Properties
+import org.gradle.api.GradleException
+
+val releaseStoreFile = secretValue("LARIA_RELEASE_STORE_FILE")
+val releaseStorePassword = secretValue("LARIA_RELEASE_STORE_PASSWORD")
+val releaseKeyAlias = secretValue("LARIA_RELEASE_KEY_ALIAS")
+val releaseKeyPassword = secretValue("LARIA_RELEASE_KEY_PASSWORD")
+val hasReleaseSigning = listOf(
+    releaseStoreFile,
+    releaseStorePassword,
+    releaseKeyAlias,
+    releaseKeyPassword
+).all { it.isNotBlank() }
 
 plugins {
     alias(libs.plugins.android.application)
@@ -45,6 +57,9 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            if (hasReleaseSigning) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
     compileOptions {
@@ -61,6 +76,23 @@ android {
     externalNativeBuild {
         cmake {
             path = file("src/main/cpp/CMakeLists.txt")
+        }
+    }
+
+    signingConfigs {
+        if (hasReleaseSigning) {
+            create("release") {
+                storeFile = file(expandUserHome(releaseStoreFile))
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        } else if (isReleaseBuildRequested()) {
+            throw GradleException(
+                "Missing release signing config. Define LARIA_RELEASE_STORE_FILE, " +
+                    "LARIA_RELEASE_STORE_PASSWORD, LARIA_RELEASE_KEY_ALIAS, and " +
+                    "LARIA_RELEASE_KEY_PASSWORD in local.properties or environment variables."
+            )
         }
     }
 }
@@ -85,6 +117,31 @@ fun getVersionCode(): Int {
     versionFile.outputStream().use { props.store(it, null) }
 
     return code
+}
+
+fun secretValue(key: String): String {
+    val localProperties = Properties()
+    val localPropertiesFile = rootProject.file("local.properties")
+    if (localPropertiesFile.exists()) {
+        localPropertiesFile.inputStream().use { localProperties.load(it) }
+    }
+    return localProperties.getProperty(key)?.takeIf { it.isNotBlank() }
+        ?: providers.environmentVariable(key).orNull?.takeIf { it.isNotBlank() }
+        ?: ""
+}
+
+fun expandUserHome(path: String): String =
+    if (path == "~" || path.startsWith("~/")) {
+        System.getProperty("user.home") + path.removePrefix("~")
+    } else {
+        path
+    }
+
+fun isReleaseBuildRequested(): Boolean = gradle.startParameter.taskNames.any { taskName ->
+    taskName.contains("release", ignoreCase = true) &&
+        !taskName.contains("androidTest", ignoreCase = true) &&
+        !taskName.contains("connected", ignoreCase = true) &&
+        !taskName.contains("install", ignoreCase = true)
 }
 
 tasks.register("printVersionInfo") {

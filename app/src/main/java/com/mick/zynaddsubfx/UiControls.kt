@@ -64,6 +64,7 @@ fun TinyKnob(
     dragRangePx: Float = 600f,
     sensitivity: KnobSensitivity = KnobSensitivity.Default,
     valueText: String = value.toInt().toString(),
+    onValueChangeFinished: () -> Unit = {},
     onValueChange: (Float) -> Unit,
 ) {
     val screenHeightPx = with(androidx.compose.ui.platform.LocalDensity.current) {
@@ -76,6 +77,7 @@ fun TinyKnob(
     val safeRange = (max - min).coerceAtLeast(1f)
     val normalized = ((value - min) / safeRange).coerceIn(0f, 1f)
     val currentValue by rememberUpdatedState(value)
+    val currentOnValueChangeFinished by rememberUpdatedState(onValueChangeFinished)
     var dragNormalized by remember { mutableFloatStateOf(normalized) }
     var isDragging by remember { mutableStateOf(false) }
 
@@ -95,8 +97,14 @@ fun TinyKnob(
                             isDragging = true
                             dragNormalized = ((currentValue - min) / safeRange).coerceIn(0f, 1f)
                         },
-                        onDragEnd = { isDragging = false },
-                        onDragCancel = { isDragging = false }
+                        onDragEnd = {
+                            isDragging = false
+                            currentOnValueChangeFinished()
+                        },
+                        onDragCancel = {
+                            isDragging = false
+                            currentOnValueChangeFinished()
+                        }
                     ) { change, dragAmount ->
                         change.consume()
                         val deltaRaw = ((-dragAmount.y) + (dragAmount.x * 0.2f)) / effectiveDragRangePx

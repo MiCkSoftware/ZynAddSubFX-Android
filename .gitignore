@@ -19,3 +19,8 @@ google-services.json
 *.aab
 *.apks
 /private
+# Fastlane configuration is public; credentials and generated reports are local.
+/fastlane/*.json
+/fastlane/.env*
+!/fastlane/.env.example
+/fastlane/report.xml

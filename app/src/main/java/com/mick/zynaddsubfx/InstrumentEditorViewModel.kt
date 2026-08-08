@@ -18,6 +18,20 @@ data class InstrumentEditorState(
 )
 
 class InstrumentEditorViewModel(private val engine: SynthEngine) : ViewModel() {
+    companion object {
+        // Temporary decision flag. Audio writes are always live; enabling this only defers
+        // the expensive snapshot/preview refresh until the knob gesture finishes.
+        private const val DEFER_KNOB_SNAPSHOT_REFRESH = true
+
+        fun tabsFor(engineName: String): List<String> = when (engineName) {
+            "ADD" -> listOf("Amp", "Frequency", "Filter", "Voices", "Resonance")
+            "SUB" -> listOf("Global", "Amp", "Frequency", "Filter", "Harmonics")
+            "PAD" -> listOf("Global", "Amp", "Frequency", "Filter", "Profile", "Spectrum", "Quality")
+            "FX" -> listOf("Routing", "FX 1", "FX 2", "FX 3")
+            else -> listOf("Global")
+        }
+    }
+
     var state by mutableStateOf(InstrumentEditorState())
         private set
 
@@ -55,6 +69,10 @@ class InstrumentEditorViewModel(private val engine: SynthEngine) : ViewModel() {
             SynthEngine.ParameterType.BOOLEAN -> if (value >= 0.5) 1.0 else 0.0
             else -> value.coerceIn(descriptor.minimum, descriptor.maximum)
         }
+        if (state.snapshot?.values?.firstOrNull {
+                it.descriptor.path == descriptor.path
+            }?.value == normalized
+        ) return
         if (!engine.writeParameter(
                 state.partIndex,
                 state.kitIndex,
@@ -71,13 +89,23 @@ class InstrumentEditorViewModel(private val engine: SynthEngine) : ViewModel() {
         state = state.copy(
             snapshot = refreshed,
             dirty = true,
-            revision = state.revision + 1,
+            revision = state.revision + if (refresh) 1 else 0,
             operation = SynthEngine.OperationState.Idle,
         )
     }
 
     fun commitEdits() {
-        state = state.copy(snapshot = engine.parameterSnapshot(state.partIndex, state.kitIndex))
+        state = state.copy(
+            snapshot = engine.parameterSnapshot(state.partIndex, state.kitIndex),
+            revision = state.revision + 1,
+        )
+    }
+
+    fun dragParameter(parameter: SynthEngine.ParameterValue, value: Double) =
+        write(parameter, value, refresh = !DEFER_KNOB_SNAPSHOT_REFRESH)
+
+    fun finishParameterDrag() {
+        if (DEFER_KNOB_SNAPSHOT_REFRESH) commitEdits()
     }
 
     fun performPath(path: String, value: Double = 1.0) {
@@ -161,13 +189,4 @@ class InstrumentEditorViewModel(private val engine: SynthEngine) : ViewModel() {
         }
     }
 
-    companion object {
-        fun tabsFor(engineName: String): List<String> = when (engineName) {
-            "ADD" -> listOf("Amp", "Frequency", "Filter", "Voices", "Resonance")
-            "SUB" -> listOf("Global", "Amp", "Frequency", "Filter", "Harmonics")
-            "PAD" -> listOf("Global", "Amp", "Frequency", "Filter", "Profile", "Spectrum", "Quality")
-            "FX" -> listOf("Routing", "FX 1", "FX 2", "FX 3")
-            else -> listOf("Global")
-        }
-    }
 }

@@ -1,0 +1,119 @@
+<h2>Measure, don't guess.</h2>
+
+Open Binaural Lab is a privacy-first binaural beats app designed for people who prefer experimentation over promises.
+
+Create customizable binaural sessions, compare frequencies, run randomized blind experiments (including placebo), and discover which settings are personally associated with better focus, relaxation or sleep.
+
+No mystical claims. No medical promises. Just your own observations.
+
+<h2>Features</h2>
+
+<b>🎧 Real-time binaural beat generator</b>
+
+• Adjustable beat frequency
+• Adjustable carrier frequency
+• Custom session duration
+• Fade in / Fade out
+• White, Pink and Brown noise
+• Background playback
+• Stereo headphone detection
+
+<b>🧠 Ready-to-use presets</b>
+
+Start in seconds with editable presets including:
+
+• Focus
+• Relax
+• Sleep
+• Creativity
+• Meditation
+
+Every preset can be customized before starting.
+
+<b>📊 Measure how you feel</b>
+
+Rate your state before and after every session:
+
+• Relaxation
+• Focus
+• Sleepiness
+• Stress
+
+Over time, Open Binaural Lab builds personal statistics from your own completed sessions.
+
+<b>🧪 Blind experiments with placebo</b>
+
+Reduce expectation bias with randomized listening protocols.
+
+• Randomized session order
+• Placebo sessions
+• Blind frequency assignment
+• Delayed reveal
+• Progress tracking
+
+Instead of asking "Which frequency should work?", ask "Which one works best for me?"
+
+<b>📈 Personal insights</b>
+
+Explore your own results through:
+
+• Frequency comparisons
+• Personal trends
+• Session history
+• Average score changes
+• Personal vs community comparisons
+
+The app reports statistical associations—not proof that a frequency caused a change.
+
+<h2>Built on published research</h2>
+
+Open Binaural Lab follows an evidence-aware approach inspired by peer-reviewed research on binaural beats.
+
+The included presets are experimental starting points based on findings discussed in published reviews and meta-analyses while remaining fully customizable.
+
+Research referenced in the app includes:
+
+• Garcia-Argibay et al. (2019) — Meta-analysis on cognition, anxiety and pain
+• Ingendoh et al. (2023) — Systematic review of EEG entrainment studies
+• Basu & Banerjee (2023) — Meta-analysis on attention and memory
+• Fan et al. (2024) — Sleep research
+• Additional peer-reviewed publications are referenced inside the app.
+
+Current scientific evidence remains mixed, and no binaural beat frequency has been proven to reliably produce a specific mental state in every individual.
+
+Open Binaural Lab helps you explore published hypotheses and measure your own observations rather than relying on claims.
+
+<h2>Anonymous community results (optional)</h2>
+
+If you choose to contribute anonymously, you can compare your personal observations with aggregated community data.
+
+• Completely optional
+• Anonymous by design
+• Aggregated statistics only
+• No account required
+
+<h2>Privacy first</h2>
+
+Your data belongs to you.
+
+• No account required
+• Local-first storage
+• Anonymous participation is optional
+• Free-text notes never leave your device
+• Delete your data whenever you want
+
+<h2>Open source audio engine</h2>
+
+The binaural audio engine is open source.
+
+The application, experiment system and optional anonymous community services remain proprietary.
+
+<h2>Important</h2>
+
+Open Binaural Lab is intended for experimentation and educational purposes.
+
+It is <b>not a medical device</b> and is not intended to diagnose, treat, cure or prevent any medical condition.
+
+Use stereo headphones for binaural beats.
+Do not use while driving or performing activities requiring full attention.
+Stop listening if you experience discomfort.

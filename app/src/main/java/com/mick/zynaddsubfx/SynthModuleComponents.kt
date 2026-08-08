@@ -96,6 +96,8 @@ fun ModuleClipboardActions(
 private fun CommonParameterGrid(
     parameters: List<SynthEngine.ParameterValue>,
     onWrite: (SynthEngine.ParameterValue, Double) -> Unit,
+    onDrag: (SynthEngine.ParameterValue, Double) -> Unit = onWrite,
+    onCommit: () -> Unit = {},
     enabled: Boolean = true,
 ) {
     FlowRow(
@@ -137,7 +139,8 @@ private fun CommonParameterGrid(
                             value = parameter.value.toFloat(),
                             min = descriptor.minimum.toFloat(),
                             max = descriptor.maximum.toFloat(),
-                            onValueChange = { onWrite(parameter, it.roundToInt().toDouble()) },
+                            onValueChange = { onDrag(parameter, it.roundToInt().toDouble()) },
+                            onValueChangeFinished = onCommit,
                         )
                         SynthEngine.ParameterType.ENUM -> Text(
                             descriptor.options.getOrNull(parameter.value.roundToInt()) ?: parameter.value.roundToInt().toString(),
@@ -162,6 +165,8 @@ fun EnvelopeUI(
     onPaste: () -> Unit,
     canPaste: Boolean,
     modifier: Modifier = Modifier,
+    onDrag: (SynthEngine.ParameterValue, Double) -> Unit = onWrite,
+    onCommit: () -> Unit = {},
 ) {
     val hidden = listOf("/freeMode", "/linear", "/pointCount", "/sustainPoint", "/point/")
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -176,6 +181,8 @@ fun EnvelopeUI(
         CommonParameterGrid(
             model.parameters.filter { parameter -> hidden.none(parameter.descriptor.path::contains) },
             onWrite,
+            onDrag,
+            onCommit,
         )
         ModuleClipboardActions(onCopy, onPaste, canPaste, onOpenEditor)
     }
@@ -190,11 +197,13 @@ fun LFOUI(
     onPaste: () -> Unit,
     canPaste: Boolean,
     modifier: Modifier = Modifier,
+    onDrag: (SynthEngine.ParameterValue, Double) -> Unit = onWrite,
+    onCommit: () -> Unit = {},
 ) {
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(model.title.uppercase(), color = Color(0xFF7EF5EE), style = MaterialTheme.typography.labelSmall)
         ModulePreview(preview, Modifier.fillMaxWidth().height(72.dp), accent = Color(0xFFC08BFF))
-        CommonParameterGrid(model.parameters, onWrite)
+        CommonParameterGrid(model.parameters, onWrite, onDrag, onCommit)
         ModuleClipboardActions(onCopy, onPaste, canPaste)
     }
 }
@@ -209,6 +218,8 @@ fun FilterUI(
     onPaste: () -> Unit,
     canPaste: Boolean,
     modifier: Modifier = Modifier,
+    onDrag: (SynthEngine.ParameterValue, Double) -> Unit = onWrite,
+    onCommit: () -> Unit = {},
 ) {
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text("FILTER", color = Color(0xFF7EF5EE), style = MaterialTheme.typography.labelSmall)
@@ -217,7 +228,12 @@ fun FilterUI(
             Modifier.fillMaxWidth().height(92.dp).clickable(enabled = model.category == 1, onClick = onOpenFormant),
             accent = Color(0xFFFFC66A),
         )
-        CommonParameterGrid(model.parameters.filterNot { it.descriptor.path.contains("/formant/") }, onWrite)
+        CommonParameterGrid(
+            model.parameters.filterNot { it.descriptor.path.contains("/formant/") },
+            onWrite,
+            onDrag,
+            onCommit,
+        )
         ModuleClipboardActions(onCopy, onPaste, canPaste, if (model.category == 1) onOpenFormant else null)
     }
 }
@@ -225,7 +241,7 @@ fun FilterUI(
 @Composable
 fun CommonSynthModules(
     model: InstrumentEditorViewModel,
-    section: String,
+    section: SynthEngine.ParameterSection,
     voiceIndex: Int = -1,
     onOpenEnvelope: (ModuleAddress.Envelope) -> Unit,
     onOpenFormant: (ModuleAddress.Filter) -> Unit,
@@ -233,20 +249,21 @@ fun CommonSynthModules(
 ) {
     val values = model.state.snapshot?.values.orEmpty()
     val envelopeRoles = when (section) {
-        "Amplitude" -> listOf(EnvelopeRole.AMPLITUDE)
-        "Frequency" -> listOf(EnvelopeRole.FREQUENCY)
-        "Filter" -> listOf(EnvelopeRole.FILTER)
-        "Modulation" -> listOf(EnvelopeRole.MODULATOR_AMPLITUDE, EnvelopeRole.MODULATOR_FREQUENCY)
+        SynthEngine.ParameterSection.AMPLITUDE -> listOf(EnvelopeRole.AMPLITUDE)
+        SynthEngine.ParameterSection.FREQUENCY -> listOf(EnvelopeRole.FREQUENCY)
+        SynthEngine.ParameterSection.FILTER -> listOf(EnvelopeRole.FILTER)
+        SynthEngine.ParameterSection.MODULATION ->
+            listOf(EnvelopeRole.MODULATOR_AMPLITUDE, EnvelopeRole.MODULATOR_FREQUENCY)
         else -> emptyList()
     }
     val lfoRole = when (section) {
-        "Amplitude" -> LfoRole.AMPLITUDE
-        "Frequency" -> LfoRole.FREQUENCY
-        "Filter" -> LfoRole.FILTER
+        SynthEngine.ParameterSection.AMPLITUDE -> LfoRole.AMPLITUDE
+        SynthEngine.ParameterSection.FREQUENCY -> LfoRole.FREQUENCY
+        SynthEngine.ParameterSection.FILTER -> LfoRole.FILTER
         else -> null
     }
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        if (section == "Filter") {
+        if (section == SynthEngine.ParameterSection.FILTER) {
             val address = ModuleAddress.Filter(voiceIndex)
             FilterModel.from(values, address)?.let { filter ->
                 val preview = remember(model.state.revision, address, filter.category) { model.preview(address) }
@@ -258,6 +275,8 @@ fun CommonSynthModules(
                     onCopy = { model.copyModule(address) },
                     onPaste = { model.pasteModule(address) },
                     canPaste = model.canPasteModule(address),
+                    onDrag = model::dragParameter,
+                    onCommit = model::finishParameterDrag,
                 )
             }
         }
@@ -273,6 +292,8 @@ fun CommonSynthModules(
                     onCopy = { model.copyModule(address) },
                     onPaste = { model.pasteModule(address) },
                     canPaste = model.canPasteModule(address),
+                    onDrag = model::dragParameter,
+                    onCommit = model::finishParameterDrag,
                 )
             }
         }
@@ -287,6 +308,8 @@ fun CommonSynthModules(
                     onCopy = { model.copyModule(address) },
                     onPaste = { model.pasteModule(address) },
                     canPaste = model.canPasteModule(address),
+                    onDrag = model::dragParameter,
+                    onCommit = model::finishParameterDrag,
                 )
             }
         }

@@ -1,4 +1,6 @@
 
+switch from local.properties to varenc
+
 https://wiki.linuxaudio.org/wiki/zynaddsubfx_manual
 https://zynaddsubfx.sourceforge.io/doc_2.html
   | Filter | Global | Enable | Enable voice filter | Checkbox | on |

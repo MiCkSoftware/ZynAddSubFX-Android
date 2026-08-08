@@ -1,0 +1,118 @@
+# This file contains the fastlane.tools configuration
+# You can find the documentation at https://docs.fastlane.tools
+
+require "fileutils"
+require "set"
+require "tmpdir"
+
+default_platform(:android)
+
+def metadata_differences(local_path, remote_path)
+  relative_files = lambda do |root|
+    Dir.glob(File.join(root, "**", "*"), File::FNM_DOTMATCH)
+      .select { |path| File.file?(path) }
+      .map { |path| path.delete_prefix("#{root}/") }
+      .reject { |path| File.basename(path) == ".DS_Store" }
+      .to_set
+  end
+
+  local_files = relative_files.call(local_path)
+  remote_files = relative_files.call(remote_path)
+  changelog = ->(path) { path.split(File::SEPARATOR).include?("changelogs") }
+
+  compared_files =
+    local_files.reject(&changelog) |
+    remote_files.reject(&changelog) |
+    remote_files.select(&changelog)
+
+  compared_files.sort.filter_map do |relative_path|
+    local_file = File.join(local_path, relative_path)
+    remote_file = File.join(remote_path, relative_path)
+    next if File.file?(local_file) &&
+      File.file?(remote_file) &&
+      FileUtils.compare_file(local_file, remote_file)
+
+    relative_path
+  end
+end
+
+platform :android do
+  private_lane :download_metadata_snapshot do |options|
+    download_from_play_store(
+      metadata_path: options.fetch(:metadata_path)
+    )
+  end
+
+  desc "Refresh local Google Play metadata while retaining historical changelogs"
+  lane :refresh_metadata do
+    local_path = File.expand_path("metadata/android", __dir__)
+
+    Dir.mktmpdir("zynaddsubfx-play-metadata-") do |temporary_path|
+      remote_path = File.join(temporary_path, "metadata")
+      download_metadata_snapshot(metadata_path: remote_path)
+
+      FileUtils.mkdir_p(local_path)
+      unless system(
+        "rsync",
+        "-a",
+        "--delete",
+        "--exclude=changelogs/",
+        "#{remote_path}/",
+        "#{local_path}/"
+      )
+        UI.user_error!("Could not refresh Google Play metadata")
+      end
+      FileUtils.cp_r("#{remote_path}/.", local_path)
+    end
+
+    UI.success("Google Play metadata refreshed in #{local_path}")
+  end
+
+  desc "Fail when local Google Play metadata differs from the published listing"
+  lane :verify_metadata do
+    local_path = File.expand_path("metadata/android", __dir__)
+
+    Dir.mktmpdir("zynaddsubfx-play-metadata-") do |temporary_path|
+      remote_path = File.join(temporary_path, "metadata")
+      download_metadata_snapshot(metadata_path: remote_path)
+      differences = metadata_differences(local_path, remote_path)
+
+      unless differences.empty?
+        UI.error("Out-of-date Google Play metadata:")
+        differences.each { |path| UI.error("  #{path}") }
+        UI.user_error!(
+          "Run `fastlane android refresh_metadata`, review the changes, and retry the release build."
+        )
+      end
+    end
+
+    UI.success("Local Google Play metadata matches the published listing")
+  end
+
+  desc "Runs all the tests"
+  lane :test do
+    gradle(task: "test")
+  end
+
+  desc "Deploy a new version to the Google Play"
+  lane :deploy do
+    gradle(task: "clean assembleRelease")
+    upload_to_play_store
+  end
+
+  desc "Build and upload the release bundle to the internal Play track"
+  lane :internal do
+    gradle(task: ":app:bundleRelease")
+    upload_to_play_store(
+      package_name: "com.mick.zynaddsubfx",
+      track: "internal",
+      aab: "app/build/outputs/bundle/release/app-release.aab",
+      release_status: "completed",
+      skip_upload_apk: true,
+      skip_upload_metadata: true,
+      skip_upload_changelogs: true,
+      skip_upload_images: true,
+      skip_upload_screenshots: true
+    )
+  end
+end

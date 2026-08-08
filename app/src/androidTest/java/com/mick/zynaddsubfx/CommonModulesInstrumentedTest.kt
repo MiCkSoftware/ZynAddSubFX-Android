@@ -7,6 +7,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.mick.zynaddsubfx.ui.theme.ZynAddSubFXTheme
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -27,6 +28,23 @@ class CommonModulesInstrumentedTest {
         assertTrue(engine.canPasteModule(address))
         assertFalse(engine.canPasteModule(ModuleAddress.Envelope(envelopeRole = EnvelopeRole.FREQUENCY)))
         assertTrue(engine.pasteModule(0, 0, address))
+    }
+
+    @Test
+    fun nativeSnapshotExposesStructuredAddRouting() {
+        val engine = SynthEngine(InstrumentationRegistry.getInstrumentation().targetContext)
+        assertTrue(NativeSynthBridge.nativeInit(48_000, 256))
+
+        val values = engine.parameterSnapshot(0, 0).values
+        val globalEnvelope = values.first { it.descriptor.path == "add/ampEnvelope/attackTime" }
+        val voiceEnvelope = values.first { it.descriptor.path == "add/voice/5/ampEnvelope/attackTime" }
+
+        assertEquals(SynthEngine.ParameterModule.ADD, globalEnvelope.descriptor.module)
+        assertEquals(SynthEngine.ParameterScope.GLOBAL, globalEnvelope.descriptor.scope)
+        assertEquals(SynthEngine.ParameterSection.AMPLITUDE, globalEnvelope.descriptor.section)
+        assertEquals(SynthEngine.ParameterFamily.ENVELOPE, globalEnvelope.descriptor.family)
+        assertEquals(SynthEngine.ParameterScope.VOICE, voiceEnvelope.descriptor.scope)
+        assertEquals(5, voiceEnvelope.descriptor.ownerIndex)
     }
 
     @Test

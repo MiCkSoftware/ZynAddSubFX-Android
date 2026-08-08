@@ -121,6 +121,13 @@ class SynthEngine(private val context: Context) {
 
     enum class ParameterType { BOOLEAN, INTEGER, ENUM }
     enum class PreferredControl { TOGGLE, KNOB, ENUM, STEPPER }
+    enum class ParameterModule { PART, KIT, ADD, SUB, PAD, FX, UNKNOWN }
+    enum class ParameterScope { GLOBAL, VOICE, HARMONIC, EFFECT, UNKNOWN }
+    enum class ParameterSection {
+        GLOBAL, AMPLITUDE, FREQUENCY, FILTER, VOICE, OSCILLATOR, MODULATION,
+        UNISON, RESONANCE, HARMONICS, PROFILE, SPECTRUM, QUALITY, ROUTING, OTHER,
+    }
+    enum class ParameterFamily { BASIC, ENVELOPE, LFO, FILTER, OSCILLATOR, FORMANT, RESONANCE, HARMONIC, OTHER }
 
     data class ParameterDescriptor(
         val path: String,
@@ -135,6 +142,11 @@ class SynthEngine(private val context: Context) {
         val unit: String = "",
         val precision: Int = 0,
         val centerValue: Double? = null,
+        val module: ParameterModule = ParameterModule.UNKNOWN,
+        val scope: ParameterScope = ParameterScope.UNKNOWN,
+        val ownerIndex: Int = -1,
+        val section: ParameterSection = ParameterSection.OTHER,
+        val family: ParameterFamily = ParameterFamily.OTHER,
     )
 
     data class ParameterValue(val descriptor: ParameterDescriptor, val value: Double)
@@ -310,6 +322,11 @@ class SynthEngine(private val context: Context) {
                         fields[6].toDoubleOrNull()?.let { it > 0 } == true -> 0.0
                     else -> null
                 },
+                module = fields.getOrNull(9).toParameterModule(),
+                scope = fields.getOrNull(10).toParameterScope(),
+                ownerIndex = fields.getOrNull(11)?.toIntOrNull() ?: -1,
+                section = fields.getOrNull(12).toParameterSection(),
+                family = fields.getOrNull(13).toParameterFamily(),
             )
             ParameterValue(descriptor, fields[4].toDoubleOrNull() ?: descriptor.defaultValue)
         }.toList()
@@ -672,3 +689,19 @@ class SynthEngine(private val context: Context) {
         return diag.substring(valueStart, end).toIntOrNull() ?: 0
     }
 }
+
+private fun String?.toParameterModule(): SynthEngine.ParameterModule =
+    runCatching { SynthEngine.ParameterModule.valueOf(this.orEmpty().uppercase()) }
+        .getOrDefault(SynthEngine.ParameterModule.UNKNOWN)
+
+private fun String?.toParameterScope(): SynthEngine.ParameterScope =
+    runCatching { SynthEngine.ParameterScope.valueOf(this.orEmpty().uppercase()) }
+        .getOrDefault(SynthEngine.ParameterScope.UNKNOWN)
+
+private fun String?.toParameterSection(): SynthEngine.ParameterSection =
+    runCatching { SynthEngine.ParameterSection.valueOf(this.orEmpty().uppercase()) }
+        .getOrDefault(SynthEngine.ParameterSection.OTHER)
+
+private fun String?.toParameterFamily(): SynthEngine.ParameterFamily =
+    runCatching { SynthEngine.ParameterFamily.valueOf(this.orEmpty().uppercase()) }
+        .getOrDefault(SynthEngine.ParameterFamily.OTHER)
