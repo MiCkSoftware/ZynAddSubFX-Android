@@ -92,6 +92,8 @@ private sealed interface InstrumentEditorDestination {
     data object Resonance : InstrumentEditorDestination
     data class Oscillator(val target: OscillatorEditorTarget) : InstrumentEditorDestination
     data class Envelope(val address: ModuleAddress.Envelope) : InstrumentEditorDestination
+    data class Lfo(val address: ModuleAddress.Lfo) : InstrumentEditorDestination
+    data class Filter(val address: ModuleAddress.Filter) : InstrumentEditorDestination
     data class Formant(val address: ModuleAddress.Filter) : InstrumentEditorDestination
 }
 
@@ -102,6 +104,8 @@ private fun InstrumentEditorDestination.encode(): String = when (this) {
         "osc:${target.kind.name}:${target.ownerVoice}"
     is InstrumentEditorDestination.Envelope ->
         "env:${address.index}:${address.envelopeRole.name}"
+    is InstrumentEditorDestination.Lfo -> "lfo:${address.index}:${address.lfoRole.name}"
+    is InstrumentEditorDestination.Filter -> "filter:${address.index}:${address.vowel}"
     is InstrumentEditorDestination.Formant -> "formant:${address.index}:${address.vowel}"
 }
 
@@ -122,6 +126,18 @@ private fun decodeDestination(value: String): InstrumentEditorDestination? {
                 runCatching { EnvelopeRole.valueOf(fields[2]) }.getOrDefault(EnvelopeRole.AMPLITUDE),
             )
         )
+        "lfo" -> InstrumentEditorDestination.Lfo(
+            ModuleAddress.Lfo(
+                fields.getOrNull(1)?.toIntOrNull()?.coerceIn(-1, 7) ?: -1,
+                runCatching { LfoRole.valueOf(fields[2]) }.getOrDefault(LfoRole.AMPLITUDE),
+            )
+        )
+        "filter" -> InstrumentEditorDestination.Filter(
+            ModuleAddress.Filter(
+                fields.getOrNull(1)?.toIntOrNull()?.coerceIn(-1, 7) ?: -1,
+                fields.getOrNull(2)?.toIntOrNull()?.coerceIn(0, 5) ?: 0,
+            )
+        )
         "formant" -> InstrumentEditorDestination.Formant(
             ModuleAddress.Filter(
                 fields.getOrNull(1)?.toIntOrNull()?.coerceIn(-1, 7) ?: -1,
@@ -138,6 +154,8 @@ private val oscillatorEditorSections =
     listOf("Preview", "Output", "Base function", "Shape & filter", "Harmonics")
 private val resonanceEditorSections = listOf("Curve", "Parameters")
 private val envelopeEditorSections = listOf("Curve", "Points", "Options")
+private val lfoEditorSections = listOf("Curve", "Parameters")
+private val filterEditorSections = listOf("Curve", "Parameters")
 private val formantEditorSections = listOf("Preview", "Vowels", "Sequence")
 
 @Composable
@@ -403,6 +421,101 @@ fun FullInstrumentEditor(
         }
         return
     }
+    if (currentDestination is InstrumentEditorDestination.Lfo) {
+        var lfoTab by rememberSaveable(currentDestination.address.toString()) {
+            mutableStateOf(lfoEditorSections.first())
+        }
+        val lfo = LfoModel.from(state.snapshot?.values.orEmpty(), currentDestination.address)
+        val preview = remember(state.revision, currentDestination.address) {
+            model.preview(currentDestination.address, 192)
+        }
+        SynthEditorScaffold(
+            title = lfo?.title ?: "LFO",
+            navigationLabel = if (currentDestination.address.index >= 0) {
+                "‹ Voice ${currentDestination.address.index + 1}"
+            } else "‹ ADD",
+            onNavigateUp = {
+                destination = if (currentDestination.address.index >= 0) {
+                    InstrumentEditorDestination.VoiceDetail
+                } else null
+            },
+            tabs = lfoEditorSections,
+            selectedTab = lfoTab,
+            onTabSelected = { lfoTab = it },
+            dirty = state.dirty,
+            onActions = null,
+            heldNotes = heldNotes,
+            keyboardOctaveShift = keyboardOctaveShift,
+            onPressKeyboardNote = onPressKeyboardNote,
+            onReleaseKeyboardNote = onReleaseKeyboardNote,
+            modifier = modifier,
+        ) { contentModifier ->
+            if (lfo != null) {
+                LfoEditor(
+                    model = lfo,
+                    preview = preview,
+                    selectedTab = lfoTab,
+                    onWrite = model::write,
+                    onDrag = model::dragParameter,
+                    onCommit = model::finishParameterDrag,
+                    onCopy = { model.copyModule(currentDestination.address) },
+                    onPaste = { model.pasteModule(currentDestination.address) },
+                    canPaste = model.canPasteModule(currentDestination.address),
+                    modifier = contentModifier,
+                )
+            }
+        }
+        return
+    }
+    if (currentDestination is InstrumentEditorDestination.Filter) {
+        var filterTab by rememberSaveable(currentDestination.address.toString()) {
+            mutableStateOf(filterEditorSections.first())
+        }
+        val filter = FilterModel.from(state.snapshot?.values.orEmpty(), currentDestination.address)
+        val preview = remember(state.revision, currentDestination.address, filter?.category) {
+            model.preview(currentDestination.address, 192)
+        }
+        SynthEditorScaffold(
+            title = "Filter",
+            navigationLabel = if (currentDestination.address.index >= 0) {
+                "‹ Voice ${currentDestination.address.index + 1}"
+            } else "‹ ADD",
+            onNavigateUp = {
+                destination = if (currentDestination.address.index >= 0) {
+                    InstrumentEditorDestination.VoiceDetail
+                } else null
+            },
+            tabs = filterEditorSections,
+            selectedTab = filterTab,
+            onTabSelected = { filterTab = it },
+            dirty = state.dirty,
+            onActions = null,
+            heldNotes = heldNotes,
+            keyboardOctaveShift = keyboardOctaveShift,
+            onPressKeyboardNote = onPressKeyboardNote,
+            onReleaseKeyboardNote = onReleaseKeyboardNote,
+            modifier = modifier,
+        ) { contentModifier ->
+            if (filter != null) {
+                FilterEditor(
+                    model = filter,
+                    preview = preview,
+                    selectedTab = filterTab,
+                    onWrite = model::write,
+                    onDrag = model::dragParameter,
+                    onCommit = model::finishParameterDrag,
+                    onOpenFormant = {
+                        destination = InstrumentEditorDestination.Formant(currentDestination.address)
+                    },
+                    onCopy = { model.copyModule(currentDestination.address) },
+                    onPaste = { model.pasteModule(currentDestination.address) },
+                    canPaste = model.canPasteModule(currentDestination.address),
+                    modifier = contentModifier,
+                )
+            }
+        }
+        return
+    }
     if (currentDestination is InstrumentEditorDestination.Formant) {
         var formantTab by rememberSaveable(currentDestination.address.toString()) {
             mutableStateOf(formantEditorSections.first())
@@ -414,9 +527,7 @@ fun FullInstrumentEditor(
                 "‹ Voice ${currentDestination.address.index + 1}"
             } else "‹ ADD",
             onNavigateUp = {
-                destination = if (currentDestination.address.index >= 0) {
-                    InstrumentEditorDestination.VoiceDetail
-                } else null
+                destination = InstrumentEditorDestination.Filter(currentDestination.address)
             },
             tabs = formantEditorSections,
             selectedTab = formantTab,
@@ -487,8 +598,11 @@ fun FullInstrumentEditor(
                 onOpenEnvelope = {
                     destination = InstrumentEditorDestination.Envelope(it)
                 },
-                onOpenFormant = {
-                    destination = InstrumentEditorDestination.Formant(it)
+                onOpenLfo = {
+                    destination = InstrumentEditorDestination.Lfo(it)
+                },
+                onOpenFilter = {
+                    destination = InstrumentEditorDestination.Filter(it)
                 },
             )
         }
@@ -602,14 +716,10 @@ fun FullInstrumentEditor(
                                             destination = InstrumentEditorDestination.Resonance
                                         },
                                     ) {
-                                        val resonanceEnabled = state.snapshot?.values.orEmpty().firstOrNull {
-                                            it.descriptor.path == "add/resonance/enabled"
-                                        }?.value?.let { it >= .5 } == true
                                         ResonanceCurve(
                                             points = state.snapshot?.values.orEmpty().filter {
                                                 it.descriptor.group == "ADD / Resonance points"
                                             },
-                                            enabled = resonanceEnabled,
                                             modifier = Modifier.fillMaxSize(),
                                         )
                                         Surface(
@@ -632,8 +742,11 @@ fun FullInstrumentEditor(
                                         onOpenEnvelope = {
                                             destination = InstrumentEditorDestination.Envelope(it)
                                         },
-                                        onOpenFormant = {
-                                            destination = InstrumentEditorDestination.Formant(it)
+                                        onOpenLfo = {
+                                            destination = InstrumentEditorDestination.Lfo(it)
+                                        },
+                                        onOpenFilter = {
+                                            destination = InstrumentEditorDestination.Filter(it)
                                         },
                                     )
                                 }) else null
@@ -787,7 +900,8 @@ private fun AddVoiceDetailScreen(
     onSectionPosition: (String, Int) -> Unit,
     onOpenOscillator: (OscillatorEditorTarget) -> Unit,
     onOpenEnvelope: (ModuleAddress.Envelope) -> Unit,
-    onOpenFormant: (ModuleAddress.Filter) -> Unit,
+    onOpenLfo: (ModuleAddress.Lfo) -> Unit,
+    onOpenFilter: (ModuleAddress.Filter) -> Unit,
 ) {
     val state = model.state
     val snapshotValues = state.snapshot?.values.orEmpty()
@@ -1001,7 +1115,8 @@ private fun AddVoiceDetailScreen(
                                 },
                                 voiceIndex = state.selectedVoice,
                                 onOpenEnvelope = onOpenEnvelope,
-                                onOpenFormant = onOpenFormant,
+                                onOpenLfo = onOpenLfo,
+                                onOpenFilter = onOpenFilter,
                             )
                         }
                         selected.groupBy { it.descriptor.group }.entries
@@ -1505,7 +1620,6 @@ private fun AddResonanceEditorScreen(
     ) {
             ResonanceCurve(
                 points = points,
-                enabled = enabled?.value?.let { it >= .5 } == true,
                 modifier = Modifier.fillMaxWidth().height(260.dp)
                     .onGloballyPositioned {
                         onSectionPosition("Curve", it.positionInParent().y.roundToInt())
@@ -1543,10 +1657,6 @@ private fun AddResonanceEditorScreen(
                         onClick = { model.writePath(path, 1.0) },
                         modifier = Modifier.weight(1f),
                         contentPadding = ButtonDefaults.TextButtonContentPadding,
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = Color(0xFFFF4D57),
-                        ),
-                        border = BorderStroke(1.dp, Color(0xFFFF4D57)),
                     ) {
                         Text(label, fontSize = 9.sp, maxLines = 1)
                     }
@@ -1586,21 +1696,18 @@ private fun AddResonanceEditorScreen(
 @Composable
 private fun ResonanceCurve(
     points: List<SynthEngine.ParameterValue>,
-    enabled: Boolean,
     modifier: Modifier = Modifier,
 ) {
     Canvas(modifier) {
-        val gridColor = if (enabled) Color(0xFF31515A) else Color(0xFF30383B)
-        val curveColor = if (enabled) Color(0xFFFF4D57) else Color(0xFF747B7E)
         drawRect(Color(0xFF050A0C))
         repeat(9) { line ->
             val x = size.width * line / 8f
-            drawLine(gridColor, start = androidx.compose.ui.geometry.Offset(x, 0f),
+            drawLine(Color(0xFF31515A), start = androidx.compose.ui.geometry.Offset(x, 0f),
                 end = androidx.compose.ui.geometry.Offset(x, size.height), strokeWidth = 1f)
         }
         repeat(5) { line ->
             val y = size.height * line / 4f
-            drawLine(gridColor, start = androidx.compose.ui.geometry.Offset(0f, y),
+            drawLine(Color(0xFF31515A), start = androidx.compose.ui.geometry.Offset(0f, y),
                 end = androidx.compose.ui.geometry.Offset(size.width, y), strokeWidth = 1f)
         }
         if (points.isNotEmpty()) {
@@ -1610,7 +1717,7 @@ private fun ResonanceCurve(
                 val y = size.height * (1f - point.value.toFloat() / 127f)
                 if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
             }
-            drawPath(path, curveColor, style = androidx.compose.ui.graphics.drawscope.Stroke(2.5f))
+            drawPath(path, Color(0xFFFF4D57), style = androidx.compose.ui.graphics.drawscope.Stroke(2.5f))
         }
     }
 }
@@ -1813,8 +1920,8 @@ internal fun parametersFor(
                 descriptor.section == SynthEngine.ParameterSection.FILTER
             "Voices" -> descriptor.scope == SynthEngine.ParameterScope.VOICE &&
                 descriptor.ownerIndex == voice
-            "Resonance" -> descriptor.scope == SynthEngine.ParameterScope.GLOBAL &&
-                descriptor.section == SynthEngine.ParameterSection.RESONANCE
+            // Resonance points belong to the touch editor, never to the overview knob grid.
+            "Resonance" -> false
             else -> false
         }
     }
@@ -1895,7 +2002,7 @@ private fun DenseParameterGrid(
 
 @Composable
 @OptIn(ExperimentalFoundationApi::class)
-private fun DenseParameterControl(
+internal fun DenseParameterControl(
     parameter: SynthEngine.ParameterValue,
     onWrite: (SynthEngine.ParameterValue, Double) -> Unit,
     onLongPress: (SynthEngine.ParameterValue) -> Unit,

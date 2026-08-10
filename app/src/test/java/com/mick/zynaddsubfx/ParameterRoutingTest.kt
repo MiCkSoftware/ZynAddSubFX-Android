@@ -79,4 +79,23 @@ class ParameterRoutingTest {
 
         assertEquals(listOf("add/voice/5/volume"), selected.map { it.descriptor.path })
     }
+
+    @Test
+    fun resonancePointsNeverBecomeOverviewKnobs() {
+        val resonance = listOf(
+            value(
+                "add/resonance/enabled",
+                SynthEngine.ParameterScope.GLOBAL,
+                SynthEngine.ParameterSection.RESONANCE,
+            ),
+            value(
+                "add/resonance/point/42",
+                SynthEngine.ParameterScope.GLOBAL,
+                SynthEngine.ParameterSection.RESONANCE,
+                family = SynthEngine.ParameterFamily.RESONANCE,
+            ),
+        )
+
+        assertTrue(parametersFor(resonance, "ADD", "Resonance", 0).isEmpty())
+    }
 }

@@ -1,10 +1,10 @@
 import java.util.Properties
 import org.gradle.api.GradleException
 
-val releaseStoreFile = secretValue("LARIA_RELEASE_STORE_FILE")
-val releaseStorePassword = secretValue("LARIA_RELEASE_STORE_PASSWORD")
-val releaseKeyAlias = secretValue("LARIA_RELEASE_KEY_ALIAS")
-val releaseKeyPassword = secretValue("LARIA_RELEASE_KEY_PASSWORD")
+val releaseStoreFile = secretValue("MS_RELEASE_STORE_FILE")
+val releaseStorePassword = secretValue("MS_RELEASE_STORE_PASSWORD")
+val releaseKeyAlias = secretValue("MS_RELEASE_KEY_ALIAS")
+val releaseKeyPassword = secretValue("MS_RELEASE_KEY_PASSWORD")
 val hasReleaseSigning = listOf(
     releaseStoreFile,
     releaseStorePassword,
@@ -45,6 +45,23 @@ android {
         }
     }
 
+    signingConfigs {
+        if (hasReleaseSigning) {
+            create("release") {
+                storeFile = file(expandUserHome(releaseStoreFile))
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        } else if (isReleaseBuildRequested()) {
+            throw GradleException(
+                "Missing release signing config. Define MS_RELEASE_STORE_FILE, " +
+                    "MS_RELEASE_STORE_PASSWORD, MS_RELEASE_KEY_ALIAS, and " +
+                    "MS_RELEASE_KEY_PASSWORD in local.properties or environment variables."
+            )
+        }
+    }
+
     buildTypes {
         debug {
             // Keep the development build installable next to the release app.
@@ -79,22 +96,6 @@ android {
         }
     }
 
-    signingConfigs {
-        if (hasReleaseSigning) {
-            create("release") {
-                storeFile = file(expandUserHome(releaseStoreFile))
-                storePassword = releaseStorePassword
-                keyAlias = releaseKeyAlias
-                keyPassword = releaseKeyPassword
-            }
-        } else if (isReleaseBuildRequested()) {
-            throw GradleException(
-                "Missing release signing config. Define LARIA_RELEASE_STORE_FILE, " +
-                    "LARIA_RELEASE_STORE_PASSWORD, LARIA_RELEASE_KEY_ALIAS, and " +
-                    "LARIA_RELEASE_KEY_PASSWORD in local.properties or environment variables."
-            )
-        }
-    }
 }
 
 fun getVersionCode(): Int {

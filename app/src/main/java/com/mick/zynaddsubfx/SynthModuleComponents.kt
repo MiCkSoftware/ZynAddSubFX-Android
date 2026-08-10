@@ -2,7 +2,6 @@
 
 package com.mick.zynaddsubfx
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -24,7 +23,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -39,7 +37,6 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -107,49 +104,16 @@ private fun CommonParameterGrid(
         maxItemsInEachRow = 4,
     ) {
         parameters.forEach { parameter ->
-            val descriptor = parameter.descriptor
-            Surface(
-                modifier = Modifier.width(82.dp).height(84.dp).clickable(enabled) {
-                    when (descriptor.type) {
-                        SynthEngine.ParameterType.BOOLEAN -> onWrite(parameter, if (parameter.value >= .5) 0.0 else 1.0)
-                        SynthEngine.ParameterType.ENUM -> onWrite(
-                            parameter,
-                            if (parameter.value >= descriptor.maximum) descriptor.minimum else parameter.value + 1.0,
-                        )
-                        else -> Unit
-                    }
-                },
-                color = Color(0xFF162D33),
-                shape = RoundedCornerShape(7.dp),
-                border = BorderStroke(1.dp, Color(0xFF274B54)),
-            ) {
-                Column(
-                    Modifier.padding(4.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center,
-                ) {
-                    when (descriptor.type) {
-                        SynthEngine.ParameterType.BOOLEAN -> Switch(
-                            parameter.value >= .5,
-                            { onWrite(parameter, if (it) 1.0 else 0.0) },
-                            enabled = enabled,
-                        )
-                        SynthEngine.ParameterType.INTEGER -> TinyKnob(
-                            label = "",
-                            value = parameter.value.toFloat(),
-                            min = descriptor.minimum.toFloat(),
-                            max = descriptor.maximum.toFloat(),
-                            onValueChange = { onDrag(parameter, it.roundToInt().toDouble()) },
-                            onValueChangeFinished = onCommit,
-                        )
-                        SynthEngine.ParameterType.ENUM -> Text(
-                            descriptor.options.getOrNull(parameter.value.roundToInt()) ?: parameter.value.roundToInt().toString(),
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                    Text(descriptor.label, style = MaterialTheme.typography.labelSmall, maxLines = 2)
-                }
+            Box(Modifier.width(82.dp)) {
+                DenseParameterControl(
+                    parameter = parameter,
+                    onWrite = onWrite,
+                    onLongPress = {},
+                    verticalLabel = true,
+                    enabled = enabled,
+                    onDrag = onDrag,
+                    onCommit = onCommit,
+                )
             }
         }
     }
@@ -168,7 +132,6 @@ fun EnvelopeUI(
     onDrag: (SynthEngine.ParameterValue, Double) -> Unit = onWrite,
     onCommit: () -> Unit = {},
 ) {
-    val hidden = listOf("/freeMode", "/linear", "/pointCount", "/sustainPoint", "/point/")
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(model.title.uppercase(), color = Color(0xFF7EF5EE), style = MaterialTheme.typography.labelSmall)
         ModulePreview(
@@ -177,12 +140,6 @@ fun EnvelopeUI(
             sustainFraction = model.sustainPoint?.let { sustain ->
                 sustain.toFloat() / (model.points.lastIndex.coerceAtLeast(1))
             },
-        )
-        CommonParameterGrid(
-            model.parameters.filter { parameter -> hidden.none(parameter.descriptor.path::contains) },
-            onWrite,
-            onDrag,
-            onCommit,
         )
         ModuleClipboardActions(onCopy, onPaste, canPaste, onOpenEditor)
     }
@@ -193,6 +150,7 @@ fun LFOUI(
     model: LfoModel,
     preview: PreviewSeries,
     onWrite: (SynthEngine.ParameterValue, Double) -> Unit,
+    onOpenEditor: () -> Unit,
     onCopy: () -> Unit,
     onPaste: () -> Unit,
     canPaste: Boolean,
@@ -203,8 +161,7 @@ fun LFOUI(
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(model.title.uppercase(), color = Color(0xFF7EF5EE), style = MaterialTheme.typography.labelSmall)
         ModulePreview(preview, Modifier.fillMaxWidth().height(72.dp), accent = Color(0xFFC08BFF))
-        CommonParameterGrid(model.parameters, onWrite, onDrag, onCommit)
-        ModuleClipboardActions(onCopy, onPaste, canPaste)
+        ModuleClipboardActions(onCopy, onPaste, canPaste, onOpenEditor)
     }
 }
 
@@ -213,7 +170,7 @@ fun FilterUI(
     model: FilterModel,
     preview: PreviewSeries,
     onWrite: (SynthEngine.ParameterValue, Double) -> Unit,
-    onOpenFormant: () -> Unit,
+    onOpenEditor: () -> Unit,
     onCopy: () -> Unit,
     onPaste: () -> Unit,
     canPaste: Boolean,
@@ -225,16 +182,10 @@ fun FilterUI(
         Text("FILTER", color = Color(0xFF7EF5EE), style = MaterialTheme.typography.labelSmall)
         ModulePreview(
             preview,
-            Modifier.fillMaxWidth().height(92.dp).clickable(enabled = model.category == 1, onClick = onOpenFormant),
+            Modifier.fillMaxWidth().height(92.dp).clickable(onClick = onOpenEditor),
             accent = Color(0xFFFFC66A),
         )
-        CommonParameterGrid(
-            model.parameters.filterNot { it.descriptor.path.contains("/formant/") },
-            onWrite,
-            onDrag,
-            onCommit,
-        )
-        ModuleClipboardActions(onCopy, onPaste, canPaste, if (model.category == 1) onOpenFormant else null)
+        ModuleClipboardActions(onCopy, onPaste, canPaste, onOpenEditor)
     }
 }
 
@@ -244,7 +195,8 @@ fun CommonSynthModules(
     section: SynthEngine.ParameterSection,
     voiceIndex: Int = -1,
     onOpenEnvelope: (ModuleAddress.Envelope) -> Unit,
-    onOpenFormant: (ModuleAddress.Filter) -> Unit,
+    onOpenLfo: (ModuleAddress.Lfo) -> Unit,
+    onOpenFilter: (ModuleAddress.Filter) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val values = model.state.snapshot?.values.orEmpty()
@@ -271,7 +223,7 @@ fun CommonSynthModules(
                     model = filter,
                     preview = preview,
                     onWrite = model::write,
-                    onOpenFormant = { onOpenFormant(address) },
+                    onOpenEditor = { onOpenFilter(address) },
                     onCopy = { model.copyModule(address) },
                     onPaste = { model.pasteModule(address) },
                     canPaste = model.canPasteModule(address),
@@ -305,6 +257,7 @@ fun CommonSynthModules(
                     model = lfo,
                     preview = preview,
                     onWrite = model::write,
+                    onOpenEditor = { onOpenLfo(address) },
                     onCopy = { model.copyModule(address) },
                     onPaste = { model.pasteModule(address) },
                     canPaste = model.canPasteModule(address),
@@ -313,6 +266,77 @@ fun CommonSynthModules(
                 )
             }
         }
+    }
+}
+
+@Composable
+fun LfoEditor(
+    model: LfoModel,
+    preview: PreviewSeries,
+    selectedTab: String,
+    onWrite: (SynthEngine.ParameterValue, Double) -> Unit,
+    onDrag: (SynthEngine.ParameterValue, Double) -> Unit,
+    onCommit: () -> Unit,
+    onCopy: () -> Unit,
+    onPaste: () -> Unit,
+    canPaste: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier.verticalScroll(rememberScrollState()).padding(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        if (selectedTab == "Curve") {
+            ModulePreview(
+                preview,
+                Modifier.fillMaxWidth().height(230.dp),
+                accent = Color(0xFFC08BFF),
+            )
+        }
+        if (selectedTab == "Parameters") {
+            CommonParameterGrid(model.parameters, onWrite, onDrag, onCommit)
+        }
+        ModuleClipboardActions(onCopy, onPaste, canPaste)
+    }
+}
+
+@Composable
+fun FilterEditor(
+    model: FilterModel,
+    preview: PreviewSeries,
+    selectedTab: String,
+    onWrite: (SynthEngine.ParameterValue, Double) -> Unit,
+    onDrag: (SynthEngine.ParameterValue, Double) -> Unit,
+    onCommit: () -> Unit,
+    onOpenFormant: () -> Unit,
+    onCopy: () -> Unit,
+    onPaste: () -> Unit,
+    canPaste: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier.verticalScroll(rememberScrollState()).padding(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        if (selectedTab == "Curve") {
+            ModulePreview(
+                preview,
+                Modifier.fillMaxWidth().height(230.dp),
+                accent = Color(0xFFFFC66A),
+            )
+        }
+        if (selectedTab == "Parameters") {
+            CommonParameterGrid(
+                model.parameters.filterNot { it.descriptor.path.contains("/formant/") },
+                onWrite,
+                onDrag,
+                onCommit,
+            )
+            if (model.category == 1) {
+                LuminousActionButton("Edit formants", onOpenFormant, Modifier.fillMaxWidth())
+            }
+        }
+        ModuleClipboardActions(onCopy, onPaste, canPaste)
     }
 }
 
@@ -402,11 +426,11 @@ fun FreeEnvelopeEditor(
             )
         }
         if (selectedTab == "Options") {
+            val hidden = listOf("/freeMode", "/pointCount", "/sustainPoint", "/point/")
             CommonParameterGrid(
-                parameters = listOfNotNull(
-                    model.parameter("sustainPoint"), model.parameter("linear"),
-                    model.parameter("stretch"), model.parameter("loop"), model.parameter("forceRelease"),
-                ),
+                parameters = model.parameters.filter { parameter ->
+                    hidden.none(parameter.descriptor.path::contains)
+                },
                 onWrite = { parameter, value -> onWrite(parameter, value, true) },
             )
         }

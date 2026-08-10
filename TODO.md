@@ -1,5 +1,9 @@
 
-switch from local.properties to varenc
+fix envelope / LFO / filter UX
+switch from local.properties to varenv
+Move copy paste button to header
+reso zoom/scroll
+
 
 https://wiki.linuxaudio.org/wiki/zynaddsubfx_manual
 https://zynaddsubfx.sourceforge.io/doc_2.html
