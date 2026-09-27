@@ -1557,31 +1557,69 @@ private fun AddResonanceEditorScreen(
     val octaves = controls.firstOrNull { it.descriptor.path.endsWith("/octaves") }
     val protect = controls.firstOrNull { it.descriptor.path.endsWith("/protectFundamental") }
     var graphSize by remember { mutableStateOf(IntSize.Zero) }
+    var drawingValues by remember { mutableStateOf<List<Int>?>(null) }
+    val currentPoints by rememberUpdatedState(points)
 
-    Column(
-        modifier.verticalScroll(scrollState).padding(7.dp),
-        verticalArrangement = Arrangement.spacedBy(7.dp),
-    ) {
+    BoxWithConstraints(modifier) {
+        val viewportHeight = maxHeight
+        Column(
+            Modifier.fillMaxSize().verticalScroll(scrollState).padding(7.dp),
+            verticalArrangement = Arrangement.spacedBy(7.dp),
+        ) {
             ResonanceCurve(
                 points = points,
+                drawingValues = drawingValues,
                 modifier = Modifier.fillMaxWidth().height(260.dp)
                     .onGloballyPositioned {
                         onSectionPosition("Curve", it.positionInParent().y.roundToInt())
                     }
-                    .onSizeChanged { graphSize = it }.pointerInput(graphSize) {
+                    .onSizeChanged { graphSize = it }.pointerInput(graphSize, points.size) {
+                    var previousPosition: androidx.compose.ui.geometry.Offset? = null
+                    var gestureValues: MutableList<Int>? = null
                     fun write(positionX: Float, positionY: Float) {
-                        if (graphSize.width <= 0 || graphSize.height <= 0 || points.isEmpty()) return
-                        val index = ((positionX / graphSize.width) * (points.size - 1))
-                            .roundToInt().coerceIn(points.indices)
-                        val value = (127f * (1f - positionY / graphSize.height))
-                            .roundToInt().coerceIn(0, 127)
-                        model.writePath("add/resonance/point/$index", value.toDouble())
+                        if (graphSize.width <= 0 || graphSize.height <= 0 || currentPoints.isEmpty()) return
+                        val values = gestureValues ?: return
+                        val index = ((positionX / graphSize.width) * (values.size - 1))
+                            .roundToInt().coerceIn(values.indices)
+                        val previous = previousPosition
+                        val previousIndex = previous?.let {
+                            ((it.x / graphSize.width) * (values.size - 1))
+                                .roundToInt().coerceIn(values.indices)
+                        } ?: index
+                        for (pointIndex in minOf(previousIndex, index)..maxOf(previousIndex, index)) {
+                            val fraction = if (previousIndex == index) 1f else {
+                                (pointIndex - previousIndex).toFloat() / (index - previousIndex)
+                            }
+                            val y = if (previous == null) positionY else {
+                                previous.y + (positionY - previous.y) * fraction
+                            }
+                            val value = (127f * (1f - y / graphSize.height))
+                                .roundToInt().coerceIn(0, 127)
+                            values[pointIndex] = value
+                        }
+                        drawingValues = values.toList()
+                        previousPosition = androidx.compose.ui.geometry.Offset(positionX, positionY)
                     }
                     detectDragGestures(
-                        onDragStart = { write(it.x, it.y) },
+                        onDragStart = {
+                            previousPosition = null
+                            gestureValues = currentPoints.map { it.value.roundToInt() }.toMutableList()
+                            write(it.x, it.y)
+                        },
                         onDrag = { change, _ ->
                             write(change.position.x, change.position.y)
                             change.consume()
+                        },
+                        onDragEnd = {
+                            gestureValues?.let { model.commitResonanceCurve(currentPoints, it) }
+                            gestureValues = null
+                            drawingValues = null
+                            previousPosition = null
+                        },
+                        onDragCancel = {
+                            gestureValues = null
+                            drawingValues = null
+                            previousPosition = null
                         },
                     )
                 },
@@ -1634,6 +1672,8 @@ private fun AddResonanceEditorScreen(
                     },
                 )
             }
+            Spacer(Modifier.fillMaxWidth().height(viewportHeight))
+        }
     }
 }
 
@@ -1641,6 +1681,7 @@ private fun AddResonanceEditorScreen(
 private fun ResonanceCurve(
     points: List<SynthEngine.ParameterValue>,
     modifier: Modifier = Modifier,
+    drawingValues: List<Int>? = null,
 ) {
     Canvas(modifier) {
         drawRect(Color(0xFF050A0C))
@@ -1658,7 +1699,8 @@ private fun ResonanceCurve(
             val path = Path()
             points.forEachIndexed { index, point ->
                 val x = size.width * index / (points.size - 1).coerceAtLeast(1)
-                val y = size.height * (1f - point.value.toFloat() / 127f)
+                val y = size.height * (1f - (drawingValues?.getOrNull(index)?.toFloat()
+                    ?: point.value.toFloat()) / 127f)
                 if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
             }
             drawPath(path, Color(0xFFFF4D57), style = androidx.compose.ui.graphics.drawscope.Stroke(2.5f))

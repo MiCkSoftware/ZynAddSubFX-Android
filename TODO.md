@@ -1,9 +1,8 @@
 
  
- - fix filter UX
-   - vowel switch breaks knobs
-   - border graphic (also in other screen)
  - reso zoom/scroll
+ - reso low perf
+ - consistency for curves
 - Dual String Ct1 have Pad and Add on same kit !? and mute is synched- muted part mutes all pars bug
 - stereo button too big
 - addsynth voices colmun not aligned

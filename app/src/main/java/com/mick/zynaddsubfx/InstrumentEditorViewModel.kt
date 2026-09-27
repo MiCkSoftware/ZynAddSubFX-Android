@@ -108,6 +108,34 @@ class InstrumentEditorViewModel(private val engine: SynthEngine) : ViewModel() {
         if (DEFER_KNOB_SNAPSHOT_REFRESH) commitEdits()
     }
 
+    fun commitResonanceCurve(original: List<SynthEngine.ParameterValue>, values: List<Int>) {
+        if (original.size != values.size) return
+        var changed = false
+        for (index in values.indices) {
+            val point = original[index]
+            val value = values[index].toDouble()
+            if (point.value == value) continue
+            if (!engine.writeParameter(
+                    state.partIndex,
+                    state.kitIndex,
+                    SynthEngine.ParameterWrite(point.descriptor.path, value),
+                )
+            ) {
+                state = state.copy(operation = SynthEngine.OperationState.Failed("Could not update resonance"))
+                return
+            }
+            changed = true
+        }
+        if (changed) {
+            state = state.copy(
+                snapshot = engine.parameterSnapshot(state.partIndex, state.kitIndex),
+                dirty = true,
+                revision = state.revision + 1,
+                operation = SynthEngine.OperationState.Idle,
+            )
+        }
+    }
+
     fun performPath(path: String, value: Double = 1.0) {
         if (engine.writeParameter(
                 state.partIndex,
