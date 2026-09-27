@@ -2090,6 +2090,7 @@ internal fun DenseParameterControl(
                         value = parameter.value.toFloat(),
                         min = descriptor.minimum.toFloat(),
                         max = descriptor.maximum.toFloat(),
+                        valueText = valueText,
                         sensitivity = KnobSensitivity.Adjust,
                         onValueChange = {
                             if (enabled) onDrag(parameter, it.roundToInt().toDouble())

@@ -363,6 +363,10 @@ private fun PartEditorCard(
                 }
             },
             verticalLabels = true,
+            valueText = { parameter ->
+                val raw = parameter.value.toInt()
+                if (parameter.descriptor.path == "part/channel") (raw + 1).toString() else raw.toString()
+            },
             onLongPress = { editedStructuralParameter = it },
             onCommit = onPartChanged,
         )
@@ -550,7 +554,7 @@ private fun ParameterEditorDialog(
         title = { Text(parameter.descriptor.label) },
         text = {
             Column {
-                Text(value.toInt().toString())
+                Text((value.toInt() + if (parameter.descriptor.path == "part/channel") 1 else 0).toString())
                 androidx.compose.material3.Slider(
                     value = value.toFloat(),
                     onValueChange = { value = it.toDouble() },
