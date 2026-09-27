@@ -270,6 +270,13 @@ private fun PartEditorCard(
     fun refreshKits() {
         kitSnapshots = (0 until 16).map { engine.parameterSnapshot(part.partIndex, it) }
     }
+    fun updateStructureValue(parameter: SynthEngine.ParameterValue, value: Double) {
+        structure = structure.copy(
+            values = structure.values.map {
+                if (it.descriptor.path == parameter.descriptor.path) it.copy(value = value) else it
+            }
+        )
+    }
     fun writeKit(kit: Int, path: String, value: Boolean) {
         if (engine.writeParameter(part.partIndex, kit, SynthEngine.ParameterWrite(path, if (value) 1.0 else 0.0))) {
             refreshKits()
@@ -362,6 +369,12 @@ private fun PartEditorCard(
                     structure = engine.parameterSnapshot(part.partIndex, 0)
                 }
             },
+            onDrag = { parameter, value ->
+                if (engine.writeParameter(part.partIndex, 0,
+                        SynthEngine.ParameterWrite(parameter.descriptor.path, value))) {
+                    updateStructureValue(parameter, value)
+                }
+            },
             verticalLabels = true,
             valueText = { parameter ->
                 val raw = parameter.value.toInt()
@@ -405,6 +418,12 @@ private fun PartEditorCard(
                 if (engine.writeParameter(part.partIndex, 0,
                         SynthEngine.ParameterWrite(parameter.descriptor.path, value))) {
                     structure = engine.parameterSnapshot(part.partIndex, 0)
+                }
+            },
+            onDrag = { parameter, value ->
+                if (engine.writeParameter(part.partIndex, 0,
+                        SynthEngine.ParameterWrite(parameter.descriptor.path, value))) {
+                    updateStructureValue(parameter, value)
                 }
             },
             verticalLabels = true,

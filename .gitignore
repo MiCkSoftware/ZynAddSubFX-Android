@@ -8,7 +8,6 @@
 .externalNativeBuild
 .cxx
 local.properties
-/AGENTS.md
 /app/src/main/assets/presets
 /.kotlin
 *.jks
