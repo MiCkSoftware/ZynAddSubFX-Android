@@ -2,7 +2,7 @@
  
  - reso zoom/scroll
  - reso low perf
- - consistency for curves
+ - replace voice enveloppe toggles by 0 1 and apply the same to add synth main screen
 - Dual String Ct1 have Pad and Add on same kit !? and mute is synched- muted part mutes all pars bug
 - stereo button too big
 - addsynth voices colmun not aligned

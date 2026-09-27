@@ -1067,21 +1067,6 @@ private fun AddVoiceDetailScreen(
                                 )
                             }
                         }
-                        if (section in setOf("Amplitude", "Frequency", "Filter", "Modulation")) {
-                            CommonSynthModules(
-                                model = model,
-                                section = when (section) {
-                                    "Amplitude" -> SynthEngine.ParameterSection.AMPLITUDE
-                                    "Frequency" -> SynthEngine.ParameterSection.FREQUENCY
-                                    "Filter" -> SynthEngine.ParameterSection.FILTER
-                                    else -> SynthEngine.ParameterSection.MODULATION
-                                },
-                                voiceIndex = state.selectedVoice,
-                                onOpenEnvelope = onOpenEnvelope,
-                                onOpenLfo = onOpenLfo,
-                                onOpenFilter = onOpenFilter,
-                            )
-                        }
                         selected.groupBy { it.descriptor.group }.entries
                             .sortedBy { voiceGroupOrder(section, it.key) }
                             .filterNot { (group, _) ->
@@ -1126,6 +1111,21 @@ private fun AddVoiceDetailScreen(
                                         it.value.roundToInt().toString()
                                     }
                                 },
+                            )
+                        }
+                        if (section in setOf("Amplitude", "Frequency", "Filter", "Modulation")) {
+                            CommonSynthModules(
+                                model = model,
+                                section = when (section) {
+                                    "Amplitude" -> SynthEngine.ParameterSection.AMPLITUDE
+                                    "Frequency" -> SynthEngine.ParameterSection.FREQUENCY
+                                    "Filter" -> SynthEngine.ParameterSection.FILTER
+                                    else -> SynthEngine.ParameterSection.MODULATION
+                                },
+                                voiceIndex = state.selectedVoice,
+                                onOpenEnvelope = onOpenEnvelope,
+                                onOpenLfo = onOpenLfo,
+                                onOpenFilter = onOpenFilter,
                             )
                         }
                     }
@@ -1260,6 +1260,9 @@ private fun AddOscillatorEditorScreen(
     val group = "ADD / Voice ${target.ownerVoice + 1} / " +
         if (modulator) "Modulator oscillator" else "Oscillator"
     val controls = values.filter { it.descriptor.group == group }
+    val voiceOscillatorControls = if (modulator) emptyList() else values.filter {
+        it.descriptor.group == "ADD / Voice ${target.ownerVoice + 1} / Voice Oscillator"
+    }
     val magnitudes = values.filter { it.descriptor.group == "$group harmonics" }
     val phases = values.filter { it.descriptor.group == "$group phases" }
     var selectedHarmonic by remember(target) { mutableStateOf(0) }
@@ -1306,7 +1309,7 @@ private fun AddOscillatorEditorScreen(
             }
 
             listOf(
-                "Output" to outputControls,
+                "Output" to (voiceOscillatorControls + outputControls),
                 "Base function" to baseControls,
                 "Shape & filter" to (shapingControls + filterControls),
             ).forEach { (title, parameters) ->
@@ -1321,6 +1324,7 @@ private fun AddOscillatorEditorScreen(
                             onDrag = model::dragParameter,
                             onCommit = model::finishParameterDrag,
                             onLongPress = { editedParameter = it },
+                            verticalLabels = true,
                         )
                     }
                 }

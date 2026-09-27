@@ -27,6 +27,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -198,9 +199,10 @@ private fun CommonParameterGrid(
     onDrag: (SynthEngine.ParameterValue, Double) -> Unit = onWrite,
     onCommit: () -> Unit = {},
     enabled: Boolean = true,
+    columnsOverride: Int? = null,
 ) {
     BoxWithConstraints(Modifier.fillMaxWidth()) {
-        val columns = if (maxWidth < 350.dp) 3 else 4
+        val columns = columnsOverride ?: if (maxWidth < 350.dp) 3 else 4
         Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
             parameters.chunked(columns).forEach { rowParameters ->
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
@@ -231,6 +233,8 @@ private fun CompactModuleActions(
     onPaste: () -> Unit,
     canPaste: Boolean,
     onOpen: () -> Unit,
+    enabledParameter: SynthEngine.ParameterValue? = null,
+    onWrite: ((SynthEngine.ParameterValue, Double) -> Unit)? = null,
 ) {
     Row(Modifier.fillMaxWidth().padding(top = 5.dp, bottom = 3.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -238,6 +242,13 @@ private fun CompactModuleActions(
         Text(title, modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.labelMedium,
             maxLines = 1, overflow = TextOverflow.Ellipsis)
+        if (enabledParameter != null && onWrite != null) {
+            Switch(
+                checked = enabledParameter.value >= .5,
+                onCheckedChange = { onWrite(enabledParameter, if (it) 1.0 else 0.0) },
+                modifier = Modifier.size(width = 48.dp, height = 27.dp),
+            )
+        }
         LuminousActionButton("C", onCopy, Modifier.size(27.dp), compact = true, description = "Copy $title")
         LuminousActionButton("P", onPaste, Modifier.size(27.dp), enabled = canPaste, compact = true, description = "Paste $title")
         LuminousActionButton("E", onOpen, Modifier.size(27.dp), compact = true, description = "Edit $title")
@@ -331,9 +342,24 @@ fun EnvelopeUI(
     onCommit: () -> Unit = {},
 ) {
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        CompactModuleActions(model.title, onCopy, onPaste, canPaste, onOpenEditor)
+        CompactModuleActions(model.title, onCopy, onPaste, canPaste, onOpenEditor,
+            model.parameters.firstOrNull { it.descriptor.path == "add/voice/${model.address.index}/" + when (model.address.envelopeRole) {
+                EnvelopeRole.AMPLITUDE -> "ampEnvelopeEnabled"
+                EnvelopeRole.FREQUENCY -> "freqEnvelopeEnabled"
+                EnvelopeRole.FILTER -> "filterEnvelopeEnabled"
+                EnvelopeRole.MODULATOR_AMPLITUDE -> "modAmpEnvelopeEnabled"
+                EnvelopeRole.MODULATOR_FREQUENCY -> "modFreqEnvelopeEnabled"
+            } }, onWrite)
         EnvelopeCurve(model, preview, Modifier.fillMaxWidth().height(92.dp).clickable(onClick = onOpenEditor))
-        CommonParameterGrid(model.parameters.fields("attackTime", "decayTime", "sustain", "releaseTime", "stretch"), onWrite, onDrag, onCommit)
+        val previewFields = when (model.address.envelopeRole) {
+            EnvelopeRole.AMPLITUDE, EnvelopeRole.MODULATOR_AMPLITUDE ->
+                arrayOf("attackTime", "decayTime", "sustain", "releaseTime")
+            EnvelopeRole.FREQUENCY, EnvelopeRole.MODULATOR_FREQUENCY ->
+                arrayOf("attackValue", "attackTime", "releaseTime", "releaseValue")
+            EnvelopeRole.FILTER ->
+                arrayOf("attackValue", "attackTime", "decayTime", "releaseTime")
+        }
+        CommonParameterGrid(model.parameters.fields(*previewFields), onWrite, onDrag, onCommit, columnsOverride = 4)
     }
 }
 
@@ -351,9 +377,14 @@ fun LFOUI(
     onCommit: () -> Unit = {},
 ) {
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        CompactModuleActions(model.title, onCopy, onPaste, canPaste, onOpenEditor)
+        CompactModuleActions(model.title, onCopy, onPaste, canPaste, onOpenEditor,
+            model.parameters.firstOrNull { it.descriptor.path == "add/voice/${model.address.index}/" + when (model.address.lfoRole) {
+                LfoRole.AMPLITUDE -> "ampLfoEnabled"
+                LfoRole.FREQUENCY -> "freqLfoEnabled"
+                LfoRole.FILTER -> "filterLfoEnabled"
+            } }, onWrite)
         ModulePreview(preview, Modifier.fillMaxWidth().height(72.dp), accent = Color(0xFFC08BFF))
-        CommonParameterGrid(model.parameters.fields("ampLfoEnabled", "freqLfoEnabled", "filterLfoEnabled", "frequency", "depth", "waveform"), onWrite, onDrag, onCommit)
+        CommonParameterGrid(model.parameters.fields("frequency", "depth", "start", "delay"), onWrite, onDrag, onCommit, columnsOverride = 4)
     }
 }
 
@@ -371,13 +402,16 @@ fun FilterUI(
     onCommit: () -> Unit = {},
 ) {
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        CompactModuleActions("FILTER", onCopy, onPaste, canPaste, onOpenEditor)
+        CompactModuleActions("FILTER", onCopy, onPaste, canPaste, onOpenEditor,
+            model.parameters.firstOrNull {
+                it.descriptor.path == "add/voice/${model.address.index}/filter"
+            }, onWrite)
         ModulePreview(
             preview,
             Modifier.fillMaxWidth().height(92.dp).clickable(onClick = onOpenEditor),
             accent = Color(0xFFFFC66A),
         )
-        CommonParameterGrid(model.parameters.fields("category", "type", "cutoff", "q", "gain", "stages"), onWrite, onDrag, onCommit)
+        CommonParameterGrid(model.parameters.fields("cutoff", "q", "gain", "stages"), onWrite, onDrag, onCommit, columnsOverride = 4)
     }
 }
 
