@@ -1,15 +1,16 @@
 
  
-fix filter UX
-switch from local.properties to varenv
-Move copy paste button to header
-reso zoom/scroll
+ - fix filter UX
+   - vowel switch breaks knobs
+   - border graphic (also in other screen)
+ - reso zoom/scroll
+- Dual String Ct1 have Pad and Add on same kit !? and mute is synched- muted part mutes all pars bug
+- stereo button too big
 - addsynth voices colmun not aligned
 - finish parity with legacy voices list
 - Parts : all on same screen (selected on is unfloded)
 - Parts:  ch keys mode , rndgrp action not clear + duplicated + missing mini keyboard.
 - Parts: 3 dot menu is werid ; why save to ? remove nav to kit X
-- en tete INST>PART>KIT top à reproduire partout mais le back doti etre plus clair. (< ins)
 - ad synth resonance : add parameter to hide tab nav for this scaffold
 
 - Main
@@ -18,14 +19,11 @@ reso zoom/scroll
 - KITs
   - all parts sur le screen d'edition avec instru en header
   - rework kit mute button to standard (make reusable componant)
-  - Screen blink during loading
-
-- ADDSYNTH
+  - Screen blink during loading 
 - sub synth todo
 - pad synth todo
 - FX todo (main and parts ...)
-- muted part mutes all pars bug
-- stereo button too big
+
 
 LIB
 - keyb to library + one tap to select another ti nav back

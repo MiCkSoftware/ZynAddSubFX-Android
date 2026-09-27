@@ -24,7 +24,7 @@ class InstrumentEditorViewModel(private val engine: SynthEngine) : ViewModel() {
         private const val DEFER_KNOB_SNAPSHOT_REFRESH = true
 
         fun tabsFor(engineName: String): List<String> = when (engineName) {
-            "ADD" -> listOf("Amp", "Frequency", "Filter", "Voices", "Resonance")
+            "ADD" -> listOf("Frequency", "Amp", "Filter", "Voices", "Resonance")
             "SUB" -> listOf("Global", "Amp", "Frequency", "Filter", "Harmonics")
             "PAD" -> listOf("Global", "Amp", "Frequency", "Filter", "Profile", "Spectrum", "Quality")
             "FX" -> listOf("Routing", "FX 1", "FX 2", "FX 3")

@@ -95,7 +95,6 @@ private sealed interface InstrumentEditorDestination {
     data class Envelope(val address: ModuleAddress.Envelope) : InstrumentEditorDestination
     data class Lfo(val address: ModuleAddress.Lfo) : InstrumentEditorDestination
     data class Filter(val address: ModuleAddress.Filter) : InstrumentEditorDestination
-    data class Formant(val address: ModuleAddress.Filter) : InstrumentEditorDestination
 }
 
 private fun InstrumentEditorDestination.encode(): String = when (this) {
@@ -107,7 +106,6 @@ private fun InstrumentEditorDestination.encode(): String = when (this) {
         "env:${address.index}:${address.envelopeRole.name}"
     is InstrumentEditorDestination.Lfo -> "lfo:${address.index}:${address.lfoRole.name}"
     is InstrumentEditorDestination.Filter -> "filter:${address.index}:${address.vowel}"
-    is InstrumentEditorDestination.Formant -> "formant:${address.index}:${address.vowel}"
 }
 
 private fun decodeDestination(value: String): InstrumentEditorDestination? {
@@ -136,13 +134,13 @@ private fun decodeDestination(value: String): InstrumentEditorDestination? {
         "filter" -> InstrumentEditorDestination.Filter(
             ModuleAddress.Filter(
                 fields.getOrNull(1)?.toIntOrNull()?.coerceIn(-1, 7) ?: -1,
-                fields.getOrNull(2)?.toIntOrNull()?.coerceIn(0, 5) ?: 0,
+                fields.getOrNull(2)?.toIntOrNull()?.coerceIn(0, FORMANT_VOWEL_SLOTS - 1) ?: 0,
             )
         )
-        "formant" -> InstrumentEditorDestination.Formant(
+        "formant" -> InstrumentEditorDestination.Filter(
             ModuleAddress.Filter(
                 fields.getOrNull(1)?.toIntOrNull()?.coerceIn(-1, 7) ?: -1,
-                fields.getOrNull(2)?.toIntOrNull()?.coerceIn(0, 5) ?: 0,
+                fields.getOrNull(2)?.toIntOrNull()?.coerceIn(0, FORMANT_VOWEL_SLOTS - 1) ?: 0,
             )
         )
         else -> null
@@ -158,7 +156,6 @@ private fun parentDestination(destination: InstrumentEditorDestination): Instrum
         if (destination.address.index >= 0) InstrumentEditorDestination.VoiceDetail else null
     is InstrumentEditorDestination.Filter ->
         if (destination.address.index >= 0) InstrumentEditorDestination.VoiceDetail else null
-    is InstrumentEditorDestination.Formant -> InstrumentEditorDestination.Filter(destination.address)
 }
 
 private val voiceEditorSections =
@@ -166,8 +163,6 @@ private val voiceEditorSections =
 private val oscillatorEditorSections =
     listOf("Preview", "Output", "Base function", "Shape & filter", "Harmonics")
 private val resonanceEditorSections = listOf("Curve", "Parameters")
-private val filterEditorSections = listOf("Curve", "Parameters")
-private val formantEditorSections = listOf("Preview", "Vowels", "Sequence")
 
 @Composable
 private fun SynthEditorScaffold(
@@ -314,7 +309,6 @@ fun FullInstrumentEditor(
         is InstrumentEditorDestination.Envelope -> currentDestination.address.index
         is InstrumentEditorDestination.Lfo -> currentDestination.address.index
         is InstrumentEditorDestination.Filter -> currentDestination.address.index
-        is InstrumentEditorDestination.Formant -> currentDestination.address.index
         else -> -1
     }
     val contextPath = if (contextVoiceIndex >= 0) {
@@ -414,6 +408,9 @@ fun FullInstrumentEditor(
             state.snapshot?.values.orEmpty(),
             currentDestination.address,
         )
+        val preview = remember(state.revision, currentDestination.address) {
+            model.preview(currentDestination.address, 192)
+        }
         SynthEditorScaffold(
             title = envelope?.title ?: "Envelope",
             contextPath = contextPath,
@@ -435,7 +432,7 @@ fun FullInstrumentEditor(
             if (envelope != null) {
                 FreeEnvelopeEditor(
                     model = envelope,
-                    preview = model.preview(currentDestination.address, 192),
+                    preview = preview,
                     onWrite = model::write,
                     onCommit = model::commitEdits,
                     onAction = model::performPath,
@@ -447,7 +444,9 @@ fun FullInstrumentEditor(
     }
     if (currentDestination is InstrumentEditorDestination.Lfo) {
         val lfo = LfoModel.from(state.snapshot?.values.orEmpty(), currentDestination.address)
-        val preview = model.preview(currentDestination.address, 192)
+        val preview = remember(state.revision, currentDestination.address) {
+            model.preview(currentDestination.address, 192)
+        }
         SynthEditorScaffold(
             title = lfo?.title ?: "LFO",
             contextPath = contextPath,
@@ -480,9 +479,6 @@ fun FullInstrumentEditor(
         return
     }
     if (currentDestination is InstrumentEditorDestination.Filter) {
-        var filterTab by rememberSaveable(currentDestination.address.toString()) {
-            mutableStateOf(filterEditorSections.first())
-        }
         val filter = FilterModel.from(state.snapshot?.values.orEmpty(), currentDestination.address)
         val preview = remember(state.revision, currentDestination.address, filter?.category) {
             model.preview(currentDestination.address, 192)
@@ -494,9 +490,9 @@ fun FullInstrumentEditor(
                 "‹ Voice ${currentDestination.address.index + 1}"
             } else "‹ ADD",
             onNavigateUp = navigateBack,
-            tabs = filterEditorSections,
-            selectedTab = filterTab,
-            onTabSelected = { filterTab = it },
+            tabs = emptyList(),
+            selectedTab = "",
+            onTabSelected = {},
             dirty = state.dirty,
             onActions = null,
             heldNotes = heldNotes,
@@ -509,52 +505,14 @@ fun FullInstrumentEditor(
                 FilterEditor(
                     model = filter,
                     preview = preview,
-                    selectedTab = filterTab,
+                    previewRevision = state.revision,
                     onWrite = model::write,
                     onDrag = model::dragParameter,
                     onCommit = model::finishParameterDrag,
-                    onOpenFormant = {
-                        destination = InstrumentEditorDestination.Formant(currentDestination.address)
-                    },
-                    modifier = contentModifier,
-                )
-            }
-        }
-        return
-    }
-    if (currentDestination is InstrumentEditorDestination.Formant) {
-        var formantTab by rememberSaveable(currentDestination.address.toString()) {
-            mutableStateOf(formantEditorSections.first())
-        }
-        val filter = FilterModel.from(state.snapshot?.values.orEmpty(), currentDestination.address)
-        SynthEditorScaffold(
-            title = "Formant filter",
-            contextPath = contextPath,
-            navigationLabel = if (currentDestination.address.index >= 0) {
-                "‹ Voice ${currentDestination.address.index + 1}"
-            } else "‹ ADD",
-            onNavigateUp = navigateBack,
-            tabs = formantEditorSections,
-            selectedTab = formantTab,
-            onTabSelected = { formantTab = it },
-            dirty = state.dirty,
-            onActions = null,
-            heldNotes = heldNotes,
-            keyboardOctaveShift = keyboardOctaveShift,
-            onPressKeyboardNote = onPressKeyboardNote,
-            onReleaseKeyboardNote = onReleaseKeyboardNote,
-            modifier = modifier,
-        ) { contentModifier ->
-            if (filter != null) {
-                FormantFilterEditor(
-                    model = filter,
-                    preview = model.preview(currentDestination.address, 192),
-                    selectedTab = formantTab,
-                    onWrite = model::write,
-                    onPreviewVowel = { model.preview(currentDestination.address.copy(vowel = it), 192) },
-                    onCopyVowel = { model.copyModule(ModuleAddress.Vowel(currentDestination.address.index, it)) },
-                    onPasteVowel = { model.pasteModule(ModuleAddress.Vowel(currentDestination.address.index, it)) },
-                    canPasteVowel = { model.canPasteModule(ModuleAddress.Vowel(currentDestination.address.index, it)) },
+                    onPreviewVowel = { vowel -> model.preview(currentDestination.address.copy(vowel = vowel), 192) },
+                    onCopyVowel = { vowel -> model.copyModule(ModuleAddress.Vowel(currentDestination.address.index, vowel)) },
+                    onPasteVowel = { vowel -> model.pasteModule(ModuleAddress.Vowel(currentDestination.address.index, vowel)) },
+                    canPasteVowel = { vowel -> model.canPasteModule(ModuleAddress.Vowel(currentDestination.address.index, vowel)) },
                     modifier = contentModifier,
                 )
             }
@@ -702,6 +660,7 @@ fun FullInstrumentEditor(
                             onDrag = model::dragParameter,
                             onCommit = model::finishParameterDrag,
                             verticalLabels = module == "ADD",
+                            leadingContentAfterParameters = module == "ADD" && section in setOf("Amp", "Frequency"),
                             leadingContent = when (section) {
                                 "Voices" -> ({
                                     VoiceMatrix(
@@ -1320,21 +1279,11 @@ private fun AddOscillatorEditorScreen(
         }
     }
 
-    BoxWithConstraints(modifier) {
-        val scrollBottomPadding = (maxHeight - 180.dp).coerceAtLeast(112.dp)
-        val previewTransition = (scrollState.value / 360f).coerceIn(0f, 1f)
-        val expandedPreviewHeight = 210.dp
-        val compactPreviewHeight = 104.dp
-        val previewHeight = expandedPreviewHeight +
-            (compactPreviewHeight - expandedPreviewHeight) * previewTransition
-        val expandedPreviewTop = 30.dp
-        val compactPreviewTop = 4.dp
-        val previewTop = expandedPreviewTop +
-            (compactPreviewTop - expandedPreviewTop) * previewTransition
-        Column(
-            Modifier.fillMaxSize().verticalScroll(scrollState).padding(vertical = 7.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
+    CollapsingPreviewLayout(
+        scrollState = scrollState,
+        modifier = modifier,
+        preview = { previewModifier -> OscillatorPreviewPanel(exactPreview, previewModifier) },
+    ) { scrollBottomPadding ->
             ModuleClipboardActions(
                 onCopy = { model.copyModule(oscillatorAddress) },
                 onPaste = { model.pasteModule(oscillatorAddress) },
@@ -1353,7 +1302,7 @@ private fun AddOscillatorEditorScreen(
                 "Base + output preview",
                 modifier = positionSection("Preview").padding(horizontal = 7.dp),
             ) {
-                Spacer(Modifier.fillMaxWidth().height(expandedPreviewHeight))
+                Spacer(Modifier.fillMaxWidth().height(210.dp))
             }
 
             listOf(
@@ -1438,15 +1387,6 @@ private fun AddOscillatorEditorScreen(
                 }
             }
             Spacer(Modifier.height(scrollBottomPadding))
-        }
-        OscillatorPreviewPanel(
-            preview = exactPreview,
-            modifier = Modifier.align(Alignment.TopCenter)
-                .offset(y = previewTop)
-                .fillMaxWidth()
-                .height(previewHeight)
-                .padding(horizontal = 7.dp),
-        )
     }
 
     editedParameter?.let { parameter ->
@@ -1829,6 +1769,7 @@ private fun ZynEditorSection(
     onEdit: (SynthEngine.ParameterValue) -> Unit,
     verticalLabels: Boolean = false,
     leadingContent: (@Composable () -> Unit)? = null,
+    leadingContentAfterParameters: Boolean = false,
     onDrag: (SynthEngine.ParameterValue, Double) -> Unit = onWrite,
     onCommit: () -> Unit = {},
 ) {
@@ -1854,7 +1795,7 @@ private fun ZynEditorSection(
             ) { Spacer(Modifier.fillMaxWidth().height(1.dp)) }
         }
         Column(Modifier.fillMaxWidth().padding(horizontal = 2.dp)) {
-            leadingContent?.invoke()
+            if (!leadingContentAfterParameters) leadingContent?.invoke()
             if (complex) ComplexEditorLauncher(title, onComplex)
             if (parameters.isNotEmpty()) {
                 if (verticalLabels) {
@@ -1884,6 +1825,10 @@ private fun ZynEditorSection(
                         onCommit = onCommit,
                     )
                 }
+            }
+            if (leadingContentAfterParameters && leadingContent != null) {
+                Spacer(Modifier.height(10.dp))
+                leadingContent()
             }
         }
     }
@@ -2005,7 +1950,72 @@ private fun DenseParameterGrid(
 }
 
 @Composable
-@OptIn(ExperimentalFoundationApi::class)
+internal fun DenseControlCard(
+    label: String,
+    labelColor: Color,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    verticalLabel: Boolean = true,
+    unit: String = "",
+    onClick: () -> Unit = {},
+    onLongClick: () -> Unit = {},
+    content: @Composable () -> Unit,
+) {
+    Surface(
+        modifier = modifier.fillMaxWidth().alpha(if (enabled) 1f else .45f).combinedClickable(
+            enabled = enabled,
+            onClick = onClick,
+            onLongClick = onLongClick,
+        ),
+        color = Color(0xFF162D33),
+        shape = RoundedCornerShape(7.dp),
+        border = BorderStroke(1.dp, Color(0xFF274B54)),
+    ) {
+        Box(Modifier.fillMaxWidth().height(if (verticalLabel) 78.dp else 86.dp)) {
+            Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
+                if (verticalLabel) {
+                    Surface(
+                        modifier = Modifier.width(28.dp).fillMaxHeight(),
+                        color = labelColor,
+                        shape = RoundedCornerShape(topStart = 7.dp, bottomStart = 7.dp),
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Text(
+                                label,
+                                modifier = Modifier.rotate(-90f).requiredWidth(72.dp),
+                                style = MaterialTheme.typography.labelSmall,
+                                fontSize = 9.sp,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                maxLines = 1,
+                                softWrap = false,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                }
+                Column(
+                    Modifier.weight(1f).padding(horizontal = 3.dp, vertical = 4.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    content()
+                    if (!verticalLabel) {
+                        Text(label, style = MaterialTheme.typography.labelSmall, maxLines = 2)
+                    }
+                }
+            }
+            if (unit.isNotEmpty()) {
+                Text(
+                    unit,
+                    modifier = Modifier.align(Alignment.BottomEnd).padding(end = 5.dp, bottom = 3.dp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 8.sp,
+                )
+            }
+        }
+    }
+}
+
+@Composable
 internal fun DenseParameterControl(
     parameter: SynthEngine.ParameterValue,
     onWrite: (SynthEngine.ParameterValue, Double) -> Unit,
@@ -2017,49 +2027,28 @@ internal fun DenseParameterControl(
     onCommit: () -> Unit = {},
 ) {
     val descriptor = parameter.descriptor
-    Surface(
-        modifier = Modifier.fillMaxWidth().alpha(if (enabled) 1f else .45f).combinedClickable(
-            enabled = enabled,
-            onClick = {
-                if (descriptor.type == SynthEngine.ParameterType.BOOLEAN) {
-                    onWrite(parameter, if (parameter.value >= .5) 0.0 else 1.0)
-                }
-            },
-            onLongClick = {
-                if (!verticalLabel || descriptor.type != SynthEngine.ParameterType.ENUM) {
-                    onLongPress(parameter)
-                }
-            },
-        ),
-        color = Color(0xFF162D33),
-        shape = RoundedCornerShape(7.dp),
-        border = BorderStroke(1.dp, Color(0xFF274B54)),
+    DenseControlCard(
+        label = if (verticalLabel) compactAddLabel(descriptor) else descriptor.label,
+        labelColor = addLabelColor(descriptor),
+        verticalLabel = verticalLabel,
+        enabled = enabled,
+        unit = when {
+            descriptor.path.endsWith("/maxDb") -> "dB"
+            descriptor.path.endsWith("/center") -> "Hz"
+            else -> ""
+        },
+        onClick = {
+            if (descriptor.type == SynthEngine.ParameterType.BOOLEAN) {
+                onWrite(parameter, if (parameter.value >= .5) 0.0 else 1.0)
+            }
+        },
+        onLongClick = {
+            if (!verticalLabel || descriptor.type != SynthEngine.ParameterType.ENUM) {
+                onLongPress(parameter)
+            }
+        },
     ) {
-        Box(Modifier.fillMaxWidth().height(if (verticalLabel) 78.dp else 86.dp)) {
-            Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
-                if (verticalLabel) {
-                    Surface(
-                        modifier = Modifier.width(28.dp).fillMaxHeight(),
-                        color = addLabelColor(descriptor),
-                        shape = RoundedCornerShape(topStart = 7.dp, bottomStart = 7.dp),
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Text(
-                                compactAddLabel(descriptor),
-                                modifier = Modifier.rotate(-90f).requiredWidth(72.dp),
-                                style = MaterialTheme.typography.labelSmall,
-                                fontSize = 9.sp,
-                                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                                maxLines = 1,
-                            )
-                        }
-                    }
-                }
-                Column(
-                    Modifier.weight(1f).padding(horizontal = 3.dp, vertical = 4.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                when (descriptor.type) {
+        when (descriptor.type) {
                 SynthEngine.ParameterType.BOOLEAN -> Switch(
                     checked = parameter.value >= .5,
                     onCheckedChange = { if (enabled) onWrite(parameter, if (it) 1.0 else 0.0) },
@@ -2109,30 +2098,7 @@ internal fun DenseParameterControl(
                     onValueChangeFinished = onCommit,
                 )
                 }
-                    if (!verticalLabel) {
-                        Text(
-                            descriptor.label,
-                            style = MaterialTheme.typography.labelSmall,
-                            maxLines = 2,
-                        )
-                    }
-                }
-            }
-            val unit = when {
-                descriptor.path.endsWith("/maxDb") -> "dB"
-                descriptor.path.endsWith("/center") -> "Hz"
-                else -> ""
-            }
-            if (unit.isNotEmpty()) {
-                Text(
-                    unit,
-                    modifier = Modifier.align(Alignment.BottomEnd).padding(end = 5.dp, bottom = 3.dp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 8.sp,
-                )
-            }
         }
-    }
 }
 
 private fun addLabelColor(descriptor: SynthEngine.ParameterDescriptor): Color {
@@ -2175,6 +2141,10 @@ private fun compactAddLabel(descriptor: SynthEngine.ParameterDescriptor): String
     descriptor.path == "add/punchVelocity" -> "Punch Vel."
     descriptor.path == "add/octave" -> "Octave"
     descriptor.path == "add/coarse" -> "Coarse Det."
+    descriptor.path.endsWith("filterVelocityAmount") -> "Vel. amount"
+    descriptor.path.endsWith("filterVelocitySense") ||
+        descriptor.path.endsWith("filterVelocity") -> "Filter vel."
+    descriptor.path.endsWith("/formant/count") -> "Formants"
     descriptor.path.endsWith("/attackValue") -> "Attack Val."
     descriptor.path.endsWith("/attackTime") -> "Attack Time"
     descriptor.path.endsWith("/decayValue") -> "Decay Val."

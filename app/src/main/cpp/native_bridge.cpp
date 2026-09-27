@@ -96,9 +96,7 @@ bool startAudioLocked() {
     AAudioStreamBuilder_setDirection(builder, AAUDIO_DIRECTION_OUTPUT);
     AAudioStreamBuilder_setFormat(builder, AAUDIO_FORMAT_PCM_FLOAT);
     AAudioStreamBuilder_setChannelCount(builder, 2);
-    // Debug bring-up mode: prefer stability over ultra-low latency while the Zyn port
-    // still has heavy code paths (preset load, first-note warmup, shim FFT, etc.).
-    AAudioStreamBuilder_setPerformanceMode(builder, AAUDIO_PERFORMANCE_MODE_NONE);
+    AAudioStreamBuilder_setPerformanceMode(builder, AAUDIO_PERFORMANCE_MODE_LOW_LATENCY);
     AAudioStreamBuilder_setSharingMode(builder, AAUDIO_SHARING_MODE_SHARED);
     if (gSampleRate > 0) {
         AAudioStreamBuilder_setSampleRate(builder, gSampleRate);
@@ -122,7 +120,7 @@ bool startAudioLocked() {
     const int32_t actualBurst = AAudioStream_getFramesPerBurst(gStream);
     gAudioLastOpenedSampleRate.store(actualSampleRate, std::memory_order_relaxed);
     gAudioLastOpenedBurst.store(actualBurst, std::memory_order_relaxed);
-    const int32_t targetBufferFrames = std::max(actualBurst * 4, gFramesPerBurst * 2);
+    const int32_t targetBufferFrames = std::max(actualBurst * 2, gFramesPerBurst * 2);
     if (targetBufferFrames > 0) {
         const int32_t applied = AAudioStream_setBufferSizeInFrames(gStream, targetBufferFrames);
         gAudioLastOpenedBuffer.store(applied, std::memory_order_relaxed);

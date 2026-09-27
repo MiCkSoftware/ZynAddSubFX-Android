@@ -2,6 +2,8 @@ package com.mick.zynaddsubfx
 
 import kotlin.math.pow
 
+const val FORMANT_VOWEL_SLOTS = 6
+
 sealed interface ModuleAddress {
     val kind: Int
     val index: Int
@@ -29,7 +31,7 @@ sealed interface ModuleAddress {
 
     data class Filter(override val index: Int = -1, val vowel: Int = 0) : ModuleAddress {
         override val kind = 4
-        override val role = vowel.coerceIn(0, 5)
+        override val role = vowel.coerceIn(0, FORMANT_VOWEL_SLOTS - 1)
     }
 
     data object Resonance : ModuleAddress {
@@ -40,7 +42,7 @@ sealed interface ModuleAddress {
 
     data class Vowel(override val index: Int = -1, val vowel: Int) : ModuleAddress {
         override val kind = 6
-        override val role = vowel.coerceIn(0, 5)
+        override val role = vowel.coerceIn(0, FORMANT_VOWEL_SLOTS - 1)
     }
 }
 

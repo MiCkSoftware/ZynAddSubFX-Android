@@ -11,15 +11,18 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
@@ -37,12 +40,108 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import kotlin.math.abs
 import kotlin.math.roundToInt
+import kotlin.math.log2
+import kotlin.math.pow
+
+@Composable
+private fun FormantResponsePreview(
+    model: FilterModel,
+    preview: PreviewSeries,
+    vowel: Int,
+    formant: Int,
+    modifier: Modifier = Modifier,
+) {
+    val prefix = "${model.prefix}/formant"
+    val values = model.formant?.parameters.orEmpty()
+    fun value(path: String, fallback: Double = 64.0) =
+        values.firstOrNull { it.descriptor.path == path }?.value ?: fallback
+    val centerHz = 10000.0 * 10.0.pow(-(1.0 - value("$prefix/center") / 127.0) * 2.0)
+    val octaves = .25 + 10.0 * value("$prefix/octaves") / 127.0
+    val lowHz = centerHz / 2.0.pow(octaves / 2.0)
+    val markerValue = value("$prefix/vowel/$vowel/$formant/frequency")
+    val markerHz = lowHz * 2.0.pow(octaves * markerValue / 127.0)
+    val amplitude = value("$prefix/vowel/$vowel/$formant/amplitude", 127.0)
+    val gain = model.parameters.firstOrNull { it.descriptor.path.endsWith("/gain") ||
+        it.descriptor.path.endsWith("filterGain") }?.value ?: 64.0
+    val markerDb = -80.0 * (1.0 - amplitude / 127.0) + (gain / 64.0 - 1.0) * 30.0
+    Canvas(modifier.background(Color(0xFF09191D), RoundedCornerShape(7.dp))) {
+        val labelPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            color = android.graphics.Color.rgb(145, 179, 183)
+            textSize = 10.dp.toPx()
+        }
+        listOf(-30, -15, 0, 15, 30).forEach { db ->
+            val y = size.height * (.5f - db / 30f * .45f)
+            drawLine(Color(0xFF244047), Offset(0f, y), Offset(size.width, y), 1f)
+            drawContext.canvas.nativeCanvas.drawText("$db", 4.dp.toPx(), y - 2.dp.toPx(), labelPaint)
+        }
+        listOf(100, 200, 500, 1000, 2000, 5000, 10000, 20000).forEach { hz ->
+            val fraction = (log2(hz / lowHz) / octaves).toFloat()
+            if (fraction in 0f..1f) {
+                val x = size.width * fraction
+                drawLine(Color(0xFF244047), Offset(x, 0f), Offset(x, size.height), 1f)
+                val label = if (hz >= 1000) "${hz / 1000}k" else "$hz"
+                drawContext.canvas.nativeCanvas.drawText(label, x + 2.dp.toPx(),
+                    size.height - 4.dp.toPx(), labelPaint)
+            }
+        }
+        val markerX = size.width * (markerValue / 127.0).toFloat()
+        drawLine(Color(0xFFE8CA58), Offset(markerX, 0f), Offset(markerX, size.height), 2f)
+        if (preview.values.size > 1) {
+            val path = Path()
+            preview.values.forEachIndexed { index, value ->
+                val x = size.width * index / (preview.values.size - 1f)
+                val y = size.height * (.5f - value.coerceIn(-1f, 1f) * .45f)
+                if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
+            }
+            drawPath(path, Color(0xFFFF7048), style = Stroke(2.5f, cap = StrokeCap.Round))
+        }
+        labelPaint.color = android.graphics.Color.rgb(255, 215, 103)
+        drawContext.canvas.nativeCanvas.drawText(
+            "F${formant + 1} · ${"%.2f".format(markerHz / 1000.0)} kHz · ${markerDb.roundToInt()} dB",
+            5.dp.toPx(), 13.dp.toPx(), labelPaint,
+        )
+    }
+}
+
+@Composable
+fun CollapsingPreviewLayout(
+    scrollState: ScrollState,
+    modifier: Modifier = Modifier,
+    expandedTop: Dp = 30.dp,
+    previewHorizontalPadding: Dp = 7.dp,
+    maskBehindPreview: Boolean = false,
+    preview: @Composable (Modifier) -> Unit,
+    content: @Composable ColumnScope.(Dp) -> Unit,
+) {
+    BoxWithConstraints(modifier) {
+        val transition = (scrollState.value / 360f).coerceIn(0f, 1f)
+        val expandedHeight = 210.dp
+        val previewHeight = expandedHeight + (104.dp - expandedHeight) * transition
+        val previewTop = expandedTop + (4.dp - expandedTop) * transition
+        val bottomPadding = (maxHeight - 180.dp).coerceAtLeast(112.dp)
+        Column(
+            Modifier.fillMaxSize().verticalScroll(scrollState).padding(vertical = 7.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            content(bottomPadding)
+        }
+        if (maskBehindPreview) {
+            Box(Modifier.align(Alignment.TopCenter).fillMaxWidth()
+                .height(previewTop + previewHeight + 8.dp)
+                .background(Color(0xFF061419)))
+        }
+        preview(Modifier.align(Alignment.TopCenter).offset(y = previewTop)
+            .fillMaxWidth().height(previewHeight).padding(horizontal = previewHorizontalPadding))
+    }
+}
 
 @Composable
 fun ModulePreview(
@@ -133,8 +232,11 @@ private fun CompactModuleActions(
     canPaste: Boolean,
     onOpen: () -> Unit,
 ) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-        Text(title, modifier = Modifier.weight(1f), color = Color(0xFF7EF5EE), style = MaterialTheme.typography.labelSmall,
+    Row(Modifier.fillMaxWidth().padding(top = 5.dp, bottom = 3.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+        Text(title, modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.labelMedium,
             maxLines = 1, overflow = TextOverflow.Ellipsis)
         LuminousActionButton("C", onCopy, Modifier.size(27.dp), compact = true, description = "Copy $title")
         LuminousActionButton("P", onPaste, Modifier.size(27.dp), enabled = canPaste, compact = true, description = "Paste $title")
@@ -229,7 +331,7 @@ fun EnvelopeUI(
     onCommit: () -> Unit = {},
 ) {
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        CompactModuleActions(model.title.uppercase(), onCopy, onPaste, canPaste, onOpenEditor)
+        CompactModuleActions(model.title, onCopy, onPaste, canPaste, onOpenEditor)
         EnvelopeCurve(model, preview, Modifier.fillMaxWidth().height(92.dp).clickable(onClick = onOpenEditor))
         CommonParameterGrid(model.parameters.fields("attackTime", "decayTime", "sustain", "releaseTime", "stretch"), onWrite, onDrag, onCommit)
     }
@@ -249,7 +351,7 @@ fun LFOUI(
     onCommit: () -> Unit = {},
 ) {
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        CompactModuleActions(model.title.uppercase(), onCopy, onPaste, canPaste, onOpenEditor)
+        CompactModuleActions(model.title, onCopy, onPaste, canPaste, onOpenEditor)
         ModulePreview(preview, Modifier.fillMaxWidth().height(72.dp), accent = Color(0xFFC08BFF))
         CommonParameterGrid(model.parameters.fields("ampLfoEnabled", "freqLfoEnabled", "filterLfoEnabled", "frequency", "depth", "waveform"), onWrite, onDrag, onCommit)
     }
@@ -382,30 +484,58 @@ fun LfoEditor(
 fun FilterEditor(
     model: FilterModel,
     preview: PreviewSeries,
-    selectedTab: String,
+    previewRevision: Long,
     onWrite: (SynthEngine.ParameterValue, Double) -> Unit,
     onDrag: (SynthEngine.ParameterValue, Double) -> Unit,
     onCommit: () -> Unit,
-    onOpenFormant: () -> Unit,
+    onPreviewVowel: (Int) -> PreviewSeries,
+    onCopyVowel: (Int) -> Unit,
+    onPasteVowel: (Int) -> Unit,
+    canPasteVowel: (Int) -> Boolean,
     modifier: Modifier = Modifier,
 ) {
-    Column(
-        modifier.verticalScroll(rememberScrollState()).padding(8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        ModulePreview(preview, Modifier.fillMaxWidth().height(170.dp), accent = Color(0xFFFFC66A))
-        CommonParameterGrid(model.parameters.fields("filter", "category", "type", "cutoff", "q", "gain", "stages", "tracking"), onWrite, onDrag, onCommit)
-        if (model.category == 1) LuminousActionButton("Edit formants", onOpenFormant, Modifier.fillMaxWidth())
-        if (selectedTab == "Parameters") {
-            CommonParameterGrid(
-                model.parameters.filterNot { parameter ->
-                    parameter.descriptor.path.contains("/formant/") || parameter in model.parameters.fields("filter", "category", "type", "cutoff", "q", "gain", "stages", "tracking")
-                },
-                onWrite,
-                onDrag,
-                onCommit,
-            )
-        }
+    val scrollState = rememberScrollState()
+    var selectedVowel by remember(model.prefix) { mutableIntStateOf(0) }
+    var selectedFormant by remember(model.prefix) { mutableIntStateOf(0) }
+    val selectedPreview = remember(previewRevision, selectedVowel, model.address, model.category) {
+        if (model.category == 1 && selectedVowel != 0) onPreviewVowel(selectedVowel) else preview
+    }
+    CollapsingPreviewLayout(
+        scrollState = scrollState,
+        modifier = modifier,
+        expandedTop = 4.dp,
+        previewHorizontalPadding = 0.dp,
+        maskBehindPreview = true,
+        preview = { previewModifier ->
+            if (model.category == 1 && model.formant != null) {
+                FormantResponsePreview(model, selectedPreview, selectedVowel,
+                    selectedFormant.coerceIn(0, model.formant.count - 1), previewModifier)
+            } else ModulePreview(selectedPreview, previewModifier, accent = Color(0xFFFFC66A))
+        },
+    ) { bottomPadding ->
+        Spacer(Modifier.fillMaxWidth().height(210.dp))
+        val primary = model.parameters.fields("filter", "category", "type", "cutoff", "q", "gain", "stages", "tracking")
+        CommonParameterGrid(primary, onWrite, onDrag, onCommit)
+        CommonParameterGrid(
+            model.parameters.filterNot { parameter ->
+                parameter.descriptor.path.contains("/formant/") || parameter in primary
+            },
+            onWrite, onDrag, onCommit,
+        )
+        if (model.category == 1 && model.formant != null) FormantFilterEditor(
+            model = model,
+            selectedVowel = selectedVowel,
+            onSelectVowel = { selectedVowel = it },
+            selectedFormant = selectedFormant.coerceIn(0, model.formant.count - 1),
+            onSelectFormant = { selectedFormant = it },
+            onWrite = onWrite,
+            onDrag = onDrag,
+            onCommit = onCommit,
+            onCopyVowel = onCopyVowel,
+            onPasteVowel = onPasteVowel,
+            canPasteVowel = canPasteVowel,
+        )
+        Spacer(Modifier.height(bottomPadding))
     }
 }
 
@@ -433,8 +563,10 @@ fun FreeEnvelopeEditor(
         CommonParameterGrid(model.parameters.filterNot { parameter ->
             parameter in primary || parameter.descriptor.path.contains("/point/") ||
                 parameter.descriptor.path.endsWith("/pointCount") || parameter.descriptor.path.endsWith("/sustainPoint")
-        }, onWrite = { parameter, value -> onWrite(parameter, value, true) })
-        CommonParameterGrid(primary, onWrite = { parameter, value -> onWrite(parameter, value, true) })
+        }, onWrite = { parameter, value -> onWrite(parameter, value, true) },
+            onDrag = { parameter, value -> onWrite(parameter, value, false) }, onCommit = onCommit)
+        CommonParameterGrid(primary, onWrite = { parameter, value -> onWrite(parameter, value, true) },
+            onDrag = { parameter, value -> onWrite(parameter, value, false) }, onCommit = onCommit)
         if (model.freeMode && points.isNotEmpty()) {
             Text("Point ${activePoint + 1} of ${points.size}")
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -455,6 +587,8 @@ fun FreeEnvelopeEditor(
                     model.parameter("sustainPoint"),
                 ),
                 onWrite = { parameter, value -> onWrite(parameter, value, true) },
+                onDrag = { parameter, value -> onWrite(parameter, value, false) },
+                onCommit = onCommit,
             )
             LuminousActionButton("Sustain at selected point", {
                 model.parameter("sustainPoint")?.let { onWrite(it, activePoint.toDouble(), true) }
@@ -466,75 +600,93 @@ fun FreeEnvelopeEditor(
 @Composable
 fun FormantFilterEditor(
     model: FilterModel,
-    preview: PreviewSeries,
-    selectedTab: String,
+    selectedVowel: Int,
+    onSelectVowel: (Int) -> Unit,
+    selectedFormant: Int,
+    onSelectFormant: (Int) -> Unit,
     onWrite: (SynthEngine.ParameterValue, Double) -> Unit,
-    onPreviewVowel: (Int) -> PreviewSeries,
+    onDrag: (SynthEngine.ParameterValue, Double) -> Unit,
+    onCommit: () -> Unit,
     onCopyVowel: (Int) -> Unit,
     onPasteVowel: (Int) -> Unit,
     canPasteVowel: (Int) -> Boolean,
-    modifier: Modifier = Modifier,
 ) {
     val formant = model.formant ?: return
-    var selectedVowel by remember(model.prefix) { mutableIntStateOf(0) }
-    var selectedFormant by remember(model.prefix) { mutableIntStateOf(0) }
     val prefix = "${model.prefix}/formant"
     fun find(path: String) = formant.parameters.firstOrNull { it.descriptor.path == path }
     Column(
-        modifier.verticalScroll(rememberScrollState()).padding(8.dp),
+        Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        ModulePreview(
-            if (selectedVowel == 0) preview else onPreviewVowel(selectedVowel),
-            Modifier.fillMaxWidth().height(210.dp),
-            accent = Color(0xFFFFC66A),
+        Text("Formant parameters", color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.labelMedium)
+        CommonParameterGrid(
+            listOfNotNull(
+                find("$prefix/count"), find("$prefix/slowness"), find("$prefix/clearness"),
+                find("$prefix/center"), find("$prefix/octaves"),
+            ), onWrite, onDrag, onCommit,
         )
-        Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-            repeat(6) { vowel ->
-                Surface(
-                    Modifier.weight(1f).clickable { selectedVowel = vowel },
-                    color = if (selectedVowel == vowel) Color(0xFF23616A) else Color(0xFF162D33),
-                    shape = RoundedCornerShape(6.dp),
-                ) { Text("${vowel + 1}", Modifier.padding(9.dp)) }
-            }
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+            Text("Vowel and formant", modifier = Modifier.weight(1f),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.labelMedium,
+                maxLines = 1, softWrap = false)
+            LuminousActionButton("C", { onCopyVowel(selectedVowel) }, Modifier.size(27.dp),
+                compact = true, description = "Copy vowel")
+            LuminousActionButton("P", { onPasteVowel(selectedVowel) }, Modifier.size(27.dp),
+                compact = true, enabled = canPasteVowel(selectedVowel),
+                description = "Paste vowel")
         }
-        if (selectedTab == "Vowels") Text("VOWELS", color = Color(0xFF7EF5EE))
-        if (selectedTab == "Vowels") Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-            repeat(formant.count) { item ->
-                Surface(
-                    Modifier.weight(1f).clickable { selectedFormant = item },
-                    color = if (selectedFormant == item) Color(0xFF5B4A22) else Color(0xFF162D33),
-                    shape = RoundedCornerShape(6.dp),
-                ) { Text("F${item + 1}", Modifier.padding(7.dp)) }
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val showFourthColumn = maxWidth >= 350.dp
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+            Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                DenseControlCard("Vowel", Color(0xFF4A3D1E)) {
+                    TinyKnob(
+                        label = "", value = (selectedVowel + 1).toFloat(),
+                        min = 1f, max = FORMANT_VOWEL_SLOTS.toFloat(),
+                        valueText = "${selectedVowel + 1}/$FORMANT_VOWEL_SLOTS",
+                        dragRangePx = 220f,
+                        onValueChange = {
+                            onSelectVowel(it.roundToInt().minus(1).coerceIn(0, FORMANT_VOWEL_SLOTS - 1))
+                        },
+                    )
+                }
             }
+            Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                DenseControlCard("Formant", Color(0xFF4A3D1E)) {
+                    TinyKnob(
+                        label = "", value = (selectedFormant + 1).toFloat(),
+                        min = 1f, max = formant.count.toFloat(),
+                        valueText = "${selectedFormant + 1}/${formant.count}",
+                        dragRangePx = 220f,
+                        onValueChange = {
+                            onSelectFormant(it.roundToInt().minus(1).coerceIn(0, formant.count - 1))
+                        },
+                    )
+                }
+            }
+            repeat(if (showFourthColumn) 2 else 1) { Spacer(Modifier.weight(1f)) }
         }
-        if (selectedTab == "Vowels") CommonParameterGrid(
+        }
+        CommonParameterGrid(
             listOfNotNull(
                 find("$prefix/vowel/$selectedVowel/$selectedFormant/frequency"),
                 find("$prefix/vowel/$selectedVowel/$selectedFormant/amplitude"),
                 find("$prefix/vowel/$selectedVowel/$selectedFormant/q"),
             ),
-            onWrite,
+            onWrite, onDrag, onCommit,
         )
-        if (selectedTab == "Vowels") ModuleClipboardActions(
-            { onCopyVowel(selectedVowel) },
-            { onPasteVowel(selectedVowel) },
-            canPasteVowel(selectedVowel),
+        Text("Vowel sequence", color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.labelMedium)
+        CommonParameterGrid(
+            listOfNotNull(find("$prefix/sequenceSize"), find("$prefix/sequenceStretch"),
+                find("$prefix/sequenceReversed")), onWrite, onDrag, onCommit,
         )
-        if (selectedTab == "Preview") Text("FORMANT PARAMETERS", color = Color(0xFF7EF5EE))
-        if (selectedTab == "Preview") CommonParameterGrid(
-            listOfNotNull(
-                find("$prefix/count"), find("$prefix/slowness"), find("$prefix/clearness"),
-                find("$prefix/center"), find("$prefix/octaves"),
-            ),
-            onWrite,
-        )
-        if (selectedTab == "Sequence") Text("VOWEL SEQUENCE", color = Color(0xFF7EF5EE))
-        if (selectedTab == "Sequence") CommonParameterGrid(
-            (0 until formant.sequenceSize).mapNotNull { find("$prefix/sequence/$it") } + listOfNotNull(
-                find("$prefix/sequenceSize"), find("$prefix/sequenceStretch"), find("$prefix/sequenceReversed"),
-            ),
-            onWrite,
+        CommonParameterGrid(
+            (0 until formant.sequenceSize).mapNotNull { find("$prefix/sequence/$it") },
+            onWrite, onDrag, onCommit,
         )
         Spacer(Modifier.height(40.dp))
     }

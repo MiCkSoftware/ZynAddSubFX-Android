@@ -662,7 +662,7 @@ std::string ZynAndroidEngine::parameterSnapshot(int partIndex, int kitIndex) con
         }
     };
     auto formantValue = [&](const char *prefix, const char *group, const zyn::FilterParams &filter) {
-        add((std::string(prefix) + "/formant/count").c_str(), "Formant count", group, "int",
+        add((std::string(prefix) + "/formant/count").c_str(), "Active formants per vowel", group, "int",
             filter.Pnumformants, 1, FF_MAX_FORMANTS, 3);
         add((std::string(prefix) + "/formant/slowness").c_str(), "Formant slowness", group, "int",
             filter.Pformantslowness, 0, 127, 64);
@@ -1641,15 +1641,39 @@ std::string ZynAndroidEngine::modulePreview(
         for (int n = 0; n < count; ++n) {
             const float x = n / static_cast<float>(count - 1);
             if (filter->Pcategory == 1) {
+                // Match the original formant graph's logarithmic frequency scale and
+                // response in dB instead of plotting the raw formant parameter positions.
+                const float frequency = filter->getfreqx(x);
+                const float sampleRate = 48000.0f;
+                const float angle = static_cast<float>(kTwoPi) * frequency / sampleRate;
                 float response = 0.0f;
                 const int vowel = std::clamp(role, 0, FF_MAX_VOWELS - 1);
                 for (int f = 0; f < filter->Pnumformants; ++f) {
                     const auto &formant = filter->Pvowels[vowel].formants[f];
-                    const float center = formant.freq / 127.0f;
-                    const float width = .01f + (127 - formant.q) / 127.0f * .12f;
-                    response += formant.amp / 127.0f * std::exp(-std::pow((x - center) / width, 2.0f));
+                    const float formantHz = filter->getformantfreq(formant.freq);
+                    if (formantHz >= sampleRate / 2.0f - 100.0f) continue;
+                    float q = filter->getformantq(formant.q) * filter->getq();
+                    if (filter->Pstages > 0 && q > 1.0f)
+                        q = std::pow(q, 1.0f / (filter->Pstages + 1));
+                    const float omega = static_cast<float>(kTwoPi) * formantHz / sampleRate;
+                    const float alpha = std::sin(omega) / (2.0f * std::max(q, .001f));
+                    const float scale = 1.0f / (1.0f + alpha);
+                    const float b0 = alpha * scale * std::sqrt(q + 1.0f);
+                    const float b2 = -b0;
+                    const float a1 = -2.0f * std::cos(omega) * scale;
+                    const float a2 = (1.0f - alpha) * scale;
+                    const float numerator = std::pow(b0 + b2 * std::cos(2.0f * angle), 2.0f) +
+                        std::pow(b2 * std::sin(2.0f * angle), 2.0f);
+                    const float denominator = std::pow(1.0f + a1 * std::cos(angle) +
+                        a2 * std::cos(2.0f * angle), 2.0f) +
+                        std::pow(a1 * std::sin(angle) + a2 * std::sin(2.0f * angle), 2.0f);
+                    const float amplitude = std::pow(.1f, (1.0f - formant.amp / 127.0f) * 4.0f);
+                    response += std::pow(numerator / std::max(denominator, 1e-12f),
+                        (filter->Pstages + 1.0f) / 2.0f) * amplitude;
                 }
-                points[n] = std::clamp(response / std::max(1, static_cast<int>(filter->Pnumformants)) * 2.0f - 1.0f, -1.0f, 1.0f);
+                const float decibels = response > 1e-9f ? 20.0f * std::log10(response) +
+                    filter->getgain() : -90.0f;
+                points[n] = std::clamp(decibels / 30.0f, -1.0f, 1.0f);
             } else {
                 const float cutoff = std::clamp((std::log2(filter->basefreq) - 4.0f) / 11.0f, 0.0f, 1.0f);
                 const float slope = 8.0f + filter->Pstages * 4.0f;

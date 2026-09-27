@@ -12,6 +12,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.lifecycle.lifecycleScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -103,12 +104,19 @@ private const val HEAVY_FIRST_NOTE_MS_THRESHOLD = 250L
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val nativeStatus = smokeTestNativeBridge()
+        val nativeStatus = mutableStateOf(NativeSmokeStatus(
+            loaded = false, version = null, zynProbe = null, renderBackend = null,
+            initOk = false, sampleRate = null, framesPerBurst = null,
+            error = "Initializing audio engine",
+        ))
         enableEdgeToEdge()
         setContent {
             ZynAddSubFXTheme {
-                ZynAddSubFXApp(nativeStatus = nativeStatus)
+                ZynAddSubFXApp(nativeStatus = nativeStatus.value)
             }
+        }
+        lifecycleScope.launch {
+            nativeStatus.value = withContext(Dispatchers.Default) { smokeTestNativeBridge() }
         }
     }
 
@@ -222,22 +230,19 @@ fun ZynAddSubFXApp(nativeStatus: NativeSmokeStatus = NativeSmokeStatus.preview()
     var shouldResumeAudioAfterPause by rememberSaveable { mutableStateOf(false) }
     var shouldResumeToneAfterPause by rememberSaveable { mutableStateOf(false) }
 
+    fun keyboardChannel(): Int = partInspectors.getOrNull(selectedPlayPartIndex)
+        ?.receiveChannel?.coerceIn(0, 15) ?: 0
+
     fun pressNote(effectiveNote: Int) {
-        val channel = engine.parameterSnapshot(selectedPlayPartIndex, 0).values
-            .firstOrNull { it.descriptor.path == "part/channel" }
-            ?.value?.toInt()?.coerceIn(0, 15) ?: 0
         if (!heldNotes.contains(effectiveNote)) {
             heldNotes.add(effectiveNote)
-            runCatching { engine.noteOn(channel, effectiveNote, keyboardVelocity) }
+            runCatching { engine.noteOn(keyboardChannel(), effectiveNote, keyboardVelocity) }
         }
         heldNote = effectiveNote
     }
 
     fun releaseNote(effectiveNote: Int) {
-        val channel = engine.parameterSnapshot(selectedPlayPartIndex, 0).values
-            .firstOrNull { it.descriptor.path == "part/channel" }
-            ?.value?.toInt()?.coerceIn(0, 15) ?: 0
-        runCatching { engine.noteOff(channel, effectiveNote) }
+        runCatching { engine.noteOff(keyboardChannel(), effectiveNote) }
         heldNotes.removeAll { it == effectiveNote }
         if (heldNote == effectiveNote) {
             heldNote = heldNotes.lastOrNull()
@@ -245,11 +250,8 @@ fun ZynAddSubFXApp(nativeStatus: NativeSmokeStatus = NativeSmokeStatus.preview()
     }
 
     fun releaseAllHeldNotes() {
-        val channel = engine.parameterSnapshot(selectedPlayPartIndex, 0).values
-            .firstOrNull { it.descriptor.path == "part/channel" }
-            ?.value?.toInt()?.coerceIn(0, 15) ?: 0
         heldNotes.distinct().forEach { note ->
-            runCatching { engine.noteOff(channel, note) }
+            runCatching { engine.noteOff(keyboardChannel(), note) }
         }
         heldNotes.clear()
         heldNote = null
@@ -264,13 +266,23 @@ fun ZynAddSubFXApp(nativeStatus: NativeSmokeStatus = NativeSmokeStatus.preview()
         presetCatalogLoading = false
         Log.d(APP_LOG_TAG, "catalog loaded: ${packagedPresets.size} presets")
     }
-    LaunchedEffect(engine, nativeStatus.loaded, nativeStatus.initOk, autoStartAttempted) {
-        if (!nativeStatus.loaded || !nativeStatus.initOk || autoStartAttempted) return@LaunchedEffect
+    LaunchedEffect(engine, nativeStatus.loaded, nativeStatus.initOk,
+        startupPresetRestoreAttempted, presetLoading, autoStartAttempted) {
+        if (!nativeStatus.loaded || !nativeStatus.initOk || !startupPresetRestoreAttempted ||
+            presetLoading || autoStartAttempted) return@LaunchedEffect
         autoStartAttempted = true
-        val ok = runCatching { engine.startAudio() }.getOrDefault(false)
-        audioRunning = runCatching { engine.isAudioRunning() }.getOrDefault(ok)
-        masterVolume = runCatching { engine.getMasterVolumeNormalized() }.getOrDefault(masterVolume)
-        Log.d(APP_LOG_TAG, "diag: ${engine.runtimeDiagnostics()}")
+        val previousVolume = masterVolume
+        val (running, volume, diagnostics) = withContext(Dispatchers.Default) {
+            val ok = runCatching { engine.startAudio() }.getOrDefault(false)
+            Triple(
+                runCatching { engine.isAudioRunning() }.getOrDefault(ok),
+                runCatching { engine.getMasterVolumeNormalized() }.getOrDefault(previousVolume),
+                engine.runtimeDiagnostics(),
+            )
+        }
+        audioRunning = running
+        masterVolume = volume
+        Log.d(APP_LOG_TAG, "diag: $diagnostics")
         actionStatus = if (audioRunning) "Audio auto-started" else "Audio auto-start failed"
     }
     LaunchedEffect(engine, currentPresetPath, inspectorRefreshToken) {
@@ -433,13 +445,16 @@ fun ZynAddSubFXApp(nativeStatus: NativeSmokeStatus = NativeSmokeStatus.preview()
     }
 
     LaunchedEffect(
+        nativeStatus.loaded,
+        nativeStatus.initOk,
         presetCatalogLoading,
         packagedPresets,
         currentPresetPath,
         startupPresetRestoreAttempted,
         presetLoading
     ) {
-        if (startupPresetRestoreAttempted || presetCatalogLoading || presetLoading) return@LaunchedEffect
+        if (!nativeStatus.loaded || !nativeStatus.initOk || startupPresetRestoreAttempted ||
+            presetCatalogLoading || presetLoading) return@LaunchedEffect
         startupPresetRestoreAttempted = true
         val savedPath = currentPresetPath ?: return@LaunchedEffect
         val preset = packagedPresets.firstOrNull { it.assetPath == savedPath } ?: run {
@@ -1704,6 +1719,7 @@ data class NativeSmokeStatus(
     val error: String?
 ) {
     fun toDisplayString(): String {
+        if (error == "Initializing audio engine") return error
         if (!loaded) return "JNI load failed: ${error ?: "unknown error"}"
         return "JNI OK | version=$version | init=$initOk | sr=${sampleRate ?: 0} | burst=${framesPerBurst ?: 0} | render=${renderBackend ?: "unknown"}"
     }
