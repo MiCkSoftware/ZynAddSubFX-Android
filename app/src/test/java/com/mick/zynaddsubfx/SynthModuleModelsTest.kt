@@ -41,6 +41,10 @@ class SynthModuleModelsTest {
         assertTrue(model.linear)
         assertEquals(3, model.points.size)
         assertEquals(1, model.sustainPoint)
+        val positions = envelopePositions(model.points)
+        assertEquals(0f, positions.first(), 0.0001f)
+        assertEquals(1f, positions.last(), 0.0001f)
+        assertTrue("The longer second segment must move the middle point left", positions[1] < .5f)
     }
 
     @Test

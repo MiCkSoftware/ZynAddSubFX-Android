@@ -39,6 +39,8 @@ import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -652,9 +654,12 @@ fun LuminousActionButton(
     modifier: Modifier = Modifier,
     accent: Color = Color(0xFF33C8C8),
     enabled: Boolean = true,
+    compact: Boolean = false,
+    description: String = label,
 ) {
     Surface(
         modifier = modifier
+            .semantics { contentDescription = description }
             .clickable(enabled = enabled) { onClick() }
             .alpha(if (enabled) 1f else .42f)
             .border(
@@ -667,16 +672,15 @@ fun LuminousActionButton(
         shadowElevation = 6.dp
     ) {
         Box(
-            modifier = Modifier
-                .fillMaxWidth()
+            modifier = (if (compact) Modifier.fillMaxSize() else Modifier.fillMaxWidth())
                 .background(accent.copy(alpha = 0.14f))
-                .padding(vertical = 8.dp),
+                .padding(vertical = if (compact) 0.dp else 8.dp),
             contentAlignment = Alignment.Center
         ) {
             Text(
                 text = label,
                 color = Color(0xFFE6FFFF),
-                style = MaterialTheme.typography.labelLarge
+                style = if (compact) MaterialTheme.typography.labelSmall else MaterialTheme.typography.labelLarge
             )
         }
     }

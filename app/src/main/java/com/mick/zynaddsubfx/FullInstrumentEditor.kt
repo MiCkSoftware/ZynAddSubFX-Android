@@ -6,6 +6,7 @@
 package com.mick.zynaddsubfx
 
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.compose.BackHandler
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
@@ -148,19 +149,30 @@ private fun decodeDestination(value: String): InstrumentEditorDestination? {
     }
 }
 
+private fun parentDestination(destination: InstrumentEditorDestination): InstrumentEditorDestination? = when (destination) {
+    InstrumentEditorDestination.VoiceDetail, InstrumentEditorDestination.Resonance -> null
+    is InstrumentEditorDestination.Oscillator -> InstrumentEditorDestination.VoiceDetail
+    is InstrumentEditorDestination.Envelope ->
+        if (destination.address.index >= 0) InstrumentEditorDestination.VoiceDetail else null
+    is InstrumentEditorDestination.Lfo ->
+        if (destination.address.index >= 0) InstrumentEditorDestination.VoiceDetail else null
+    is InstrumentEditorDestination.Filter ->
+        if (destination.address.index >= 0) InstrumentEditorDestination.VoiceDetail else null
+    is InstrumentEditorDestination.Formant -> InstrumentEditorDestination.Filter(destination.address)
+}
+
 private val voiceEditorSections =
     listOf("Voice", "Oscillator", "Amplitude", "Frequency", "Filter", "Modulation", "Unison")
 private val oscillatorEditorSections =
     listOf("Preview", "Output", "Base function", "Shape & filter", "Harmonics")
 private val resonanceEditorSections = listOf("Curve", "Parameters")
-private val envelopeEditorSections = listOf("Curve", "Points", "Options")
-private val lfoEditorSections = listOf("Curve", "Parameters")
 private val filterEditorSections = listOf("Curve", "Parameters")
 private val formantEditorSections = listOf("Preview", "Vowels", "Sequence")
 
 @Composable
 private fun SynthEditorScaffold(
     title: String,
+    contextPath: String,
     navigationLabel: String,
     onNavigateUp: () -> Unit,
     tabs: List<String>,
@@ -178,6 +190,7 @@ private fun SynthEditorScaffold(
     Column(modifier.fillMaxSize()) {
         Surface(color = Color(0xFF102329), shadowElevation = 5.dp) {
             Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp)) {
+                Text(contextPath, color = Color(0xFF7AB8BA), style = MaterialTheme.typography.labelSmall)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     TextButton(onClick = onNavigateUp) { Text(navigationLabel) }
                     Text(
@@ -191,7 +204,7 @@ private fun SynthEditorScaffold(
                         TextButton(onClick = action) { Text("⋮") }
                     }
                 }
-                Row(
+                if (tabs.isNotEmpty()) Row(
                     Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
@@ -249,7 +262,7 @@ fun FullInstrumentEditor(
     var exportedFile by remember { mutableStateOf<File?>(null) }
     var exportedRevision by remember { mutableStateOf(0L) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val contentScroll = remember(module, state.kitIndex) { LazyListState() }
+    val contentScroll = remember(partIndex, kitIndex, module) { LazyListState() }
     val voiceDetailScroll = rememberScrollState()
     val voiceSectionOffsets = remember(state.selectedVoice) { mutableStateOf<Map<String, Int>>(emptyMap()) }
     val oscillatorScroll = rememberScrollState()
@@ -278,9 +291,14 @@ fun FullInstrumentEditor(
         model.selectVoice(savedVoice)
     }
 
+    LaunchedEffect(state.partIndex, state.kitIndex, module, state.snapshot != null) {
+        if (state.snapshot != null) contentScroll.scrollToItem(0)
+    }
+
     LaunchedEffect(state.selectedVoice) { savedVoice = state.selectedVoice }
 
-    val sectionNames = populatedSections(state.snapshot?.values.orEmpty(), module)
+    // Do not anchor the lazy list on the temporary Resonance-only content before open() loads the kit.
+    val sectionNames = state.snapshot?.let { populatedSections(it.values, module) }.orEmpty()
     val openSection: (String) -> Unit = { tab ->
         destination = null
         model.selectTab(tab)
@@ -290,14 +308,29 @@ fun FullInstrumentEditor(
         }
     }
     val currentDestination = destination
+    val baseContextPath = "Part ${state.partIndex + 1} › Kit ${state.kitIndex + 1} › $module"
+    val contextVoiceIndex = when (currentDestination) {
+        is InstrumentEditorDestination.Oscillator -> currentDestination.target.ownerVoice
+        is InstrumentEditorDestination.Envelope -> currentDestination.address.index
+        is InstrumentEditorDestination.Lfo -> currentDestination.address.index
+        is InstrumentEditorDestination.Filter -> currentDestination.address.index
+        is InstrumentEditorDestination.Formant -> currentDestination.address.index
+        else -> -1
+    }
+    val contextPath = if (contextVoiceIndex >= 0) {
+        "$baseContextPath › Voice ${contextVoiceIndex + 1}"
+    } else baseContextPath
+    val navigateBack: () -> Unit = { destination = destination?.let(::parentDestination) }
+    BackHandler(enabled = currentDestination != null) { navigateBack() }
     if (currentDestination is InstrumentEditorDestination.Oscillator) {
         val oscillatorTitle = if (currentDestination.target.kind == OscillatorEditorKind.Modulator) {
             "Modulator oscillator"
         } else "Voice oscillator"
         SynthEditorScaffold(
             title = oscillatorTitle,
+            contextPath = contextPath,
             navigationLabel = "‹ Voice ${state.selectedVoice + 1}",
-            onNavigateUp = { destination = InstrumentEditorDestination.VoiceDetail },
+            onNavigateUp = navigateBack,
             tabs = oscillatorEditorSections,
             selectedTab = activeAnchor(
                 oscillatorScroll.value +
@@ -341,8 +374,9 @@ fun FullInstrumentEditor(
     if (currentDestination == InstrumentEditorDestination.Resonance) {
         SynthEditorScaffold(
             title = "ADsynth Resonance",
+            contextPath = contextPath,
             navigationLabel = "‹ ADD",
-            onNavigateUp = { destination = null },
+            onNavigateUp = navigateBack,
             tabs = resonanceEditorSections,
             selectedTab = activeAnchor(
                 resonanceScroll.value,
@@ -376,26 +410,20 @@ fun FullInstrumentEditor(
         return
     }
     if (currentDestination is InstrumentEditorDestination.Envelope) {
-        var envelopeTab by rememberSaveable(currentDestination.address.toString()) {
-            mutableStateOf(envelopeEditorSections.first())
-        }
         val envelope = EnvelopeModel.from(
             state.snapshot?.values.orEmpty(),
             currentDestination.address,
         )
         SynthEditorScaffold(
             title = envelope?.title ?: "Envelope",
+            contextPath = contextPath,
             navigationLabel = if (currentDestination.address.index >= 0) {
                 "‹ Voice ${currentDestination.address.index + 1}"
             } else "‹ ADD",
-            onNavigateUp = {
-                destination = if (currentDestination.address.index >= 0) {
-                    InstrumentEditorDestination.VoiceDetail
-                } else null
-            },
-            tabs = envelopeEditorSections,
-            selectedTab = envelopeTab,
-            onTabSelected = { envelopeTab = it },
+            onNavigateUp = navigateBack,
+            tabs = emptyList(),
+            selectedTab = "",
+            onTabSelected = {},
             dirty = state.dirty,
             onActions = null,
             heldNotes = heldNotes,
@@ -408,13 +436,9 @@ fun FullInstrumentEditor(
                 FreeEnvelopeEditor(
                     model = envelope,
                     preview = model.preview(currentDestination.address, 192),
-                    selectedTab = envelopeTab,
                     onWrite = model::write,
                     onCommit = model::commitEdits,
                     onAction = model::performPath,
-                    onCopy = { model.copyModule(currentDestination.address) },
-                    onPaste = { model.pasteModule(currentDestination.address) },
-                    canPaste = model.canPasteModule(currentDestination.address),
                     modifier = contentModifier,
                 )
             }
@@ -422,26 +446,18 @@ fun FullInstrumentEditor(
         return
     }
     if (currentDestination is InstrumentEditorDestination.Lfo) {
-        var lfoTab by rememberSaveable(currentDestination.address.toString()) {
-            mutableStateOf(lfoEditorSections.first())
-        }
         val lfo = LfoModel.from(state.snapshot?.values.orEmpty(), currentDestination.address)
-        val preview = remember(state.revision, currentDestination.address) {
-            model.preview(currentDestination.address, 192)
-        }
+        val preview = model.preview(currentDestination.address, 192)
         SynthEditorScaffold(
             title = lfo?.title ?: "LFO",
+            contextPath = contextPath,
             navigationLabel = if (currentDestination.address.index >= 0) {
                 "‹ Voice ${currentDestination.address.index + 1}"
             } else "‹ ADD",
-            onNavigateUp = {
-                destination = if (currentDestination.address.index >= 0) {
-                    InstrumentEditorDestination.VoiceDetail
-                } else null
-            },
-            tabs = lfoEditorSections,
-            selectedTab = lfoTab,
-            onTabSelected = { lfoTab = it },
+            onNavigateUp = navigateBack,
+            tabs = emptyList(),
+            selectedTab = "",
+            onTabSelected = {},
             dirty = state.dirty,
             onActions = null,
             heldNotes = heldNotes,
@@ -454,13 +470,9 @@ fun FullInstrumentEditor(
                 LfoEditor(
                     model = lfo,
                     preview = preview,
-                    selectedTab = lfoTab,
                     onWrite = model::write,
                     onDrag = model::dragParameter,
                     onCommit = model::finishParameterDrag,
-                    onCopy = { model.copyModule(currentDestination.address) },
-                    onPaste = { model.pasteModule(currentDestination.address) },
-                    canPaste = model.canPasteModule(currentDestination.address),
                     modifier = contentModifier,
                 )
             }
@@ -477,14 +489,11 @@ fun FullInstrumentEditor(
         }
         SynthEditorScaffold(
             title = "Filter",
+            contextPath = contextPath,
             navigationLabel = if (currentDestination.address.index >= 0) {
                 "‹ Voice ${currentDestination.address.index + 1}"
             } else "‹ ADD",
-            onNavigateUp = {
-                destination = if (currentDestination.address.index >= 0) {
-                    InstrumentEditorDestination.VoiceDetail
-                } else null
-            },
+            onNavigateUp = navigateBack,
             tabs = filterEditorSections,
             selectedTab = filterTab,
             onTabSelected = { filterTab = it },
@@ -507,9 +516,6 @@ fun FullInstrumentEditor(
                     onOpenFormant = {
                         destination = InstrumentEditorDestination.Formant(currentDestination.address)
                     },
-                    onCopy = { model.copyModule(currentDestination.address) },
-                    onPaste = { model.pasteModule(currentDestination.address) },
-                    canPaste = model.canPasteModule(currentDestination.address),
                     modifier = contentModifier,
                 )
             }
@@ -523,12 +529,11 @@ fun FullInstrumentEditor(
         val filter = FilterModel.from(state.snapshot?.values.orEmpty(), currentDestination.address)
         SynthEditorScaffold(
             title = "Formant filter",
+            contextPath = contextPath,
             navigationLabel = if (currentDestination.address.index >= 0) {
                 "‹ Voice ${currentDestination.address.index + 1}"
             } else "‹ ADD",
-            onNavigateUp = {
-                destination = InstrumentEditorDestination.Filter(currentDestination.address)
-            },
+            onNavigateUp = navigateBack,
             tabs = formantEditorSections,
             selectedTab = formantTab,
             onTabSelected = { formantTab = it },
@@ -547,9 +552,6 @@ fun FullInstrumentEditor(
                     selectedTab = formantTab,
                     onWrite = model::write,
                     onPreviewVowel = { model.preview(currentDestination.address.copy(vowel = it), 192) },
-                    onCopyFilter = { model.copyModule(currentDestination.address) },
-                    onPasteFilter = { model.pasteModule(currentDestination.address) },
-                    canPasteFilter = model.canPasteModule(currentDestination.address),
                     onCopyVowel = { model.copyModule(ModuleAddress.Vowel(currentDestination.address.index, it)) },
                     onPasteVowel = { model.pasteModule(ModuleAddress.Vowel(currentDestination.address.index, it)) },
                     canPasteVowel = { model.canPasteModule(ModuleAddress.Vowel(currentDestination.address.index, it)) },
@@ -562,8 +564,9 @@ fun FullInstrumentEditor(
     if (currentDestination == InstrumentEditorDestination.VoiceDetail) {
         SynthEditorScaffold(
             title = "Voice ${state.selectedVoice + 1}",
+            contextPath = contextPath,
             navigationLabel = "‹ Voices",
-            onNavigateUp = { destination = null },
+            onNavigateUp = navigateBack,
             tabs = voiceEditorSections,
             selectedTab = activeAnchor(
                 voiceDetailScroll.value,
@@ -640,7 +643,8 @@ fun FullInstrumentEditor(
                 }
             }
             SynthEditorScaffold(
-                title = "$module · P${state.partIndex + 1} K${state.kitIndex + 1}",
+                title = "Instrument",
+                contextPath = contextPath,
                 navigationLabel = "‹ Part",
                 onNavigateUp = onBack,
                 tabs = sectionNames,

@@ -1,10 +1,40 @@
 
-fix envelope / LFO / filter UX
+ 
+fix filter UX
 switch from local.properties to varenv
 Move copy paste button to header
 reso zoom/scroll
+- addsynth voices colmun not aligned
+- finish parity with legacy voices list
+- Parts : all on same screen (selected on is unfloded)
+- Parts:  ch keys mode , rndgrp action not clear + duplicated + missing mini keyboard.
+- Parts: 3 dot menu is werid ; why save to ? remove nav to kit X
+- en tete INST>PART>KIT top à reproduire partout mais le back doti etre plus clair. (< ins)
+- ad synth resonance : add parameter to hide tab nav for this scaffold
+
+- Main
+  - bouton edit save sur main à droite de stereo (et retirer save des top app bar)
+
+- KITs
+  - all parts sur le screen d'edition avec instru en header
+  - rework kit mute button to standard (make reusable componant)
+  - Screen blink during loading
+
+- ADDSYNTH
+- sub synth todo
+- pad synth todo
+- FX todo (main and parts ...)
+- muted part mutes all pars bug
+- stereo button too big
+
+LIB
+- keyb to library + one tap to select another ti nav back
+
+MISC-UX
+- For enveloppe, if disabled hide controle and or replace by a gfx editor or preview with on demande knobs
 
 
+## ADD SYNTH Fields
 https://wiki.linuxaudio.org/wiki/zynaddsubfx_manual
 https://zynaddsubfx.sourceforge.io/doc_2.html
   | Filter | Global | Enable | Enable voice filter | Checkbox | on |
@@ -76,31 +106,3 @@ https://zynaddsubfx.sourceforge.io/doc_2.html
   | Modulator Oscillator | Global | Phase | Modulator oscillator phase | Slider | — |
   | Modulator Oscillator | Waveform display | Waveform | Modulator oscillator waveform preview | Graph
 
-- addsynth voices colmun not aligned
-- finish parity with legacy voices list
-- Parts : all on same screen (selected on is unfloded)
-- Parts:  ch keys mode , rndgrp action not clear + duplicated + missing mini keyboard.
-- Parts: 3 dot menu is werid ; why save to ? remove nav to kit X
-- en tete INST>PART>KIT top à reproduire partout mais le back doti etre plus clair. (< ins)
-- ad synth resonance : add parameter to hide tab nav for this scaffold
-
-- Main
-  - bouton edit save sur main à droite de stereo (et retirer save des top app bar)
-
-- KITs
-    - all parts sur le screen d'edition avec instru en header
-    - rework kit mute button to standard (make reusable componant)
-    - Screen blink during loading
-
-- ADDSYNTH
-- sub synth todo
-- pad synth todo
-- FX todo (main and parts ...)
-- muted part mutes all pars bug
-- stereo button too big
-
-LIB
-  - keyb to library + one tap to select another ti nav back
-
-MISC-UX
- - For enveloppe, if disabled hide controle and or replace by a gfx editor or preview with on demande knobs

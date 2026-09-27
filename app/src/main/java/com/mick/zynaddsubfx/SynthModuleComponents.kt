@@ -6,10 +6,11 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -28,6 +29,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -36,6 +38,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import kotlin.math.abs
@@ -97,27 +100,120 @@ private fun CommonParameterGrid(
     onCommit: () -> Unit = {},
     enabled: Boolean = true,
 ) {
-    FlowRow(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(5.dp),
-        verticalArrangement = Arrangement.spacedBy(5.dp),
-        maxItemsInEachRow = 4,
-    ) {
-        parameters.forEach { parameter ->
-            Box(Modifier.width(82.dp)) {
-                DenseParameterControl(
-                    parameter = parameter,
-                    onWrite = onWrite,
-                    onLongPress = {},
-                    verticalLabel = true,
-                    enabled = enabled,
-                    onDrag = onDrag,
-                    onCommit = onCommit,
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val columns = if (maxWidth < 350.dp) 3 else 4
+        Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            parameters.chunked(columns).forEach { rowParameters ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                    rowParameters.forEach { parameter ->
+                        Box(Modifier.weight(1f)) {
+                            DenseParameterControl(
+                                parameter = parameter,
+                                onWrite = onWrite,
+                                onLongPress = {},
+                                verticalLabel = true,
+                                enabled = enabled,
+                                onDrag = onDrag,
+                                onCommit = onCommit,
+                            )
+                        }
+                    }
+                    repeat(columns - rowParameters.size) { Spacer(Modifier.weight(1f)) }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CompactModuleActions(
+    title: String,
+    onCopy: () -> Unit,
+    onPaste: () -> Unit,
+    canPaste: Boolean,
+    onOpen: () -> Unit,
+) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+        Text(title, modifier = Modifier.weight(1f), color = Color(0xFF7EF5EE), style = MaterialTheme.typography.labelSmall,
+            maxLines = 1, overflow = TextOverflow.Ellipsis)
+        LuminousActionButton("C", onCopy, Modifier.size(27.dp), compact = true, description = "Copy $title")
+        LuminousActionButton("P", onPaste, Modifier.size(27.dp), enabled = canPaste, compact = true, description = "Paste $title")
+        LuminousActionButton("E", onOpen, Modifier.size(27.dp), compact = true, description = "Edit $title")
+    }
+}
+
+@Composable
+private fun EnvelopeCurve(
+    model: EnvelopeModel,
+    preview: PreviewSeries,
+    modifier: Modifier = Modifier,
+    selectedPoint: Int? = null,
+    onSelectPoint: ((Int) -> Unit)? = null,
+    onWritePoint: ((SynthEngine.ParameterValue, Double, Boolean) -> Unit)? = null,
+    onCommit: () -> Unit = {},
+) {
+    val points = model.points
+    val positions = envelopePositions(points)
+    val currentPoints by rememberUpdatedState(points)
+    val currentPositions by rememberUpdatedState(positions)
+    val currentOnCommit by rememberUpdatedState(onCommit)
+    val interactive = model.freeMode && onSelectPoint != null && onWritePoint != null
+    val touchModifier = if (interactive) modifier
+        .pointerInput(model.prefix, model.freeMode) {
+            detectTapGestures { position ->
+                val targetX = position.x / size.width
+                onSelectPoint?.invoke(currentPoints.minByOrNull { abs((currentPositions.getOrNull(it.index) ?: 0f) - targetX) }?.index ?: 0)
+            }
+        }
+        .pointerInput(model.prefix, model.freeMode) {
+            var timeDrag = 0f
+            var valueDrag = 0f
+            var draggedPoint = 0
+            var dragPoints = currentPoints
+            detectDragGestures(
+                onDragStart = { position ->
+                    val targetX = position.x / size.width
+                    dragPoints = currentPoints
+                    draggedPoint = dragPoints.minByOrNull { abs((currentPositions.getOrNull(it.index) ?: 0f) - targetX) }?.index ?: 0
+                    onSelectPoint?.invoke(draggedPoint)
+                    timeDrag = 0f
+                    valueDrag = 0f
+                },
+                onDragEnd = { currentOnCommit() },
+            ) { change, drag ->
+                change.consume()
+                dragPoints.getOrNull(draggedPoint)?.let { point ->
+                    valueDrag += drag.y
+                    onWritePoint?.invoke(point.value, point.value.value - valueDrag / size.height *
+                        (point.value.descriptor.maximum - point.value.descriptor.minimum), false)
+                    if (draggedPoint > 0) {
+                        timeDrag += drag.x
+                        onWritePoint?.invoke(point.time, point.time.value + timeDrag / size.width * 127.0, false)
+                    }
+                }
+            }
+        } else modifier
+    Box(touchModifier) {
+        ModulePreview(preview, Modifier.fillMaxSize(), sustainFraction = model.sustainPoint?.let { positions.getOrNull(it) })
+        if (model.freeMode) Canvas(Modifier.fillMaxSize()) {
+            points.forEach { point ->
+                val range = (point.value.descriptor.maximum - point.value.descriptor.minimum).coerceAtLeast(1.0)
+                drawCircle(
+                    if (point.index == selectedPoint) Color.Cyan else Color.White,
+                    radius = if (point.index == selectedPoint) 9f else 5f,
+                    center = Offset(
+                        size.width * (positions.getOrNull(point.index) ?: 0f),
+                        size.height * (1f - ((point.value.value - point.value.descriptor.minimum) / range).toFloat()),
+                    ),
                 )
             }
         }
     }
 }
+
+private fun List<SynthEngine.ParameterValue>.fields(vararg names: String): List<SynthEngine.ParameterValue> =
+    names.mapNotNull { name -> firstOrNull { it.descriptor.path.substringAfterLast('/') == name ||
+        it.descriptor.path.substringAfterLast('/').equals("filter${name.replaceFirstChar(Char::uppercase)}") } }
 
 @Composable
 fun EnvelopeUI(
@@ -133,15 +229,9 @@ fun EnvelopeUI(
     onCommit: () -> Unit = {},
 ) {
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(model.title.uppercase(), color = Color(0xFF7EF5EE), style = MaterialTheme.typography.labelSmall)
-        ModulePreview(
-            preview,
-            Modifier.fillMaxWidth().height(92.dp).clickable(onClick = onOpenEditor),
-            sustainFraction = model.sustainPoint?.let { sustain ->
-                sustain.toFloat() / (model.points.lastIndex.coerceAtLeast(1))
-            },
-        )
-        ModuleClipboardActions(onCopy, onPaste, canPaste, onOpenEditor)
+        CompactModuleActions(model.title.uppercase(), onCopy, onPaste, canPaste, onOpenEditor)
+        EnvelopeCurve(model, preview, Modifier.fillMaxWidth().height(92.dp).clickable(onClick = onOpenEditor))
+        CommonParameterGrid(model.parameters.fields("attackTime", "decayTime", "sustain", "releaseTime", "stretch"), onWrite, onDrag, onCommit)
     }
 }
 
@@ -159,9 +249,9 @@ fun LFOUI(
     onCommit: () -> Unit = {},
 ) {
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(model.title.uppercase(), color = Color(0xFF7EF5EE), style = MaterialTheme.typography.labelSmall)
+        CompactModuleActions(model.title.uppercase(), onCopy, onPaste, canPaste, onOpenEditor)
         ModulePreview(preview, Modifier.fillMaxWidth().height(72.dp), accent = Color(0xFFC08BFF))
-        ModuleClipboardActions(onCopy, onPaste, canPaste, onOpenEditor)
+        CommonParameterGrid(model.parameters.fields("ampLfoEnabled", "freqLfoEnabled", "filterLfoEnabled", "frequency", "depth", "waveform"), onWrite, onDrag, onCommit)
     }
 }
 
@@ -179,13 +269,13 @@ fun FilterUI(
     onCommit: () -> Unit = {},
 ) {
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text("FILTER", color = Color(0xFF7EF5EE), style = MaterialTheme.typography.labelSmall)
+        CompactModuleActions("FILTER", onCopy, onPaste, canPaste, onOpenEditor)
         ModulePreview(
             preview,
             Modifier.fillMaxWidth().height(92.dp).clickable(onClick = onOpenEditor),
             accent = Color(0xFFFFC66A),
         )
-        ModuleClipboardActions(onCopy, onPaste, canPaste, onOpenEditor)
+        CommonParameterGrid(model.parameters.fields("category", "type", "cutoff", "q", "gain", "stages"), onWrite, onDrag, onCommit)
     }
 }
 
@@ -252,7 +342,7 @@ fun CommonSynthModules(
         lfoRole?.let { role ->
             val address = ModuleAddress.Lfo(voiceIndex, role)
             LfoModel.from(values, address)?.let { lfo ->
-                val preview = remember(model.state.revision, address) { model.preview(address) }
+                val preview = model.preview(address)
                 LFOUI(
                     model = lfo,
                     preview = preview,
@@ -273,30 +363,18 @@ fun CommonSynthModules(
 fun LfoEditor(
     model: LfoModel,
     preview: PreviewSeries,
-    selectedTab: String,
     onWrite: (SynthEngine.ParameterValue, Double) -> Unit,
     onDrag: (SynthEngine.ParameterValue, Double) -> Unit,
     onCommit: () -> Unit,
-    onCopy: () -> Unit,
-    onPaste: () -> Unit,
-    canPaste: Boolean,
     modifier: Modifier = Modifier,
 ) {
     Column(
         modifier.verticalScroll(rememberScrollState()).padding(8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        if (selectedTab == "Curve") {
-            ModulePreview(
-                preview,
-                Modifier.fillMaxWidth().height(230.dp),
-                accent = Color(0xFFC08BFF),
-            )
-        }
-        if (selectedTab == "Parameters") {
-            CommonParameterGrid(model.parameters, onWrite, onDrag, onCommit)
-        }
-        ModuleClipboardActions(onCopy, onPaste, canPaste)
+        ModulePreview(preview, Modifier.fillMaxWidth().height(170.dp), accent = Color(0xFFC08BFF))
+        val primary = model.parameters.fields("ampLfoEnabled", "freqLfoEnabled", "filterLfoEnabled", "frequency", "depth", "start", "delay", "stretch", "waveform")
+        CommonParameterGrid(primary + model.parameters.filterNot { it in primary }, onWrite, onDrag, onCommit)
     }
 }
 
@@ -309,34 +387,25 @@ fun FilterEditor(
     onDrag: (SynthEngine.ParameterValue, Double) -> Unit,
     onCommit: () -> Unit,
     onOpenFormant: () -> Unit,
-    onCopy: () -> Unit,
-    onPaste: () -> Unit,
-    canPaste: Boolean,
     modifier: Modifier = Modifier,
 ) {
     Column(
         modifier.verticalScroll(rememberScrollState()).padding(8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        if (selectedTab == "Curve") {
-            ModulePreview(
-                preview,
-                Modifier.fillMaxWidth().height(230.dp),
-                accent = Color(0xFFFFC66A),
-            )
-        }
+        ModulePreview(preview, Modifier.fillMaxWidth().height(170.dp), accent = Color(0xFFFFC66A))
+        CommonParameterGrid(model.parameters.fields("filter", "category", "type", "cutoff", "q", "gain", "stages", "tracking"), onWrite, onDrag, onCommit)
+        if (model.category == 1) LuminousActionButton("Edit formants", onOpenFormant, Modifier.fillMaxWidth())
         if (selectedTab == "Parameters") {
             CommonParameterGrid(
-                model.parameters.filterNot { it.descriptor.path.contains("/formant/") },
+                model.parameters.filterNot { parameter ->
+                    parameter.descriptor.path.contains("/formant/") || parameter in model.parameters.fields("filter", "category", "type", "cutoff", "q", "gain", "stages", "tracking")
+                },
                 onWrite,
                 onDrag,
                 onCommit,
             )
-            if (model.category == 1) {
-                LuminousActionButton("Edit formants", onOpenFormant, Modifier.fillMaxWidth())
-            }
         }
-        ModuleClipboardActions(onCopy, onPaste, canPaste)
     }
 }
 
@@ -344,97 +413,53 @@ fun FilterEditor(
 fun FreeEnvelopeEditor(
     model: EnvelopeModel,
     preview: PreviewSeries,
-    selectedTab: String,
     onWrite: (SynthEngine.ParameterValue, Double, Boolean) -> Unit,
     onCommit: () -> Unit,
     onAction: (String) -> Unit,
-    onCopy: () -> Unit,
-    onPaste: () -> Unit,
-    canPaste: Boolean,
     modifier: Modifier = Modifier,
 ) {
     var selectedPoint by remember(model.prefix) { mutableIntStateOf(1) }
     val points = model.points
+    val activePoint = selectedPoint.coerceIn(0, points.lastIndex.coerceAtLeast(0))
+    val primary = model.parameters.fields("attackValue", "attackTime", "decayValue", "decayTime", "sustain", "releaseValue", "releaseTime", "stretch")
     Column(
         modifier.verticalScroll(rememberScrollState()).padding(8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        if (!model.freeMode) {
-            Text("The standard envelope is unchanged until free editing is enabled.")
-            LuminousActionButton("Convert to free envelope", {
-                model.parameter("freeMode")?.let { onWrite(it, 1.0, true) }
-            }, Modifier.fillMaxWidth())
-        }
-        if (selectedTab == "Curve") Box(
-            Modifier.fillMaxWidth().height(230.dp).pointerInput(points, model.freeMode) {
-                if (!model.freeMode || points.isEmpty()) return@pointerInput
-                detectDragGestures(
-                    onDragStart = { position ->
-                        val targetX = position.x / size.width
-                        selectedPoint = points.minByOrNull { point ->
-                            abs(point.index.toFloat() / points.lastIndex.coerceAtLeast(1) - targetX)
-                        }?.index ?: 0
-                    },
-                    onDragEnd = onCommit,
-                ) { change, drag ->
-                    change.consume()
-                    points.getOrNull(selectedPoint)?.let { point ->
-                        onWrite(point.value, point.value.value - drag.y / size.height * 127.0, false)
-                        if (selectedPoint > 0) {
-                            onWrite(point.time, point.time.value + drag.x / size.width * 127.0, false)
-                        }
-                    }
-                }
-            },
-        ) {
-            ModulePreview(
-                preview,
-                Modifier.fillMaxSize(),
-                sustainFraction = model.sustainPoint?.let { it.toFloat() / points.lastIndex.coerceAtLeast(1) },
-            )
-            Canvas(Modifier.fillMaxSize()) {
-                points.forEach { point ->
-                    val x = size.width * point.index / points.lastIndex.coerceAtLeast(1)
-                    val y = size.height * (1f - point.value.value.toFloat() / 127f)
-                    drawCircle(
-                        if (point.index == selectedPoint) Color.Cyan else Color.White,
-                        radius = if (point.index == selectedPoint) 9f else 6f,
-                        center = Offset(x, y),
-                    )
-                }
-            }
-        }
-        if (selectedTab == "Points" && model.freeMode && points.isNotEmpty()) {
-            Text("Point ${selectedPoint + 1} of ${points.size}")
+        EnvelopeCurve(
+            model, preview, Modifier.fillMaxWidth().height(210.dp), activePoint,
+            onSelectPoint = { selectedPoint = it }, onWritePoint = onWrite, onCommit = onCommit,
+        )
+        CommonParameterGrid(model.parameters.filterNot { parameter ->
+            parameter in primary || parameter.descriptor.path.contains("/point/") ||
+                parameter.descriptor.path.endsWith("/pointCount") || parameter.descriptor.path.endsWith("/sustainPoint")
+        }, onWrite = { parameter, value -> onWrite(parameter, value, true) })
+        CommonParameterGrid(primary, onWrite = { parameter, value -> onWrite(parameter, value, true) })
+        if (model.freeMode && points.isNotEmpty()) {
+            Text("Point ${activePoint + 1} of ${points.size}")
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 LuminousActionButton("Previous", { selectedPoint = (selectedPoint - 1).coerceAtLeast(0) }, Modifier.weight(1f))
                 LuminousActionButton("Next", { selectedPoint = (selectedPoint + 1).coerceAtMost(points.lastIndex) }, Modifier.weight(1f))
                 LuminousActionButton("Add", {
-                    onAction("${model.prefix}/insert/${selectedPoint.coerceAtMost(points.lastIndex - 1)}")
+                    onAction("${model.prefix}/insert/${activePoint.coerceAtMost(points.lastIndex - 1)}")
                 }, Modifier.weight(1f), enabled = points.size < 40)
                 LuminousActionButton("Delete", {
-                    onAction("${model.prefix}/delete/$selectedPoint")
+                    onAction("${model.prefix}/delete/$activePoint")
                     selectedPoint = (selectedPoint - 1).coerceAtLeast(0)
-                }, Modifier.weight(1f), enabled = selectedPoint in 1 until points.lastIndex && points.size > 3)
+                }, Modifier.weight(1f), enabled = activePoint in 1 until points.lastIndex && points.size > 3)
             }
             CommonParameterGrid(
                 parameters = listOfNotNull(
-                    points.getOrNull(selectedPoint)?.time?.takeIf { selectedPoint > 0 },
-                    points.getOrNull(selectedPoint)?.value,
+                    points.getOrNull(activePoint)?.time?.takeIf { activePoint > 0 },
+                    points.getOrNull(activePoint)?.value,
+                    model.parameter("sustainPoint"),
                 ),
                 onWrite = { parameter, value -> onWrite(parameter, value, true) },
             )
+            LuminousActionButton("Sustain at selected point", {
+                model.parameter("sustainPoint")?.let { onWrite(it, activePoint.toDouble(), true) }
+            }, Modifier.fillMaxWidth())
         }
-        if (selectedTab == "Options") {
-            val hidden = listOf("/freeMode", "/pointCount", "/sustainPoint", "/point/")
-            CommonParameterGrid(
-                parameters = model.parameters.filter { parameter ->
-                    hidden.none(parameter.descriptor.path::contains)
-                },
-                onWrite = { parameter, value -> onWrite(parameter, value, true) },
-            )
-        }
-        ModuleClipboardActions(onCopy, onPaste, canPaste)
     }
 }
 
@@ -445,30 +470,26 @@ fun FormantFilterEditor(
     selectedTab: String,
     onWrite: (SynthEngine.ParameterValue, Double) -> Unit,
     onPreviewVowel: (Int) -> PreviewSeries,
-    onCopyFilter: () -> Unit,
-    onPasteFilter: () -> Unit,
-    canPasteFilter: Boolean,
     onCopyVowel: (Int) -> Unit,
     onPasteVowel: (Int) -> Unit,
     canPasteVowel: (Int) -> Boolean,
     modifier: Modifier = Modifier,
 ) {
     val formant = model.formant ?: return
-    var selectedVowel by remember { mutableIntStateOf(0) }
-    var selectedFormant by remember { mutableIntStateOf(0) }
+    var selectedVowel by remember(model.prefix) { mutableIntStateOf(0) }
+    var selectedFormant by remember(model.prefix) { mutableIntStateOf(0) }
     val prefix = "${model.prefix}/formant"
     fun find(path: String) = formant.parameters.firstOrNull { it.descriptor.path == path }
     Column(
         modifier.verticalScroll(rememberScrollState()).padding(8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        if (selectedTab == "Preview") ModulePreview(
+        ModulePreview(
             if (selectedVowel == 0) preview else onPreviewVowel(selectedVowel),
             Modifier.fillMaxWidth().height(210.dp),
             accent = Color(0xFFFFC66A),
         )
-        if (selectedTab == "Vowels") Text("VOWELS", color = Color(0xFF7EF5EE))
-        if (selectedTab == "Vowels") Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
             repeat(6) { vowel ->
                 Surface(
                     Modifier.weight(1f).clickable { selectedVowel = vowel },
@@ -477,6 +498,7 @@ fun FormantFilterEditor(
                 ) { Text("${vowel + 1}", Modifier.padding(9.dp)) }
             }
         }
+        if (selectedTab == "Vowels") Text("VOWELS", color = Color(0xFF7EF5EE))
         if (selectedTab == "Vowels") Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
             repeat(formant.count) { item ->
                 Surface(
@@ -514,7 +536,6 @@ fun FormantFilterEditor(
             ),
             onWrite,
         )
-        ModuleClipboardActions(onCopyFilter, onPasteFilter, canPasteFilter)
         Spacer(Modifier.height(40.dp))
     }
 }

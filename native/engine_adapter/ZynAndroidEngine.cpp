@@ -1046,7 +1046,10 @@ bool ZynAndroidEngine::setParameter(int partIndex, int kitIndex, const std::stri
         else if (field == "loop") env.Prepeating = b();
         else if (field == "forceRelease") env.Pforcedrelease = b();
         else if (field == "freeMode") {
-            if (b() && !env.Pfreemode) env.converttofree();
+            if (b() && !env.Pfreemode) {
+                env.converttofree();
+                env.Pfreemode = true;
+            }
             else env.Pfreemode = b();
         }
         else if (field == "linear") env.Plinearenvelope = b();
@@ -1610,19 +1613,26 @@ std::string ZynAndroidEngine::modulePreview(
             lfo = role == 0 ? voice.AmpLfo : role == 1 ? voice.FreqLfo : voice.FilterLfo;
         }
         if (!lfo) return {};
+        const float depth = lfo->Pintensity / 127.0f;
+        // One period is shown; frequency changes its duration, while depth and start phase
+        // change this shape. Phase zero is random at note start, so use a stable reference.
+        const float start = lfo->Pstartphase == 0 ? 0.0f :
+            (lfo->Pstartphase + 63.0f) / 127.0f;
         for (int n = 0; n < count; ++n) {
-            const float phase = n / static_cast<float>(count - 1);
-            const float sine = std::sin(static_cast<float>(kTwoPi) * phase);
+            const float phase = std::fmod(n / static_cast<float>(count - 1) + start, 1.0f);
+            float shape = 0.0f;
             switch (lfo->PLFOtype) {
-                case 1: points[n] = 1.0f - 4.0f * std::fabs(phase - .5f); break;
-                case 2: points[n] = phase < .5f ? 1.0f : -1.0f; break;
-                case 3: points[n] = phase * 2.0f - 1.0f; break;
-                case 4: points[n] = 1.0f - phase * 2.0f; break;
-                case 5: points[n] = 2.0f * std::exp(-phase * 5.0f) - 1.0f; break;
-                case 6: points[n] = 2.0f * std::exp(-phase * 10.0f) - 1.0f; break;
-                case 7: points[n] = std::sin((n * 1103515245u + 12345u) * .000001f); break;
-                default: points[n] = sine; break;
+                case 1: shape = phase < .25f ? 4.0f * phase :
+                    phase < .75f ? 2.0f - 4.0f * phase : 4.0f * phase - 4.0f; break;
+                case 2: shape = phase < .5f ? -1.0f : 1.0f; break;
+                case 3: shape = phase * 2.0f - 1.0f; break;
+                case 4: shape = 1.0f - phase * 2.0f; break;
+                case 5: shape = 2.0f * std::pow(.05f, phase) - 1.0f; break;
+                case 6: shape = 2.0f * std::pow(.001f, phase) - 1.0f; break;
+                case 7: shape = std::sin((n * 1103515245u + 12345u) * .000001f); break;
+                default: shape = std::cos(static_cast<float>(kTwoPi) * phase); break;
             }
+            points[n] = shape * depth;
         }
     } else if (kind == 4) {
         auto *filter = index < 0 ? global.GlobalFilter :

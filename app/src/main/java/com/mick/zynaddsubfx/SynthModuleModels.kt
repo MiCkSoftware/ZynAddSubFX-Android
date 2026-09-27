@@ -1,5 +1,7 @@
 package com.mick.zynaddsubfx
 
+import kotlin.math.pow
+
 sealed interface ModuleAddress {
     val kind: Int
     val index: Int
@@ -67,6 +69,18 @@ data class EnvelopePoint(
     val time: SynthEngine.ParameterValue,
     val value: SynthEngine.ParameterValue,
 )
+
+internal fun envelopePositions(points: List<EnvelopePoint>): List<Float> {
+    if (points.isEmpty()) return emptyList()
+    // EnvelopeFreeEdit uses logarithmic segment time and includes one unit per segment.
+    val durations = points.drop(1).map { ((2.0.pow(it.time.value / 127.0 * 12.0) - 1.0) * 10.0 + 1.0).toFloat() }
+    val total = durations.sum().coerceAtLeast(1f)
+    var elapsed = 0f
+    return listOf(0f) + durations.map { duration ->
+        elapsed += duration
+        elapsed / total
+    }
+}
 
 data class EnvelopeModel(
     val address: ModuleAddress.Envelope,
