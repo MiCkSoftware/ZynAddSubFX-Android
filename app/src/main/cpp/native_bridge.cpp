@@ -444,6 +444,19 @@ Java_com_mick_zynaddsubfx_NativeSynthBridge_nativeSetPartReceiveChannel(
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
+Java_com_mick_zynaddsubfx_NativeSynthBridge_nativeAllNotesOffPart(
+        JNIEnv *, jobject, jint partIndex) {
+    return gEngine.allNotesOffPart(static_cast<int>(partIndex)) ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_mick_zynaddsubfx_NativeSynthBridge_nativeSetSystemFxSend(
+        JNIEnv *, jobject, jint partIndex, jint fxIndex, jint amount) {
+    return gEngine.setSystemFxSend(static_cast<int>(partIndex), static_cast<int>(fxIndex),
+                                   static_cast<int>(amount)) ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
 Java_com_mick_zynaddsubfx_NativeSynthBridge_nativeSetPartVolume127(
         JNIEnv * /* env */,
         jobject /* thiz */,
@@ -530,26 +543,6 @@ Java_com_mick_zynaddsubfx_NativeSynthBridge_nativeSetPartPadEnabled(
         jint partIndex,
         jboolean enabled) {
     const bool ok = gEngine.setPartPadEnabled(static_cast<int>(partIndex), enabled == JNI_TRUE);
-    return ok ? JNI_TRUE : JNI_FALSE;
-}
-
-extern "C" JNIEXPORT jboolean JNICALL
-Java_com_mick_zynaddsubfx_NativeSynthBridge_nativeSetPartStereoEnabled(
-        JNIEnv * /* env */,
-        jobject /* thiz */,
-        jint partIndex,
-        jboolean enabled) {
-    const bool ok = gEngine.setPartStereoEnabled(static_cast<int>(partIndex), enabled == JNI_TRUE);
-    return ok ? JNI_TRUE : JNI_FALSE;
-}
-
-extern "C" JNIEXPORT jboolean JNICALL
-Java_com_mick_zynaddsubfx_NativeSynthBridge_nativeSetPartRndGroupingEnabled(
-        JNIEnv * /* env */,
-        jobject /* thiz */,
-        jint partIndex,
-        jboolean enabled) {
-    const bool ok = gEngine.setPartRndGroupingEnabled(static_cast<int>(partIndex), enabled == JNI_TRUE);
     return ok ? JNI_TRUE : JNI_FALSE;
 }
 

@@ -567,6 +567,18 @@ fun ZynAddSubFXApp(nativeStatus: NativeSmokeStatus = NativeSmokeStatus.preview()
                     actionStatus = if (ok) "Solo Part $partIndex" else "Failed to solo Part $partIndex"
                     if (ok) inspectorRefreshToken += 1
                 },
+                onPartChanged = { inspectorRefreshToken += 1 },
+                onAllNotesOffPart = { partIndex ->
+                    val ok = engine.allNotesOffPart(partIndex)
+                    if (ok) {
+                        if (partIndex == selectedPlayPartIndex) {
+                            heldNotes.clear()
+                            heldNote = null
+                        }
+                        inspectorRefreshToken += 1
+                    }
+                    actionStatus = if (ok) "Part ${partIndex + 1} notes off" else "Failed to stop Part ${partIndex + 1} notes"
+                },
                 modifier = Modifier.padding(innerPadding)
             )
         }
@@ -686,44 +698,12 @@ fun ZynAddSubFXApp(nativeStatus: NativeSmokeStatus = NativeSmokeStatus.preview()
                         actionStatus = if (ok) "Part $partIndex pan set to $clamped" else "Failed to set Part $partIndex pan"
                         if (ok) inspectorRefreshToken += 1
                     },
-                    onSetSelectedPartSense = { sense ->
+                    onSetSelectedPartKeyShift = { shift ->
                         val partIndex = selectedPlayPartIndex.coerceIn(0, 15)
-                        val clamped = sense.coerceIn(0, 127)
-                        val ok = runCatching { engine.setPartVelocitySense127(partIndex, clamped) }.getOrDefault(false)
-                        actionStatus = if (ok) "Part $partIndex sens set to $clamped" else "Failed to set Part $partIndex sens"
-                        if (ok) inspectorRefreshToken += 1
-                    },
-                    onSetSelectedPartStrength = { strength ->
-                        val partIndex = selectedPlayPartIndex.coerceIn(0, 15)
-                        val clamped = strength.coerceIn(0, 127)
-                        val ok = runCatching { engine.setPartVelocityOffset127(partIndex, clamped) }.getOrDefault(false)
-                        actionStatus = if (ok) "Part $partIndex str set to $clamped" else "Failed to set Part $partIndex str"
-                        if (ok) inspectorRefreshToken += 1
-                    },
-                    onSetSelectedPartTime = { time ->
-                        val partIndex = selectedPlayPartIndex.coerceIn(0, 15)
-                        val clamped = time.coerceIn(0, 127)
-                        val ok = runCatching { engine.setPartPortamentoTime127(partIndex, clamped) }.getOrDefault(false)
-                        actionStatus = if (ok) "Part $partIndex tim set to $clamped" else "Failed to set Part $partIndex tim"
-                        if (ok) inspectorRefreshToken += 1
-                    },
-                    onSetSelectedPartStretch = { stretch ->
-                        val partIndex = selectedPlayPartIndex.coerceIn(0, 15)
-                        val clamped = stretch.coerceIn(0, 127)
-                        val ok = runCatching { engine.setPartPortamentoStretch127(partIndex, clamped) }.getOrDefault(false)
-                        actionStatus = if (ok) "Part $partIndex stretch set to $clamped" else "Failed to set Part $partIndex stretch"
-                        if (ok) inspectorRefreshToken += 1
-                    },
-                    onSetSelectedPartStereo = { enabled ->
-                        val partIndex = selectedPlayPartIndex.coerceIn(0, 15)
-                        val ok = runCatching { engine.setPartStereoEnabled(partIndex, enabled) }.getOrDefault(false)
-                        actionStatus = if (ok) "Part $partIndex stereo ${if (enabled) "on" else "off"}" else "Failed to set Part $partIndex stereo"
-                        if (ok) inspectorRefreshToken += 1
-                    },
-                    onSetSelectedPartRndGrp = { enabled ->
-                        val partIndex = selectedPlayPartIndex.coerceIn(0, 15)
-                        val ok = runCatching { engine.setPartRndGroupingEnabled(partIndex, enabled) }.getOrDefault(false)
-                        actionStatus = if (ok) "Part $partIndex rnd grp ${if (enabled) "on" else "off"}" else "Failed to set Part $partIndex rnd grp"
+                        val clamped = shift.coerceIn(-64, 63)
+                        val ok = engine.writeParameter(partIndex, 0,
+                            SynthEngine.ParameterWrite("part/keyShift", clamped.toDouble()))
+                        actionStatus = if (ok) "Part ${partIndex + 1} key shift $clamped" else "Failed to set Part ${partIndex + 1} key shift"
                         if (ok) inspectorRefreshToken += 1
                     },
                     modifier = Modifier.padding(innerPadding)

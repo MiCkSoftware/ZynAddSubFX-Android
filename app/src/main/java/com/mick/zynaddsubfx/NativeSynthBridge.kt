@@ -40,6 +40,8 @@ object NativeSynthBridge {
     external fun nativeSetPart0Enabled(enabled: Boolean): Boolean
     external fun nativeSetPartEnabled(partIndex: Int, enabled: Boolean): Boolean
     external fun nativeSetPartReceiveChannel(partIndex: Int, channel: Int): Boolean
+    external fun nativeAllNotesOffPart(partIndex: Int): Boolean
+    external fun nativeSetSystemFxSend(partIndex: Int, fxIndex: Int, amount: Int): Boolean
     external fun nativeSetPartVolume127(partIndex: Int, volume127: Int): Boolean
     external fun nativeSetPartPanning(partIndex: Int, panning127: Int): Boolean
     external fun nativeSetPartVelocitySense127(partIndex: Int, sense127: Int): Boolean
@@ -49,8 +51,6 @@ object NativeSynthBridge {
     external fun nativeSetPartAddEnabled(partIndex: Int, enabled: Boolean): Boolean
     external fun nativeSetPartSubEnabled(partIndex: Int, enabled: Boolean): Boolean
     external fun nativeSetPartPadEnabled(partIndex: Int, enabled: Boolean): Boolean
-    external fun nativeSetPartStereoEnabled(partIndex: Int, enabled: Boolean): Boolean
-    external fun nativeSetPartRndGroupingEnabled(partIndex: Int, enabled: Boolean): Boolean
     external fun nativeSoloPart(partIndex: Int): Boolean
 
     // Debug helpers for M1 smoke validation in UI

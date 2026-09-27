@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.offset
@@ -40,6 +41,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
@@ -55,6 +57,38 @@ import com.mick.zynaddsubfx.ui.theme.ledColors
 enum class KnobSensitivity {
     Default,
     Adjust,
+}
+
+const val LedSlotWidth = 62
+
+@Composable
+fun EditorSectionHeader(title: String) {
+    Row(Modifier.fillMaxWidth().padding(horizontal = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(title.uppercase(), color = Color(0xFF66F0E9), style = MaterialTheme.typography.labelSmall,
+            modifier = Modifier.padding(vertical = 2.dp))
+        Spacer(Modifier.width(7.dp))
+        Surface(modifier = Modifier.weight(1f), color = Color(0xFF234A53),
+            shape = RoundedCornerShape(99.dp)) {
+            Spacer(Modifier.fillMaxWidth().height(1.dp))
+        }
+    }
+}
+
+@Composable
+fun DenseKnobCard(
+    label: String,
+    value: Float,
+    min: Float,
+    max: Float,
+    onValueChange: (Float) -> Unit,
+    modifier: Modifier = Modifier,
+    labelColor: Color = Color(0xFF1C474B),
+    onValueChangeFinished: () -> Unit = {},
+) {
+    DenseControlCard(label, labelColor, modifier) {
+        TinyKnob("", value, min, max, onValueChangeFinished = onValueChangeFinished,
+            onValueChange = onValueChange)
+    }
 }
 
 @Composable
@@ -183,7 +217,6 @@ fun ZynModuleRow(
     onOpen: () -> Unit,
     onToggle: () -> Unit,
 ) {
-    val stateColors = ledColors(active, LedFxHue)
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(8.dp),
@@ -196,17 +229,11 @@ fun ZynModuleRow(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(title, color = Color(0xFF66F0E9), modifier = Modifier.weight(1f).clickable(onClick = onOpen))
-            ZynValueChip("", count.toString())
-            Text(
-                if (active) "ON" else "+",
-                color = stateColors.content,
-                modifier = Modifier
-                    .background(stateColors.surface, RoundedCornerShape(6.dp))
-                    .border(1.dp, stateColors.border, RoundedCornerShape(6.dp))
-                    .clickable(onClick = onToggle)
-                    .padding(horizontal = 9.dp, vertical = 6.dp),
-            )
-            Text("›", modifier = Modifier.clickable(onClick = onOpen), color = Color(0xFFA7F4F0))
+            Box(Modifier.width(LedSlotWidth.dp), contentAlignment = Alignment.Center) { ZynValueChip("", count.toString()) }
+            Spacer(Modifier.width(LedSlotWidth.dp))
+            LedButton("Open FX", active, onToggle, Modifier.width(LedSlotWidth.dp), LedFxHue, action = true,
+                displayLabel = "OPEN")
+            Text("›", modifier = Modifier.width(22.dp).clickable(onClick = onOpen), color = Color(0xFFA7F4F0))
         }
     }
 }
@@ -226,14 +253,9 @@ fun ZynKitItemRow(
     ) {
         Text(label, modifier = Modifier.weight(1f).clickable(onClick = onOpen), color = Color(0xFFA7F4F0))
         middleContent?.invoke()
-        Surface(
-            shape = RoundedCornerShape(6.dp),
-            color = if (muted) Color(0xFF64343A) else Color(0xFF18383E),
-            modifier = Modifier.clickable(onClick = onMute),
-        ) {
-            Text(if (muted) "MUTED" else "MUTE", modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
-        }
-        Text("›", modifier = Modifier.clickable(onClick = onOpen).padding(5.dp))
+        LedButton("Kit mute", muted, onMute, Modifier.width(LedSlotWidth.dp), 2f,
+            displayLabel = if (muted) "MUTED" else "MUTE")
+        Text("›", modifier = Modifier.width(22.dp).clickable(onClick = onOpen).padding(5.dp))
     }
 }
 
@@ -568,6 +590,38 @@ fun TinyKnobDisplay(
 }
 
 @Composable
+fun LedButton(
+    label: String,
+    lit: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    hue: Float = LedDefaultHue,
+    action: Boolean = false,
+    displayLabel: String = label,
+    content: (@Composable () -> Unit)? = null,
+) {
+    val colors = ledColors(lit, hue)
+    Surface(
+        modifier = modifier.height(34.dp)
+            .semantics {
+                contentDescription = label
+                if (!action) stateDescription = if (lit) "On" else "Off"
+            }
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(6.dp),
+        color = colors.surface,
+        border = androidx.compose.foundation.BorderStroke(1.dp, colors.border),
+        shadowElevation = if (lit) 4.dp else 0.dp,
+    ) {
+        Box(contentAlignment = Alignment.Center,
+            modifier = Modifier.background(colors.glow.copy(alpha = if (lit) .14f else .03f))) {
+            if (content != null) content() else Text(displayLabel, color = colors.content,
+                style = MaterialTheme.typography.labelMedium, maxLines = 1)
+        }
+    }
+}
+
+@Composable
 fun LuminousToggleButton(
     label: String,
     enabled: Boolean,
@@ -575,30 +629,7 @@ fun LuminousToggleButton(
     hue: Float = LedDefaultHue,
     modifier: Modifier = Modifier.fillMaxWidth(),
 ) {
-    val colors = ledColors(enabled, hue)
-
-    Surface(
-        modifier = modifier
-            .clickable { onToggle() }
-            .border(
-                width = 1.5.dp,
-                color = colors.border,
-                shape = RoundedCornerShape(8.dp)
-            ),
-        shape = RoundedCornerShape(8.dp),
-        color = colors.surface,
-        shadowElevation = if (enabled) 8.dp else 1.dp
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(colors.glow.copy(alpha = if (enabled) 0.16f else 0.05f))
-                .padding(vertical = 8.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(label, color = colors.content)
-        }
-    }
+    LedButton(label, enabled, onToggle, modifier, hue)
 }
 
 @Composable
@@ -607,19 +638,7 @@ fun StudioStereoSelector(
     onStereoChange: (Boolean) -> Unit,
 ) {
     val colors = ledColors(stereo, LedStereoHue)
-    Surface(
-        modifier = Modifier.width(66.dp).height(34.dp).clickable {
-            onStereoChange(!stereo)
-        },
-        shape = RoundedCornerShape(4.dp),
-        color = colors.surface,
-        border = androidx.compose.foundation.BorderStroke(1.dp, colors.border),
-        shadowElevation = if (stereo) 6.dp else 0.dp,
-    ) {
-        Box(
-            modifier = Modifier.background(colors.glow.copy(alpha = if (stereo) .20f else .03f)),
-            contentAlignment = Alignment.Center,
-        ) {
+    LedButton("Stereo", stereo, { onStereoChange(!stereo) }, Modifier.width(LedSlotWidth.dp), LedStereoHue) {
             if (stereo) {
                 Row(horizontalArrangement = Arrangement.spacedBy(1.dp)) {
                     HifiSpeakerIcon(mirrored = true, tint = colors.content)
@@ -632,7 +651,6 @@ fun StudioStereoSelector(
                     HifiSpeakerIcon(mirrored = false, tint = colors.content)
                 }
             }
-        }
     }
 }
 

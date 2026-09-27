@@ -1823,23 +1823,7 @@ private fun ZynEditorSection(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 3.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                title.uppercase(),
-                color = Color(0xFF66F0E9),
-                style = MaterialTheme.typography.labelSmall,
-                modifier = Modifier.padding(vertical = 2.dp),
-            )
-            Spacer(Modifier.width(7.dp))
-            Surface(
-                modifier = Modifier.weight(1f),
-                color = Color(0xFF234A53),
-                shape = RoundedCornerShape(99.dp),
-            ) { Spacer(Modifier.fillMaxWidth().height(1.dp)) }
-        }
+        EditorSectionHeader(title)
         Column(Modifier.fillMaxWidth().padding(horizontal = 2.dp)) {
             if (!leadingContentAfterParameters) leadingContent?.invoke()
             if (complex) ComplexEditorLauncher(title, onComplex)
@@ -1945,7 +1929,7 @@ private fun emptyMessage(module: String, tab: String): String = when {
 
 @Composable
 @OptIn(ExperimentalLayoutApi::class)
-private fun DenseParameterGrid(
+internal fun DenseParameterGrid(
     parameters: List<SynthEngine.ParameterValue>,
     onWrite: (SynthEngine.ParameterValue, Double) -> Unit,
     verticalLabels: Boolean = false,
@@ -2177,6 +2161,15 @@ private fun addLabelColor(descriptor: SynthEngine.ParameterDescriptor): Color {
 }
 
 private fun compactAddLabel(descriptor: SynthEngine.ParameterDescriptor): String = when {
+    descriptor.path == "part/velocitySense" -> "Vel. sns"
+    descriptor.path == "part/velocityOffset" -> "Vel. off"
+    descriptor.path == "part/keyShift" -> "Key shift"
+    descriptor.path == "part/channel" -> "Channel"
+    descriptor.path == "part/keyLimit" -> "Key limit"
+    descriptor.path == "part/minKey" -> "Min. key"
+    descriptor.path == "part/maxKey" -> "Max. key"
+    descriptor.path == "part/portamentoTime" -> "Port. time"
+    descriptor.path == "part/portamentoStretch" -> "Port. str."
     descriptor.path == "add/stereo" -> "Stereo"
     descriptor.path == "add/volume" -> "Volume"
     descriptor.path == "add/panning" -> "Panning"

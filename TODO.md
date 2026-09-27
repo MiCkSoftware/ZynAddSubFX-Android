@@ -1,16 +1,17 @@
-
- 
- - reso zoom/scroll
- - reso low perf
- - replace voice enveloppe toggles by 0 1 and apply the same to add synth main screen
 - Dual String Ct1 have Pad and Add on same kit !? and mute is synched- muted part mutes all pars bug
-- stereo button too big
+ 
+
+ - replace voice enveloppe toggles by 0 1 and apply the same to add synth main screen
+
+- one part = 1 instrument / bank ?
+- ADsynth Oscillator Editor incomplete ?
+- 
 - addsynth voices colmun not aligned
 - finish parity with legacy voices list
-- Parts : all on same screen (selected on is unfloded)
-- Parts:  ch keys mode , rndgrp action not clear + duplicated + missing mini keyboard.
+- Parts : all on same screen (selected on is unfolded)
+- Parts:  missing mini keyboard.
 - Parts: 3 dot menu is werid ; why save to ? remove nav to kit X
-- ad synth resonance : add parameter to hide tab nav for this scaffold
+- ad synth resonance : parameters  tab nav useless
 
 - Main
   - bouton edit save sur main à droite de stereo (et retirer save des top app bar)

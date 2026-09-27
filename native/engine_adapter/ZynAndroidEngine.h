@@ -52,6 +52,8 @@ public:
     bool exportInstrument(int partIndex, const std::string &path);
     bool setPart0Enabled(bool enabled);
     bool setPartEnabled(int partIndex, bool enabled);
+    bool allNotesOffPart(int partIndex);
+    bool setSystemFxSend(int partIndex, int fxIndex, int amount);
     bool setPartReceiveChannel(int partIndex, int channel);
     bool setPartVolume127(int partIndex, int volume127);
     bool setPartPanning(int partIndex, int panning127);
@@ -62,8 +64,6 @@ public:
     bool setPartAddEnabled(int partIndex, bool enabled);
     bool setPartSubEnabled(int partIndex, bool enabled);
     bool setPartPadEnabled(int partIndex, bool enabled);
-    bool setPartStereoEnabled(int partIndex, bool enabled);
-    bool setPartRndGroupingEnabled(int partIndex, bool enabled);
     bool soloPart(int partIndex);
 
     void setTestToneFrequencyHz(float frequencyHz);

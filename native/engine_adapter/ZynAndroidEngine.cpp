@@ -527,23 +527,6 @@ std::string ZynAndroidEngine::partsSummary() const {
         for (int i = 0; i < NUM_PART_EFX; ++i) {
             if (part->partefx[i] && part->partefx[i]->geteffect() > 0) partFx++;
         }
-        int stereoEnabled = 0;
-        int rndGroupingEnabled = 0;
-        for (int i = 0; i < NUM_KIT_ITEMS; ++i) {
-            const auto &k = part->kit[i];
-            if (!(k.Penabled || i == 0)) continue;
-            if (k.adpars) {
-                stereoEnabled = k.adpars->GlobalPar.PStereo ? 1 : 0;
-                rndGroupingEnabled = k.adpars->GlobalPar.Hrandgrouping ? 1 : 0;
-                break;
-            }
-            if (k.subpars) {
-                stereoEnabled = k.subpars->Pstereo ? 1 : 0;
-            } else if (k.padpars) {
-                stereoEnabled = k.padpars->PStereo ? 1 : 0;
-            }
-        }
-
         const int partVol127 = std::clamp(
                 static_cast<int>(std::lround((part->Volume / 40.0f) * 96.0f + 96.0f)),
                 0,
@@ -578,8 +561,7 @@ std::string ZynAndroidEngine::partsSummary() const {
             << "|" << static_cast<int>(part->Pveloffs)
             << "|" << static_cast<int>(part->ctl.portamento.time)
             << "|" << static_cast<int>(part->ctl.portamento.updowntimestretch)
-            << "|" << stereoEnabled
-            << "|" << rndGroupingEnabled
+            << "|" << (static_cast<int>(part->Pkeyshift) - 64)
             << "|" << name;
     }
     return oss.str();
@@ -727,6 +709,11 @@ std::string ZynAndroidEngine::parameterSnapshot(int partIndex, int kitIndex) con
     add("part/polyMode", "Polyphonic", "Part", "bool", part->Ppolymode, 0, 1, 1);
     add("part/legatoMode", "Legato", "Part", "bool", part->Plegatomode, 0, 1, 0);
     add("part/drumMode", "Drum mode", "Part", "bool", part->Pdrummode, 0, 1, 0);
+    add("part/noteOn", "Note on", "Part", "bool", part->Pnoteon, 0, 1, 1);
+    add("part/portamento", "Portamento", "Part", "bool", part->ctl.portamento.portamento, 0, 1, 0);
+    add("part/keyLimit", "Key limit", "Part", "int", part->Pkeylimit, 0, POLYPHONY, 15);
+    add("part/portamentoTime", "Portamento time", "Part", "int", part->ctl.portamento.time, 0, 127, 64);
+    add("part/portamentoStretch", "Portamento stretch", "Part", "int", part->ctl.portamento.updowntimestretch, 0, 127, 64);
     add("kit/enabled", "Enabled", "Kit", "bool", kit.Penabled, 0, 1, kitIndex == 0);
     add("kit/muted", "Muted", "Kit", "bool", kit.Pmuted, 0, 1, 0);
     add("kit/minKey", "Minimum key", "Kit", "int", kit.Pminkey, 0, 127, 0);
@@ -1166,6 +1153,11 @@ bool ZynAndroidEngine::setParameter(int partIndex, int kitIndex, const std::stri
     else if (path == "part/polyMode") part->Ppolymode = b();
     else if (path == "part/legatoMode") part->Plegatomode = b();
     else if (path == "part/drumMode") part->Pdrummode = b();
+    else if (path == "part/noteOn") part->Pnoteon = b();
+    else if (path == "part/portamento") part->ctl.portamento.portamento = b();
+    else if (path == "part/keyLimit") part->setkeylimit(i(0, POLYPHONY));
+    else if (path == "part/portamentoTime") return setPartPortamentoTime127(partIndex, i(0, 127));
+    else if (path == "part/portamentoStretch") return setPartPortamentoStretch127(partIndex, i(0, 127));
     else if (path == "kit/enabled") part->setkititemstatus(kitIndex, b());
     else if (path == "kit/muted") kit.Pmuted = b();
     else if (path == "kit/minKey") kit.Pminkey = i(0, 127);
@@ -1723,6 +1715,21 @@ bool ZynAndroidEngine::setPartEnabled(int partIndex, bool enabled) {
     return true;
 }
 
+bool ZynAndroidEngine::allNotesOffPart(int partIndex) {
+    if (!zynReady_.load() || !master_ || partIndex < 0 || partIndex >= NUM_MIDI_PARTS) return false;
+    auto *part = master_->part[partIndex];
+    if (!part) return false;
+    part->AllNotesOff();
+    return true;
+}
+
+bool ZynAndroidEngine::setSystemFxSend(int partIndex, int fxIndex, int amount) {
+    if (!zynReady_.load() || !master_ || partIndex < 0 || partIndex >= NUM_MIDI_PARTS ||
+        fxIndex < 0 || fxIndex >= NUM_SYS_EFX || amount < 0 || amount > 127) return false;
+    master_->setPsysefxvol(partIndex, fxIndex, static_cast<char>(amount));
+    return true;
+}
+
 bool ZynAndroidEngine::setPartReceiveChannel(int partIndex, int channel) {
     if (!zynReady_.load() || !master_) return false;
     if (partIndex < 0 || partIndex >= NUM_MIDI_PARTS) return false;
@@ -1831,48 +1838,6 @@ bool ZynAndroidEngine::setPartPadEnabled(int partIndex, bool enabled) {
         if (!(k.Penabled || i == 0)) continue;
         k.Ppadenabled = enabled;
         touched = true;
-    }
-    return touched;
-}
-
-bool ZynAndroidEngine::setPartStereoEnabled(int partIndex, bool enabled) {
-    if (!zynReady_.load() || !master_) return false;
-    if (partIndex < 0 || partIndex >= NUM_MIDI_PARTS) return false;
-    auto *part = master_->part[partIndex];
-    if (!part) return false;
-    bool touched = false;
-    for (int i = 0; i < NUM_KIT_ITEMS; ++i) {
-        auto &k = part->kit[i];
-        if (!(k.Penabled || i == 0)) continue;
-        if (k.adpars) {
-            k.adpars->GlobalPar.PStereo = enabled;
-            touched = true;
-        }
-        if (k.subpars) {
-            k.subpars->Pstereo = enabled;
-            touched = true;
-        }
-        if (k.padpars) {
-            k.padpars->PStereo = enabled;
-            touched = true;
-        }
-    }
-    return touched;
-}
-
-bool ZynAndroidEngine::setPartRndGroupingEnabled(int partIndex, bool enabled) {
-    if (!zynReady_.load() || !master_) return false;
-    if (partIndex < 0 || partIndex >= NUM_MIDI_PARTS) return false;
-    auto *part = master_->part[partIndex];
-    if (!part) return false;
-    bool touched = false;
-    for (int i = 0; i < NUM_KIT_ITEMS; ++i) {
-        auto &k = part->kit[i];
-        if (!(k.Penabled || i == 0)) continue;
-        if (k.adpars) {
-            k.adpars->GlobalPar.Hrandgrouping = enabled;
-            touched = true;
-        }
     }
     return touched;
 }

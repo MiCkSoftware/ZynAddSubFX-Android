@@ -39,6 +39,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.delay
 import java.util.Locale
 
 data class EditorUiState(
@@ -63,6 +64,8 @@ fun PresetEditorScreen(
     onSetPartSubEnabled: (Int, Boolean) -> Unit,
     onSetPartPadEnabled: (Int, Boolean) -> Unit,
     onSoloPart: (Int) -> Unit,
+    onPartChanged: () -> Unit,
+    onAllNotesOffPart: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val partExpanded = remember { mutableStateMapOf<Int, Boolean>() }
@@ -122,6 +125,9 @@ fun PresetEditorScreen(
                     onSetPartSubEnabled = onSetPartSubEnabled,
                     onSetPartPadEnabled = onSetPartPadEnabled,
                     onSoloPart = onSoloPart,
+                    onPartChanged = onPartChanged,
+                    onAllNotesOffPart = onAllNotesOffPart,
+                    heldNote = heldNote,
                     onOpenModule = { module, kit ->
                         selectedKitIndex = kit
                         selectedModule = module
@@ -220,6 +226,9 @@ private fun PartEditorCard(
     onSetPartSubEnabled: (Int, Boolean) -> Unit,
     onSetPartPadEnabled: (Int, Boolean) -> Unit,
     onSoloPart: (Int) -> Unit,
+    onPartChanged: () -> Unit,
+    onAllNotesOffPart: (Int) -> Unit,
+    heldNote: Int?,
     onOpenModule: (String, Int) -> Unit,
     activeFxSlots: List<SynthEngine.ActiveFxSlot>,
     mixer: SynthEngine.MixerInspector,
@@ -231,6 +240,19 @@ private fun PartEditorCard(
         mutableStateOf((0 until 16).map { engine.parameterSnapshot(part.partIndex, it) })
     }
     var editedStructuralParameter by remember { mutableStateOf<SynthEngine.ParameterValue?>(null) }
+    var currentPeak by remember(part.partIndex) { mutableStateOf(0f) }
+    var heldPeak by remember(part.partIndex) { mutableStateOf(0f) }
+    LaunchedEffect(part.partIndex, expanded) {
+        while (expanded) {
+            currentPeak = engine.inspectParts().firstOrNull { it.partIndex == part.partIndex }?.outputPeak ?: 0f
+            heldPeak = maxOf(heldPeak, currentPeak)
+            delay(200)
+        }
+    }
+    LaunchedEffect(part) {
+        structure = engine.parameterSnapshot(part.partIndex, 0)
+        kitSnapshots = (0 until 16).map { engine.parameterSnapshot(part.partIndex, it) }
+    }
     fun structural(path: String, fallback: String): String =
         structure.values.firstOrNull { it.descriptor.path == path }?.let { value ->
             when (value.descriptor.type) {
@@ -251,6 +273,7 @@ private fun PartEditorCard(
     fun writeKit(kit: Int, path: String, value: Boolean) {
         if (engine.writeParameter(part.partIndex, kit, SynthEngine.ParameterWrite(path, if (value) 1.0 else 0.0))) {
             refreshKits()
+            onPartChanged()
         }
     }
     fun addKitEngine(path: String) {
@@ -279,13 +302,13 @@ private fun PartEditorCard(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(text = partTitle, color = MaterialTheme.colorScheme.onSurface)
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
-                TinyStateToggle("0", Color(0xFFB71C1C), !part.enabled) { onSetPartEnabled(part.partIndex, false) }
-                TinyStateToggle("1", Color(0xFF1B5E20), part.enabled) { onSetPartEnabled(part.partIndex, true) }
-                TinyStateToggle("S", Color(0xFFE65100), false) { onSoloPart(part.partIndex) }
+            Row(horizontalArrangement = Arrangement.spacedBy(7.dp), verticalAlignment = Alignment.CenterVertically) {
+                LedButton("Disable part", !part.enabled, { onSetPartEnabled(part.partIndex, false) }, Modifier.width(LedSlotWidth.dp), 2f, displayLabel = "0")
+                LedButton("Enable part", part.enabled, { onSetPartEnabled(part.partIndex, true) }, Modifier.width(LedSlotWidth.dp), 125f, displayLabel = "1")
+                LedButton("Solo part", false, { onSoloPart(part.partIndex) }, Modifier.width(LedSlotWidth.dp), 28f, action = true, displayLabel = "S")
                 Text(
                     text = if (expanded) "▾" else "▸",
-                    modifier = Modifier.clickable { onToggleExpanded() },
+                    modifier = Modifier.width(22.dp).clickable { onToggleExpanded() },
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
@@ -318,32 +341,92 @@ private fun PartEditorCard(
                     )
                     Spacer(modifier = Modifier.weight(1f))
                     Text(
-                        text = String.format(Locale.US, "%.3f", part.outputPeak),
+                        text = String.format(Locale.US, "%.3f / %.3f", currentPeak, heldPeak),
                         color = Color(0xFFA7F4F0),
                         style = MaterialTheme.typography.labelMedium
                     )
+                    Text("↺", color = Color(0xFFA7F4F0), modifier = Modifier.clickable { heldPeak = 0f })
                 }
             }
         }
-        Spacer(modifier = Modifier.height(6.dp))
-        FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            ZynValueChip("Ch", (structural("part/channel", part.receiveChannel.toString()).toIntOrNull()?.plus(1)).toString(), true) {
-                edit("part/channel")
+        Spacer(Modifier.height(12.dp))
+        EditorSectionHeader("Part parameters")
+        DenseParameterGrid(
+            structure.values.filter { it.descriptor.path in setOf(
+                "part/volume", "part/panning", "part/velocitySense", "part/velocityOffset",
+                "part/keyShift", "part/channel", "part/keyLimit", "part/portamentoTime",
+                "part/portamentoStretch") },
+            onWrite = { parameter, value ->
+                if (engine.writeParameter(part.partIndex, 0,
+                        SynthEngine.ParameterWrite(parameter.descriptor.path, value))) {
+                    structure = engine.parameterSnapshot(part.partIndex, 0)
+                }
+            },
+            verticalLabels = true,
+            onLongPress = { editedStructuralParameter = it },
+            onCommit = onPartChanged,
+        )
+        Spacer(Modifier.height(12.dp))
+        EditorSectionHeader("Playing")
+        Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+            listOf(
+                Triple("Note on", "part/noteOn", "NOTE ON"),
+                Triple("Portamento", "part/portamento", "PORT"),
+                Triple("Mode", "part/polyMode", "MODE"),
+            ).forEach { (label, path, shortLabel) ->
+                val active = structure.values.firstOrNull { it.descriptor.path == path }?.value?.let { it >= .5 }
+                    ?: (path == "part/noteOn" && part.noteOn)
+                Box(Modifier.weight(1f)) {
+                    LedButton(label, active, {
+                        if (engine.writeParameter(part.partIndex, 0,
+                                SynthEngine.ParameterWrite(path, if (active) 0.0 else 1.0))) {
+                            structure = engine.parameterSnapshot(part.partIndex, 0)
+                            onPartChanged()
+                        }
+                    }, Modifier.fillMaxWidth(), displayLabel = if (path == "part/polyMode") {
+                        if (active) "POLY" else "MONO"
+                    } else shortLabel)
+                }
             }
-            ZynValueChip("Keys", "${structural("part/minKey", part.minKey.toString())}..${structural("part/maxKey", part.maxKey.toString())}", true) {
-                edit("part/minKey")
-            }
-            ZynValueChip("Mode", structural("part/polyMode", if (part.poly) "ON" else "OFF"), true) {
-                edit("part/polyMode")
-            }
-            ZynValueChip("RndGrp", structural("add/randomGrouping", if (part.rndGroupingEnabled) "ON" else "OFF"), true) {
-                edit("add/randomGrouping")
+            Box(Modifier.weight(1f)) {
+                LedButton("All notes off", false, { onAllNotesOffPart(part.partIndex) },
+                    Modifier.fillMaxWidth(), 28f, action = true, displayLabel = "ALL OFF")
             }
         }
-        Spacer(modifier = Modifier.height(6.dp))
+        Spacer(Modifier.height(12.dp))
+        EditorSectionHeader("Key range")
+        DenseParameterGrid(
+            structure.values.filter { it.descriptor.path in setOf("part/minKey", "part/maxKey") },
+            onWrite = { parameter, value ->
+                if (engine.writeParameter(part.partIndex, 0,
+                        SynthEngine.ParameterWrite(parameter.descriptor.path, value))) {
+                    structure = engine.parameterSnapshot(part.partIndex, 0)
+                }
+            },
+            verticalLabels = true,
+            onLongPress = { editedStructuralParameter = it },
+            onCommit = onPartChanged,
+        )
+        Row(Modifier.fillMaxWidth().padding(top = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("Last note →", color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.labelSmall)
+            listOf("MIN" to "part/minKey", "RESET" to "reset", "MAX" to "part/maxKey").forEach { (label, path) ->
+                LedButton(label, false, {
+                    val writes = if (path == "reset") listOf("part/minKey" to 0.0, "part/maxKey" to 127.0)
+                        else heldNote?.let { note ->
+                            val min = structural("part/minKey", "0").toIntOrNull() ?: 0
+                            val max = structural("part/maxKey", "127").toIntOrNull() ?: 127
+                            listOf(path to (if (path == "part/minKey") minOf(note, max) else maxOf(note, min)).toDouble())
+                        } ?: emptyList()
+                    if (writes.isNotEmpty() && writes.all { (key, value) ->
+                            engine.writeParameter(part.partIndex, 0, SynthEngine.ParameterWrite(key, value))
+                        }) { structure = engine.parameterSnapshot(part.partIndex, 0); onPartChanged() }
+                }, Modifier.width(62.dp), action = true, displayLabel = label)
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+        EditorSectionHeader("Instrument kit")
         EngineKitSection(
             "ADD",
             "kit/addEnabled",
@@ -357,6 +440,10 @@ private fun PartEditorCard(
                     stereo = stereo,
                     onStereoChange = { writeKit(kit.kitIndex, "add/stereo", it) },
                 )
+                val rnd = bool(kit, "add/randomGrouping")
+                LedButton("Kit ${kit.kitIndex + 1} random grouping", rnd,
+                    { writeKit(kit.kitIndex, "add/randomGrouping", !rnd) },
+                    Modifier.width(LedSlotWidth.dp), displayLabel = "RND")
             },
         ) {
             addKitEngine("kit/addEnabled")
@@ -373,6 +460,7 @@ private fun PartEditorCard(
                         )
                     ) {
                         structure = engine.parameterSnapshot(part.partIndex, 0)
+                        onPartChanged()
                     }
                     editedStructuralParameter = null
                 },
@@ -394,6 +482,21 @@ private fun PartEditorCard(
             onOpen = { onOpenModule("FX", 0) },
             onToggle = { onOpenModule("FX", 0) },
         )
+        Spacer(Modifier.height(12.dp))
+        EditorSectionHeader("To system FX")
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+            repeat(4) { fx ->
+                val amount = mixer.systemSends.firstOrNull { it.partIndex == part.partIndex && it.systemFxSlot == fx }?.sendValue ?: 0
+                var sendValue by remember(part.partIndex, fx, amount) { mutableStateOf(amount) }
+                Box(Modifier.weight(1f)) {
+                    DenseKnobCard("FX ${fx + 1}", sendValue.toFloat(), 0f, 127f,
+                        onValueChange = { value ->
+                            val next = value.toInt().coerceIn(0, 127)
+                            if (engine.setSystemFxSend(part.partIndex, fx, next)) sendValue = next
+                        }, labelColor = Color(0xFF274354), onValueChangeFinished = onPartChanged)
+                }
+            }
+        }
     }
 }
 

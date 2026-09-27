@@ -63,18 +63,11 @@ fun PlayScreen(
     onSetSelectedPartChannel: (Int) -> Unit,
     onSetSelectedPartVolume: (Int) -> Unit,
     onSetSelectedPartPan: (Int) -> Unit,
-    onSetSelectedPartSense: (Int) -> Unit,
-    onSetSelectedPartStrength: (Int) -> Unit,
-    onSetSelectedPartTime: (Int) -> Unit,
-    onSetSelectedPartStretch: (Int) -> Unit,
-    onSetSelectedPartStereo: (Boolean) -> Unit,
-    onSetSelectedPartRndGrp: (Boolean) -> Unit,
+    onSetSelectedPartKeyShift: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val partsByIndex = remember(uiState.parts) { uiState.parts.associateBy { it.partIndex } }
     val selectedPart = partsByIndex[uiState.selectedPartIndex]
-    val selectedStereo = selectedPart?.stereoEnabled ?: true
-    val selectedRndGrp = selectedPart?.rndGroupingEnabled ?: false
     val presetDisplayName = uiState.currentPresetName ?: "none"
     val heldVoices = uiState.heldNotes.size
 
@@ -167,98 +160,17 @@ fun PlayScreen(
                         }
                     }
                 }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                        TinyKnob(
-                            label = "Sens",
-                            value = (selectedPart?.velocitySense ?: 64).toFloat(),
-                            min = 0f,
-                            max = 127f,
-                            onValueChange = { onSetSelectedPartSense(it.toInt().coerceIn(0, 127)) }
-                        )
-                    }
-                    Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                        TinyKnob(
-                            label = "Pan",
-                            value = (selectedPart?.panning ?: 64).toFloat(),
-                            min = 0f,
-                            max = 127f,
-                            onValueChange = { onSetSelectedPartPan(it.toInt().coerceIn(0, 127)) }
-                        )
-                    }
-                    Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                        TinyKnob(
-                            label = "Stretch",
-                            value = (selectedPart?.portamentoStretch ?: 64).toFloat(),
-                            min = 0f,
-                            max = 127f,
-                            onValueChange = { onSetSelectedPartStretch(it.toInt().coerceIn(0, 127)) }
-                        )
-                    }
-                    Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                        TinyKnob(
-                            label = "Strenght",
-                            value = (selectedPart?.velocityOffset ?: 64).toFloat(),
-                            min = 0f,
-                            max = 127f,
-                            onValueChange = { onSetSelectedPartStrength(it.toInt().coerceIn(0, 127)) }
-                        )
-                    }
-                    Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                        TinyKnob(
-                            label = "Tim",
-                            value = (selectedPart?.portamentoTime ?: 64).toFloat(),
-                            min = 0f,
-                            max = 127f,
-                            onValueChange = { onSetSelectedPartTime(it.toInt().coerceIn(0, 127)) }
-                        )
-                    }
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                        TinyKnob(
-                            label = "Ch",
-                            value = ((selectedPart?.receiveChannel ?: 0) + 1).toFloat(),
-                            min = 1f,
-                            max = 16f,
-                            onValueChange = { onSetSelectedPartChannel(it.toInt().coerceIn(1, 16)) }
-                        )
-                    }
-                    Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                        TinyKnob(
-                            label = "Vol",
-                            value = (selectedPart?.volume ?: 96).toFloat(),
-                            min = 0f,
-                            max = 127f,
-                            onValueChange = { onSetSelectedPartVolume(it.toInt().coerceIn(0, 127)) }
-                        )
-                    }
-                    Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                        Spacer(modifier = Modifier.width(1.dp))
-                    }
-                    Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                        LuminousToggleButton(
-                            label = "STEREO",
-                            enabled = selectedStereo,
-                            onToggle = { onSetSelectedPartStereo(!selectedStereo) }
-                        )
-                    }
-                    Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                        LuminousToggleButton(
-                            label = "RND GRP",
-                            enabled = selectedRndGrp,
-                            onToggle = { onSetSelectedPartRndGrp(!selectedRndGrp) }
-                        )
-                    }
+                Spacer(Modifier.height(8.dp))
+                EditorSectionHeader("Part controls")
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Box(Modifier.weight(1f)) { DenseKnobCard("Channel", ((selectedPart?.receiveChannel ?: 0) + 1).toFloat(), 1f, 16f,
+                        { onSetSelectedPartChannel(it.toInt().coerceIn(1, 16)) }) }
+                    Box(Modifier.weight(1f)) { DenseKnobCard("Volume", (selectedPart?.volume ?: 96).toFloat(), 0f, 127f,
+                        { onSetSelectedPartVolume(it.toInt().coerceIn(0, 127)) }) }
+                    Box(Modifier.weight(1f)) { DenseKnobCard("Panning", (selectedPart?.panning ?: 64).toFloat(), 0f, 127f,
+                        { onSetSelectedPartPan(it.toInt().coerceIn(0, 127)) }) }
+                    Box(Modifier.weight(1f)) { DenseKnobCard("Key shift", (selectedPart?.keyShift ?: 0).toFloat(), -64f, 63f,
+                        { onSetSelectedPartKeyShift(it.toInt().coerceIn(-64, 63)) }) }
                 }
             }
         }
@@ -272,37 +184,17 @@ fun PlayScreen(
                 modifier = Modifier.padding(vertical = 8.dp, horizontal=2.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
+                EditorSectionHeader("Performance")
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(5.dp)
                 ) {
-                    Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                        TinyKnob(
-                            label = "Master",
-                            value = uiState.masterVolume * 127f,
-                            min = 0f,
-                            max = 127f,
-                            onValueChange = { onMasterVolumeChange((it / 127f).coerceIn(0f, 1f)) }
-                        )
-                    }
-                    Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                        TinyKnob(
-                            label = "Velocity",
-                            value = uiState.keyboardVelocity.toFloat(),
-                            min = 1f,
-                            max = 127f,
-                            onValueChange = { onKeyboardVelocityChange(it.roundToInt().coerceIn(1, 127)) }
-                        )
-                    }
-                    Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                        TinyKnob(
-                            label = "Octave",
-                            value = uiState.keyboardOctaveShift.toFloat(),
-                            min = -2f,
-                            max = 2f,
-                            onValueChange = { onKeyboardOctaveShiftChange(it.roundToInt().coerceIn(-2, 2)) }
-                        )
-                    }
+                    Box(Modifier.weight(1f)) { DenseKnobCard("Master", uiState.masterVolume * 127f, 0f, 127f,
+                        { onMasterVolumeChange((it / 127f).coerceIn(0f, 1f)) }) }
+                    Box(Modifier.weight(1f)) { DenseKnobCard("Velocity", uiState.keyboardVelocity.toFloat(), 1f, 127f,
+                        { onKeyboardVelocityChange(it.roundToInt().coerceIn(1, 127)) }) }
+                    Box(Modifier.weight(1f)) { DenseKnobCard("Octave", uiState.keyboardOctaveShift.toFloat(), -2f, 2f,
+                        { onKeyboardOctaveShiftChange(it.roundToInt().coerceIn(-2, 2)) }) }
                 }
                 Row(
                     modifier = Modifier.fillMaxWidth(),

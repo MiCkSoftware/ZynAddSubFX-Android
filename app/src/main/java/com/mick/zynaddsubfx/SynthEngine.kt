@@ -87,8 +87,7 @@ class SynthEngine(private val context: Context) {
         val velocityOffset: Int,
         val portamentoTime: Int,
         val portamentoStretch: Int,
-        val stereoEnabled: Boolean,
-        val rndGroupingEnabled: Boolean,
+        val keyShift: Int,
         val name: String,
     ) {
         fun isLikelyRelevant(): Boolean =
@@ -256,6 +255,12 @@ class SynthEngine(private val context: Context) {
     fun setPartReceiveChannel(partIndex: Int, channel: Int): Boolean =
         runCatching { NativeSynthBridge.nativeSetPartReceiveChannel(partIndex, channel) }.getOrDefault(false)
 
+    fun allNotesOffPart(partIndex: Int): Boolean =
+        runCatching { NativeSynthBridge.nativeAllNotesOffPart(partIndex) }.getOrDefault(false)
+
+    fun setSystemFxSend(partIndex: Int, fxIndex: Int, amount: Int): Boolean =
+        runCatching { NativeSynthBridge.nativeSetSystemFxSend(partIndex, fxIndex, amount) }.getOrDefault(false)
+
     fun setPartVolume127(partIndex: Int, volume127: Int): Boolean =
         runCatching { NativeSynthBridge.nativeSetPartVolume127(partIndex, volume127) }.getOrDefault(false)
 
@@ -282,12 +287,6 @@ class SynthEngine(private val context: Context) {
 
     fun setPartPadEnabled(partIndex: Int, enabled: Boolean): Boolean =
         runCatching { NativeSynthBridge.nativeSetPartPadEnabled(partIndex, enabled) }.getOrDefault(false)
-
-    fun setPartStereoEnabled(partIndex: Int, enabled: Boolean): Boolean =
-        runCatching { NativeSynthBridge.nativeSetPartStereoEnabled(partIndex, enabled) }.getOrDefault(false)
-
-    fun setPartRndGroupingEnabled(partIndex: Int, enabled: Boolean): Boolean =
-        runCatching { NativeSynthBridge.nativeSetPartRndGroupingEnabled(partIndex, enabled) }.getOrDefault(false)
 
     fun soloPart(partIndex: Int): Boolean =
         runCatching { NativeSynthBridge.nativeSoloPart(partIndex) }.getOrDefault(false)
@@ -541,7 +540,7 @@ class SynthEngine(private val context: Context) {
         if (summary.isBlank()) return emptyList()
         return summary.lineSequence().mapNotNull { line ->
             val p = line.split('|')
-            if (p.size < 27) return@mapNotNull null
+            if (p.size < 26) return@mapNotNull null
             val idx = p[0].toIntOrNull() ?: return@mapNotNull null
             fun b(i: Int) = p.getOrNull(i) == "1"
             fun n(i: Int) = p.getOrNull(i)?.toIntOrNull() ?: 0
@@ -570,9 +569,8 @@ class SynthEngine(private val context: Context) {
                 velocityOffset = n(21),
                 portamentoTime = n(22),
                 portamentoStretch = n(23),
-                stereoEnabled = b(24),
-                rndGroupingEnabled = b(25),
-                name = p.subList(26, p.size).joinToString("|")
+                keyShift = n(24),
+                name = p.subList(25, p.size).joinToString("|")
             )
         }.toList()
     }
