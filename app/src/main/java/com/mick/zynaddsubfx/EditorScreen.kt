@@ -3,7 +3,6 @@ package com.mick.zynaddsubfx
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,12 +19,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -37,7 +33,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import java.util.Locale
@@ -51,7 +46,7 @@ data class EditorUiState(
 )
 
 @Composable
-@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalLayoutApi::class)
 fun PresetEditorScreen(
     engine: SynthEngine,
     uiState: EditorUiState,
@@ -72,8 +67,6 @@ fun PresetEditorScreen(
     val partExpanded = remember { mutableStateMapOf<Int, Boolean>() }
     var selectedModule by rememberSaveable(uiState.selectedPartIndex) { mutableStateOf<String?>(null) }
     var selectedKitIndex by rememberSaveable(uiState.selectedPartIndex) { mutableStateOf(0) }
-    var keyboardVisible by rememberSaveable { mutableStateOf(false) }
-    val keyboardSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
     val selectedPart = remember(uiState.parts, uiState.selectedPartIndex) {
         uiState.parts.firstOrNull { it.partIndex == uiState.selectedPartIndex }
             ?: uiState.parts.firstOrNull()
@@ -105,112 +98,54 @@ fun PresetEditorScreen(
             )
             return@Box
         }
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(8.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            if (selectedPart != null) {
-                PartEditorCard(
-                    engine = engine,
-                    part = selectedPart,
-                    expanded = partExpanded[selectedPart.partIndex] ?: selectedPart.enabled,
-                    onToggleExpanded = {
-                        val current = partExpanded[selectedPart.partIndex] ?: selectedPart.enabled
-                        partExpanded[selectedPart.partIndex] = !current
-                    },
-                    onSetPartEnabled = onSetPartEnabled,
-                    onSetPartAddEnabled = onSetPartAddEnabled,
-                    onSetPartSubEnabled = onSetPartSubEnabled,
-                    onSetPartPadEnabled = onSetPartPadEnabled,
-                    onSoloPart = onSoloPart,
-                    onPartChanged = onPartChanged,
-                    onAllNotesOffPart = onAllNotesOffPart,
-                    heldNote = heldNote,
-                    onOpenModule = { module, kit ->
-                        selectedKitIndex = kit
-                        selectedModule = module
-                    },
-                    activeFxSlots = uiState.activeFxSlots,
-                    mixer = uiState.mixer
-                )
-            } else {
-                Text(
-                    text = "No part available",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(12.dp)
-                )
-            }
-            Spacer(modifier = Modifier.height(68.dp))
-        }
-
-        if (keyboardVisible) {
-            ModalBottomSheet(
-                onDismissRequest = { keyboardVisible = false },
-                sheetState = keyboardSheetState,
-            ) {
-                KeyboardOverlayCard(
-                    heldNote = heldNote,
-                    heldNotes = heldNotes,
-                    keyboardOctaveShift = keyboardOctaveShift,
-                    onPressKeyboardNote = onPressKeyboardNote,
-                    onReleaseKeyboardNote = onReleaseKeyboardNote
-                )
-            }
-        } else {
-            Surface(
+        Column(Modifier.fillMaxSize()) {
+            Column(
                 modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = 10.dp)
-                    .clickable { keyboardVisible = true },
-                shape = RoundedCornerShape(999.dp),
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f),
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(8.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                Spacer(
-                    modifier = Modifier
-                        .width(52.dp)
-                        .height(6.dp)
-                        .pointerInput(Unit) {
-                            var totalDrag = 0f
-                            detectVerticalDragGestures(
-                                onDragStart = { totalDrag = 0f },
-                                onVerticalDrag = { change, dragAmount ->
-                                    change.consume()
-                                    totalDrag += dragAmount
-                                    if (totalDrag < -18f) {
-                                        keyboardVisible = true
-                                    }
-                                }
-                            )
-                        }
-                )
+                if (selectedPart != null) {
+                    PartEditorCard(
+                        engine = engine,
+                        part = selectedPart,
+                        expanded = partExpanded[selectedPart.partIndex] ?: selectedPart.enabled,
+                        onToggleExpanded = {
+                            val current = partExpanded[selectedPart.partIndex] ?: selectedPart.enabled
+                            partExpanded[selectedPart.partIndex] = !current
+                        },
+                        onSetPartEnabled = onSetPartEnabled,
+                        onSetPartAddEnabled = onSetPartAddEnabled,
+                        onSetPartSubEnabled = onSetPartSubEnabled,
+                        onSetPartPadEnabled = onSetPartPadEnabled,
+                        onSoloPart = onSoloPart,
+                        onPartChanged = onPartChanged,
+                        onAllNotesOffPart = onAllNotesOffPart,
+                        heldNote = heldNote,
+                        onOpenModule = { module, kit ->
+                            selectedKitIndex = kit
+                            selectedModule = module
+                        },
+                        activeFxSlots = uiState.activeFxSlots,
+                        mixer = uiState.mixer
+                    )
+                } else {
+                    Text(
+                        text = "No part available",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(12.dp)
+                    )
+                }
             }
-        }
-    }
-}
-
-@Composable
-private fun KeyboardOverlayCard(
-    heldNote: Int?,
-    heldNotes: Set<Int>,
-    keyboardOctaveShift: Int,
-    onPressKeyboardNote: (Int) -> Unit,
-    onReleaseKeyboardNote: (Int) -> Unit,
-) {
-    Column(modifier = Modifier.fillMaxWidth().padding(8.dp)) {
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            listOf(60, 62, 64, 65, 67, 69, 71).forEach { note ->
-                val effective = (note + (keyboardOctaveShift * 12)).coerceIn(0, 127)
-                TactileKey(
-                    note = note,
-                    labelNote = effective,
-                    active = heldNotes.contains(effective),
-                    onPress = { onPressKeyboardNote(note) },
-                    onRelease = { onReleaseKeyboardNote(note) }
-                )
-            }
+            ZynClassicKeyboardStrip(
+                heldNotes = heldNotes,
+                octaveShift = keyboardOctaveShift,
+                onPress = onPressKeyboardNote,
+                onRelease = onReleaseKeyboardNote,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 7.dp, vertical = 4.dp),
+            )
         }
     }
 }

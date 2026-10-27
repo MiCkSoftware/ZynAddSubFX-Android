@@ -13,22 +13,13 @@ Chaque agent doit mettre a jour TODO.md et TASKS.md, retirer les liens vers son 
 - [ ] [Valider audio, clipboard et aller-retour XIZ](docs/007_qa_audio_xiz_addsynth.md)
 
 ## Notes et backlog existants
-
-- [x] Clarifier la hierarchie des kits : ADD et PAD peuvent partager un kit et son mute ; afficher les moteurs sous leur kit.
-- [x] Reorganiser la vue Part : nombre de kits, stereo par moteur, portamento, controles de notes et style LED.
-- [x] Mute audible teste OK par Mick ; le test de regression natif ajoute n'a pas encore ete execute.
-- [ ] Verifier sur appareil le theme gris, la lisibilite et les boutons stereo de chaque moteur.
- 
-
- - replace voice enveloppe toggles by 0 1 and apply the same to add synth main screen
-
-- one part = 1 instrument / bank ?
+- replace voice enveloppe toggles by 0 1 and apply the same to adDynth main screen
+- portamento not working ?
 - ADsynth Oscillator Editor incomplete ?
-- 
 - addsynth voices colmun not aligned
 - finish parity with legacy voices list
 - Parts : all on same screen (selected on is unfolded)
-- Parts:  missing mini keyboard.
+- [x] Parts : mini clavier visible en bas, reutilise depuis les editeurs d'instrument ; verification tactile sur appareil restante.
 - Parts: 3 dot menu is werid ; why save to ? remove nav to kit X
 - ad synth resonance : parameters  tab nav useless
 
