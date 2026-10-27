@@ -721,6 +721,9 @@ bool Part::NoteOnInternal(note_t note,
     for(uint8_t i = 0; i < NUM_KIT_ITEMS; ++i) {
         ScratchString pre = prefix;
         auto &item = kit[i];
+        // In non-kit mode only the first item is played, but its mute still applies.
+        if(isNonKit() && item.Pmuted)
+            break;
         if(Pkitmode != 0 && !item.validNote(note))
             continue;
 

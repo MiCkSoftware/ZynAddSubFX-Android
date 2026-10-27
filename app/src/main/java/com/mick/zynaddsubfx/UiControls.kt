@@ -35,6 +35,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.input.pointer.pointerInput
@@ -59,7 +61,7 @@ enum class KnobSensitivity {
     Adjust,
 }
 
-const val LedSlotWidth = 62
+const val LedSlotWidth = 53
 
 @Composable
 fun EditorSectionHeader(title: String) {
@@ -197,7 +199,7 @@ fun ZynValueChip(
     Surface(
         modifier = Modifier.clickable(enabled = editable, onClick = onClick),
         shape = RoundedCornerShape(999.dp),
-        color = Color(0xFF1A353D),
+        color = Color(0xFF2B3333),
         border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF2E5F68)),
     ) {
         Text(
@@ -220,7 +222,7 @@ fun ZynModuleRow(
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(8.dp),
-        color = Color(0xFF122229),
+        color = Color(0xFF1D2222),
         border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF234A53)),
     ) {
         Row(
@@ -598,23 +600,41 @@ fun LedButton(
     hue: Float = LedDefaultHue,
     action: Boolean = false,
     displayLabel: String = label,
+    halfWidth: Boolean = false,
     content: (@Composable () -> Unit)? = null,
 ) {
     val colors = ledColors(lit, hue)
     Surface(
-        modifier = modifier.height(34.dp)
+        modifier = modifier.then(if (halfWidth) Modifier.width((LedSlotWidth / 2f).dp) else Modifier).height(29.dp)
             .semantics {
                 contentDescription = label
                 if (!action) stateDescription = if (lit) "On" else "Off"
             }
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(6.dp),
-        color = colors.surface,
-        border = androidx.compose.foundation.BorderStroke(1.dp, colors.border),
-        shadowElevation = if (lit) 4.dp else 0.dp,
+        color = Color(0xFF090E10),
+        shadowElevation = 2.dp,
     ) {
-        Box(contentAlignment = Alignment.Center,
-            modifier = Modifier.background(colors.glow.copy(alpha = if (lit) .14f else .03f))) {
+        Box(
+            modifier = Modifier.fillMaxSize()
+                .background(colors.border.copy(alpha = if (lit) .55f else .45f))
+                .padding(.75.dp)
+                .clip(RoundedCornerShape(5.dp))
+                .background(Brush.verticalGradient(listOf(
+                    if (lit) Color.hsv(hue, .95f, .32f) else Color(0xFF30383A),
+                    if (lit) Color.hsv(hue, .98f, .51f) else Color(0xFF292F31),
+                    if (lit) Color.hsv(hue, 1f, .58f) else Color(0xFF252B2D),
+                    if (lit) Color.hsv(hue, .97f, .34f) else Color(0xFF1D2426),
+                )))
+                .border(.5.dp, Color.Black.copy(alpha = .35f), RoundedCornerShape(5.dp)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Box(Modifier.fillMaxWidth().height(10.dp).align(Alignment.TopCenter)
+                .padding(horizontal = 3.dp, vertical = 2.dp)
+                .clip(RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp, bottomStart = 8.dp, bottomEnd = 8.dp))
+                .background(Brush.verticalGradient(listOf(
+                    Color.White.copy(alpha = if (lit) .12f else .08f), Color.Transparent,
+                ))))
             if (content != null) content() else Text(displayLabel, color = colors.content,
                 style = MaterialTheme.typography.labelMedium, maxLines = 1)
         }
@@ -659,7 +679,7 @@ private fun HifiSpeakerIcon(mirrored: Boolean, tint: Color) {
     androidx.compose.foundation.Image(
         painter = painterResource(R.drawable.ic_hifi_speaker),
         contentDescription = null,
-        modifier = Modifier.size(29.dp).scale(scaleX = if (mirrored) -1f else 1f, scaleY = 1f),
+        modifier = Modifier.size(21.dp).scale(scaleX = if (mirrored) -1f else 1f, scaleY = 1f),
         contentScale = ContentScale.Fit,
         colorFilter = ColorFilter.tint(tint),
     )
@@ -686,7 +706,7 @@ fun LuminousActionButton(
                 shape = RoundedCornerShape(8.dp)
             ),
         shape = RoundedCornerShape(8.dp),
-        color = Color(0xFF14262C),
+        color = Color(0xFF222727),
         shadowElevation = 6.dp
     ) {
         Box(

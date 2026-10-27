@@ -75,6 +75,18 @@ class KitTest
             part = new Part(alloc, *synth, *time, sync, dummy, dummy, &microtonal, &fft);
         }
 
+        void testNonKitMute() {
+            part->Pkitmode = 0;
+            part->kit[0].Pmuted = true;
+            part->NoteOn(64, 127, 0);
+            TS_ASSERT_EQUAL_INT(part->notePool.ndesc[0].size, 0);
+
+            part->kit[0].Pmuted = false;
+            part->NoteOn(65, 127, 0);
+            TS_ASSERT_EQUAL_INT(part->notePool.ndesc[0].note, 65);
+            TS_ASSERT_EQUAL_INT(part->notePool.ndesc[0].size, 1);
+        }
+
         //Standard poly mode with sustain
         void testSustainCase1() {
             //enable sustain
@@ -1670,6 +1682,7 @@ class KitTest
 int main()
 {
     KitTest test;
+    RUN_TEST(testNonKitMute);
     RUN_TEST(testSustainCase1);
     RUN_TEST(testSustainCase2);
     RUN_TEST(testMonoSustain);

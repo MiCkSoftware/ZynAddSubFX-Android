@@ -41,6 +41,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import java.util.Locale
+import kotlin.math.roundToInt
 
 data class EditorUiState(
     val parts: List<SynthEngine.PartInspector>,
@@ -239,6 +240,8 @@ private fun PartEditorCard(
     var kitSnapshots by remember(part.partIndex) {
         mutableStateOf((0 until 16).map { engine.parameterSnapshot(part.partIndex, it) })
     }
+    var requestedKitCount by remember(part.partIndex) { mutableStateOf<Int?>(null) }
+    var kitCountPreview by remember(part.partIndex) { mutableStateOf(kitSnapshots.count { snapshot -> snapshot.values.any { it.descriptor.path == "kit/enabled" && it.value >= .5 } }) }
     var editedStructuralParameter by remember { mutableStateOf<SynthEngine.ParameterValue?>(null) }
     var currentPeak by remember(part.partIndex) { mutableStateOf(0f) }
     var heldPeak by remember(part.partIndex) { mutableStateOf(0f) }
@@ -252,6 +255,7 @@ private fun PartEditorCard(
     LaunchedEffect(part) {
         structure = engine.parameterSnapshot(part.partIndex, 0)
         kitSnapshots = (0 until 16).map { engine.parameterSnapshot(part.partIndex, it) }
+        kitCountPreview = kitSnapshots.count { snapshot -> snapshot.values.any { it.descriptor.path == "kit/enabled" && it.value >= .5 } }
     }
     fun structural(path: String, fallback: String): String =
         structure.values.firstOrNull { it.descriptor.path == path }?.let { value ->
@@ -283,13 +287,25 @@ private fun PartEditorCard(
             onPartChanged()
         }
     }
-    fun addKitEngine(path: String) {
-        val kit = (1 until 16).firstOrNull { !bool(kitSnapshots[it], "kit/enabled") } ?: return
-        engine.writeParameter(part.partIndex, kit, SynthEngine.ParameterWrite("kit/enabled", 1.0))
-        engine.writeParameter(part.partIndex, kit, SynthEngine.ParameterWrite("kit/addEnabled", if (path == "kit/addEnabled") 1.0 else 0.0))
-        engine.writeParameter(part.partIndex, kit, SynthEngine.ParameterWrite("kit/subEnabled", if (path == "kit/subEnabled") 1.0 else 0.0))
-        engine.writeParameter(part.partIndex, kit, SynthEngine.ParameterWrite("kit/padEnabled", if (path == "kit/padEnabled") 1.0 else 0.0))
+    fun setKitCount(count: Int) {
+        val active = kitSnapshots.filter { bool(it, "kit/enabled") }.map { it.kitIndex }
+        val indices = if (count > active.size) {
+            (1 until 16).filter { it !in active }.take(count - active.size)
+        } else {
+            active.filter { it != 0 }.sortedDescending().take(active.size - count)
+        }
+        val enable = count > active.size
+        for (index in indices) {
+            if (!engine.writeParameter(part.partIndex, index,
+                    SynthEngine.ParameterWrite("kit/enabled", if (enable) 1.0 else 0.0))) break
+        }
         refreshKits()
+        val actualCount = kitSnapshots.count { bool(it, "kit/enabled") }
+        engine.writeParameter(part.partIndex, 0,
+            SynthEngine.ParameterWrite("part/kitMode", if (actualCount > 1) 1.0 else 0.0))
+        structure = engine.parameterSnapshot(part.partIndex, 0)
+        kitCountPreview = actualCount
+        onPartChanged()
     }
     val partTitle = if (part.name.isBlank()) {
         "Part ${part.partIndex + 1}"
@@ -310,9 +326,9 @@ private fun PartEditorCard(
         ) {
             Text(text = partTitle, color = MaterialTheme.colorScheme.onSurface)
             Row(horizontalArrangement = Arrangement.spacedBy(7.dp), verticalAlignment = Alignment.CenterVertically) {
-                LedButton("Disable part", !part.enabled, { onSetPartEnabled(part.partIndex, false) }, Modifier.width(LedSlotWidth.dp), 2f, displayLabel = "0")
-                LedButton("Enable part", part.enabled, { onSetPartEnabled(part.partIndex, true) }, Modifier.width(LedSlotWidth.dp), 125f, displayLabel = "1")
-                LedButton("Solo part", false, { onSoloPart(part.partIndex) }, Modifier.width(LedSlotWidth.dp), 28f, action = true, displayLabel = "S")
+                LedButton("Disable part", !part.enabled, { onSetPartEnabled(part.partIndex, false) }, hue = 2f, displayLabel = "0", halfWidth = true)
+                LedButton("Enable part", part.enabled, { onSetPartEnabled(part.partIndex, true) }, hue = 125f, displayLabel = "1", halfWidth = true)
+                LedButton("Solo part", false, { onSoloPart(part.partIndex) }, hue = 28f, action = true, displayLabel = "S", halfWidth = true)
                 Text(
                     text = if (expanded) "▾" else "▸",
                     modifier = Modifier.width(22.dp).clickable { onToggleExpanded() },
@@ -331,7 +347,7 @@ private fun PartEditorCard(
             Surface(
                 modifier = Modifier.weight(1f),
                 shape = RoundedCornerShape(8.dp),
-                color = Color(0xFF14262C),
+                color = Color(0xFF222727),
                 border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF2E5F68))
             ) {
                 Row(
@@ -355,18 +371,31 @@ private fun PartEditorCard(
                     Text("↺", color = Color(0xFFA7F4F0), modifier = Modifier.clickable { heldPeak = 0f })
                 }
             }
+            val noteOn = structure.values.firstOrNull { it.descriptor.path == "part/noteOn" }
+                ?.value?.let { it >= .5 } ?: part.noteOn
+            LedButton("Note on", noteOn, {
+                if (engine.writeParameter(part.partIndex, 0,
+                        SynthEngine.ParameterWrite("part/noteOn", if (noteOn) 0.0 else 1.0))) {
+                    structure = engine.parameterSnapshot(part.partIndex, 0)
+                    onPartChanged()
+                }
+            }, Modifier.width(58.dp), displayLabel = "NOTE ON")
+            LedButton("All notes off", false, { onAllNotesOffPart(part.partIndex) },
+                Modifier.width(58.dp), 28f, action = true, displayLabel = "ALL OFF")
         }
         Spacer(Modifier.height(12.dp))
         EditorSectionHeader("Part parameters")
         DenseParameterGrid(
-            structure.values.filter { it.descriptor.path in setOf(
-                "part/volume", "part/panning", "part/velocitySense", "part/velocityOffset",
-                "part/keyShift", "part/channel", "part/keyLimit", "part/portamentoTime",
-                "part/portamentoStretch") },
+            listOf(
+                "part/volume", "part/panning", "part/keyShift", "part/channel",
+                "part/velocitySense", "part/velocityOffset", "part/keyLimit", "part/polyMode",
+                "part/portamento", "part/portamentoTime", "part/portamentoStretch",
+            ).mapNotNull { path -> structure.values.firstOrNull { it.descriptor.path == path } },
             onWrite = { parameter, value ->
                 if (engine.writeParameter(part.partIndex, 0,
                         SynthEngine.ParameterWrite(parameter.descriptor.path, value))) {
                     structure = engine.parameterSnapshot(part.partIndex, 0)
+                    if (parameter.descriptor.type == SynthEngine.ParameterType.BOOLEAN) onPartChanged()
                 }
             },
             onDrag = { parameter, value ->
@@ -382,34 +411,16 @@ private fun PartEditorCard(
             },
             onLongPress = { editedStructuralParameter = it },
             onCommit = onPartChanged,
+            trailingControl = {
+                DenseKnobCard("Kit count", kitCountPreview.toFloat(), 1f, 16f,
+                    onValueChange = { kitCountPreview = it.roundToInt().coerceIn(1, 16) },
+                    onValueChangeFinished = {
+                        val currentCount = kitSnapshots.count { bool(it, "kit/enabled") }
+                        if (kitCountPreview < currentCount) requestedKitCount = kitCountPreview
+                        else if (kitCountPreview > currentCount) setKitCount(kitCountPreview)
+                    })
+            },
         )
-        Spacer(Modifier.height(12.dp))
-        EditorSectionHeader("Playing")
-        Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-            listOf(
-                Triple("Note on", "part/noteOn", "NOTE ON"),
-                Triple("Portamento", "part/portamento", "PORT"),
-                Triple("Mode", "part/polyMode", "MODE"),
-            ).forEach { (label, path, shortLabel) ->
-                val active = structure.values.firstOrNull { it.descriptor.path == path }?.value?.let { it >= .5 }
-                    ?: (path == "part/noteOn" && part.noteOn)
-                Box(Modifier.weight(1f)) {
-                    LedButton(label, active, {
-                        if (engine.writeParameter(part.partIndex, 0,
-                                SynthEngine.ParameterWrite(path, if (active) 0.0 else 1.0))) {
-                            structure = engine.parameterSnapshot(part.partIndex, 0)
-                            onPartChanged()
-                        }
-                    }, Modifier.fillMaxWidth(), displayLabel = if (path == "part/polyMode") {
-                        if (active) "POLY" else "MONO"
-                    } else shortLabel)
-                }
-            }
-            Box(Modifier.weight(1f)) {
-                LedButton("All notes off", false, { onAllNotesOffPart(part.partIndex) },
-                    Modifier.fillMaxWidth(), 28f, action = true, displayLabel = "ALL OFF")
-            }
-        }
         Spacer(Modifier.height(12.dp))
         EditorSectionHeader("Key range")
         DenseParameterGrid(
@@ -445,57 +456,95 @@ private fun PartEditorCard(
                     if (writes.isNotEmpty() && writes.all { (key, value) ->
                             engine.writeParameter(part.partIndex, 0, SynthEngine.ParameterWrite(key, value))
                         }) { structure = engine.parameterSnapshot(part.partIndex, 0); onPartChanged() }
-                }, Modifier.width(62.dp), action = true, displayLabel = label)
+                }, Modifier.width(LedSlotWidth.dp), action = true, displayLabel = label)
             }
         }
         Spacer(Modifier.height(12.dp))
-        EditorSectionHeader("Instrument kit")
-        EngineKitSection(
-            "ADD",
-            "kit/addEnabled",
-            kitSnapshots,
-            ::bool,
-            { onOpenModule("ADD", it) },
-            ::writeKit,
-            kitControl = { kit ->
-                val stereo = bool(kit, "add/stereo")
-                StudioStereoSelector(
-                    stereo = stereo,
-                    onStereoChange = { writeKit(kit.kitIndex, "add/stereo", it) },
-                )
-                val rnd = bool(kit, "add/randomGrouping")
-                LedButton("Kit ${kit.kitIndex + 1} random grouping", rnd,
-                    { writeKit(kit.kitIndex, "add/randomGrouping", !rnd) },
-                    Modifier.width(LedSlotWidth.dp), displayLabel = "RND")
-            },
-        ) {
-            addKitEngine("kit/addEnabled")
+        EditorSectionHeader("Instrument kits")
+        if (structural("part/kitMode", "Off") == "Off" && kitSnapshots.drop(1).any { bool(it, "kit/enabled") }) {
+            Text("Kit mode is off: only Kit 1 plays", color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.labelSmall)
+        }
+        kitSnapshots.filter { bool(it, "kit/enabled") }.forEach { kit ->
+            val index = kit.kitIndex
+            val muted = bool(kit, "kit/muted")
+            Surface(
+                Modifier.fillMaxWidth().padding(vertical = 3.dp),
+                shape = RoundedCornerShape(8.dp),
+                color = Color(0xFF1D2222),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF234A53)),
+            ) {
+                Column(Modifier.padding(8.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Kit ${index + 1}", color = Color(0xFF66F0E9), modifier = Modifier.weight(1f))
+                        LedButton("Mute kit ${index + 1}", muted,
+                            { writeKit(index, "kit/muted", !muted) }, Modifier.width(LedSlotWidth.dp), 2f,
+                            displayLabel = if (muted) "MUTED" else "MUTE")
+                    }
+                    listOf(
+                        Triple("ADsynth", "ADD", "kit/addEnabled"),
+                        Triple("SUBsynth", "SUB", "kit/subEnabled"),
+                        Triple("PADsynth", "PAD", "kit/padEnabled"),
+                    ).forEach { (label, module, path) ->
+                        val active = bool(kit, path)
+                        Row(Modifier.fillMaxWidth().padding(start = 12.dp, top = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                            Text("$label ${index + 1}-1", color = Color(0xFFA7F4F0),
+                                modifier = Modifier.weight(1f).clickable(enabled = active) { onOpenModule(module, index) })
+                            LedButton("$label enabled", active, { writeKit(index, path, !active) },
+                                Modifier.width(LedSlotWidth.dp), displayLabel = if (active) "ON" else "OFF")
+                            if (active) {
+                                Text("›", color = Color(0xFFA7F4F0),
+                                    modifier = Modifier.width(22.dp).clickable { onOpenModule(module, index) }.padding(5.dp))
+                            } else {
+                                Spacer(Modifier.width(22.dp))
+                            }
+                        }
+                        if (module == "ADD" && active) {
+                            Row(Modifier.fillMaxWidth().padding(start = 12.dp, top = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                                val stereo = bool(kit, "add/stereo")
+                                StudioStereoSelector(stereo = stereo,
+                                    onStereoChange = { writeKit(index, "add/stereo", it) })
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        requestedKitCount?.let { count ->
+            androidx.compose.material3.AlertDialog(
+                onDismissRequest = {
+                    requestedKitCount = null
+                    kitCountPreview = kitSnapshots.count { bool(it, "kit/enabled") }
+                },
+                title = { Text("Remove kits?") },
+                text = { Text("Reducing the kit count removes the highest-numbered kits and their settings.") },
+                confirmButton = { Text("Remove", modifier = Modifier.clickable {
+                    requestedKitCount = null
+                    setKitCount(count)
+                }.padding(8.dp)) },
+                dismissButton = { Text("Cancel", modifier = Modifier.clickable {
+                    requestedKitCount = null
+                    kitCountPreview = kitSnapshots.count { bool(it, "kit/enabled") }
+                }.padding(8.dp)) },
+            )
         }
         editedStructuralParameter?.let { parameter ->
             ParameterEditorDialog(
                 parameter = parameter,
                 onDismiss = { editedStructuralParameter = null },
                 onApply = { value ->
-                    if (engine.writeParameter(
-                            part.partIndex,
-                            0,
-                            SynthEngine.ParameterWrite(parameter.descriptor.path, value)
-                        )
-                    ) {
+                    if (engine.writeParameter(part.partIndex, 0,
+                            SynthEngine.ParameterWrite(parameter.descriptor.path, value))) {
                         structure = engine.parameterSnapshot(part.partIndex, 0)
                         onPartChanged()
                     }
                     editedStructuralParameter = null
                 },
             )
-        }
-        Spacer(modifier = Modifier.height(4.dp))
-        EngineKitSection("SUB", "kit/subEnabled", kitSnapshots, ::bool, { onOpenModule("SUB", it) }, ::writeKit) {
-            addKitEngine("kit/subEnabled")
-        }
-        Spacer(modifier = Modifier.height(4.dp))
-        EngineKitSection("PAD", "kit/padEnabled", kitSnapshots, ::bool, { onOpenModule("PAD", it) }, ::writeKit) {
-            addKitEngine("kit/padEnabled")
         }
         Spacer(modifier = Modifier.height(4.dp))
         ZynModuleRow(
@@ -518,44 +567,6 @@ private fun PartEditorCard(
                             if (engine.setSystemFxSend(part.partIndex, fx, next)) sendValue = next
                         }, labelColor = Color(0xFF274354), onValueChangeFinished = onPartChanged)
                 }
-            }
-        }
-    }
-}
-
-@Composable
-private fun EngineKitSection(
-    title: String,
-    enginePath: String,
-    kits: List<SynthEngine.ParameterSnapshot>,
-    bool: (SynthEngine.ParameterSnapshot, String) -> Boolean,
-    onOpen: (Int) -> Unit,
-    onWrite: (Int, String, Boolean) -> Unit,
-    kitControl: (@Composable (SynthEngine.ParameterSnapshot) -> Unit)? = null,
-    onAdd: () -> Unit,
-) {
-    val active = kits.filter { bool(it, "kit/enabled") && bool(it, enginePath) }
-    Surface(
-        Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(8.dp),
-        color = Color(0xFF122229),
-        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF234A53)),
-    ) {
-        Column(Modifier.padding(8.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(title, color = Color(0xFF66F0E9), modifier = Modifier.weight(1f))
-                ZynValueChip("", active.size.toString())
-                Text("+", color = Color(0xFF66F0E9), modifier = Modifier.clickable(onClick = onAdd).padding(8.dp))
-            }
-            active.forEach { kit ->
-                val muted = bool(kit, "kit/muted")
-                ZynKitItemRow(
-                    label = "Kit ${kit.kitIndex + 1}",
-                    muted = muted,
-                    onOpen = { onOpen(kit.kitIndex) },
-                    onMute = { onWrite(kit.kitIndex, "kit/muted", !muted) },
-                    middleContent = kitControl?.let { content -> { content(kit) } },
-                )
             }
         }
     }
@@ -678,7 +689,7 @@ private fun FxRouteRow(
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(7.dp),
-        color = Color(0xFF172B31),
+        color = Color(0xFF272C2C),
         border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF274B54))
     ) {
         Row(
@@ -713,7 +724,7 @@ private fun EditorStatChip(
 ) {
     Surface(
         shape = RoundedCornerShape(999.dp),
-        color = Color(0xFF1A353D),
+        color = Color(0xFF2B3333),
         border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF2E5F68))
     ) {
         Text(
@@ -753,7 +764,7 @@ private fun PartModuleSection(
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(8.dp),
-        color = Color(0xFF122229),
+        color = Color(0xFF1D2222),
         border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF234A53))
     ) {
         Column(
@@ -772,7 +783,7 @@ private fun PartModuleSection(
                     color = Color(0xFF66F0E9),
                     style = MaterialTheme.typography.labelLarge
                 )
-                Surface(shape = RoundedCornerShape(999.dp), color = Color(0xFF1A353D)) {
+                Surface(shape = RoundedCornerShape(999.dp), color = Color(0xFF2B3333)) {
                     Text(
                         text = count.toString(),
                         color = Color(0xFFA7F4F0),

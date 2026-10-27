@@ -1,3 +1,20 @@
+## Prompts prioritaires Part / AddSynth
+
+Ordre de traitement issu de l'analyse du code, recontrole le 27 octobre 2026.
+Ces prompts detaillent les notes ci-dessous sans remplacer les autres sujets du backlog.
+Chaque agent doit mettre a jour TODO.md et TASKS.md, retirer les liens vers son prompt puis supprimer le fichier quand son implementation est terminee.
+
+- [ ] [Corriger le mute entre parts et kits](docs/000_bug_mute.md)
+- [ ] [Alleger les gestes continus AddSynth](docs/001_perf_gestes_addsynth.md)
+- [ ] [Aligner la liste des voix et corriger sa semantique](docs/002_fix_liste_voix.md)
+- [ ] [Uniformiser les activations 0/1 et reduire les enveloppes desactivees](docs/003_feat_enveloppes_01.md)
+- [ ] [Simplifier la navigation de Resonance](docs/004_ux_resonance.md)
+- [ ] [Completer les champs globaux et Voice manquants](docs/005_feat_parite_champs_addsynth.md)
+- [ ] [Completer OscilGen pour Voice et Modulator](docs/006_feat_oscilgen_complet.md)
+- [ ] [Valider audio, clipboard et aller-retour XIZ](docs/007_qa_audio_xiz_addsynth.md)
+
+## Notes et backlog existants
+
 - Dual String Ct1 have Pad and Add on same kit !? and mute is synched- muted part mutes all pars bug
  
 

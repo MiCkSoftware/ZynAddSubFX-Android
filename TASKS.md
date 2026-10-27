@@ -120,6 +120,23 @@ Exemples :
 - preview du modulateur : `Main.Part.Part[1..16].Add.Voice[1..8]/Modulation/OscillatorPreview` ;
 - editeur ouvert au tap : `Main.Part.Part[1..16].Add.Voice[1..8].ModulatorOscillator`.
 
+### Prompts prioritaires Part / AddSynth
+
+Analyse du code recontrolee le 27 octobre 2026. Ordre conseille : isolation audio, fluidite, corrections UI/parite, puis validation transversale.
+Les prompts contiennent les constats, symboles d'entree, limites et criteres de validation pour eviter de refaire l'investigation.
+A la fin de chaque implementation, mettre a jour TASKS.md et TODO.md, retirer les references au prompt termine puis supprimer son fichier. Garder les preuves utiles dans une documentation durable.
+
+- [ ] [Corriger le mute entre parts et kits](docs/000_bug_mute.md)
+- [ ] [Alleger les gestes continus AddSynth](docs/001_perf_gestes_addsynth.md)
+- [ ] [Aligner la liste des voix et corriger sa semantique](docs/002_fix_liste_voix.md)
+- [ ] [Uniformiser les activations 0/1 et reduire les enveloppes desactivees](docs/003_feat_enveloppes_01.md)
+- [ ] [Simplifier la navigation de Resonance](docs/004_ux_resonance.md)
+- [ ] [Completer les champs globaux et Voice manquants](docs/005_feat_parite_champs_addsynth.md)
+- [ ] [Completer OscilGen pour Voice et Modulator](docs/006_feat_oscilgen_complet.md)
+- [ ] [Valider audio, clipboard et aller-retour XIZ](docs/007_qa_audio_xiz_addsynth.md)
+
+Les fonctions Envelope libre, Formant et clipboard ci-dessous sont presentes dans le code ; leur presence ne vaut pas validation audio ou tactile complete. La QA rapide M5 deja cochee concerne uniquement son perimetre historique.
+
 ### Navigation principale et performance
 
 | Surface native | Nature Android | Ecran parent Android | Chemin Android | Etat | Suite logique |
@@ -129,7 +146,7 @@ Exemples :
 | Panel window | Section | `Main` | `/Parts` | **Partiel** | Consolider mixer, VU et selection de partie |
 | Virtual Keyboard | Controleur | Variable | `/Keyboard` | **Implemente** | Ajouter mode plein ecran et velocity avancee |
 | Bank window / BankView | Ecran | `Main` | `.Presets` | **Partiel** | Favoris, tags, recherche et import/export |
-| PresetsUI | Dialogue / actions | Variable | `/PresetActions` | **Partiel** | Copy/paste Voice et modules, reset/undo coherent |
+| PresetsUI | Dialogue / actions | Variable | `/PresetActions` | **Partiel** | Copy/paste Voice et modules presents ; valider leur round-trip et completer reset/undo |
 | About / Copyright | Ecran | `Main` | `.About` | **Absent** | Ajouter About/Licences GPL Android |
 | ConfigUI / Settings | Ecran | `Main` | `.Settings` | **Absent** | Definir le perimetre Settings Android |
 | MicrotonalUI | Ecran | `Main` | `.Microtonal` | **Absent** | Porter apres les controles master de base |
@@ -143,16 +160,16 @@ Exemples :
 | PartUI / Instrument Kit | Ecran | `Main.Part` | `.Part[1..16]` | **Partiel** | Stabiliser Kit et activations ADD/SUB/PAD |
 | ADnoteUI - Global Parameters | Sections | `Main.Part.Part[1..16].Add` | `/Amplitude`, `/Frequency`, `/Filter` | **Partiel** | Verifier whitelist, couleurs et parite |
 | ADnoteUI - Voice list | Section / navigation | `Main.Part.Part[1..16].Add` | `/VoiceList` | **Implemente** | Affiner densite, indicateurs et libelle Resonance |
-| ADnoteUI - Voice Parameters | Ecran | `Main.Part.Part[1..16].Add` | `.Voice[1..8]` | **Partiel** | Copy/paste et champs restants |
-| Voice Filter | Section | `Main.Part.Part[1..16].Add.Voice[1..8]` | `/Filter` | **Implemente** | Editeur Formant avance differe |
+| ADnoteUI - Voice Parameters | Ecran | `Main.Part.Part[1..16].Add` | `.Voice[1..8]` | **Partiel** | Copy/paste present ; completer champs caches et valider audio/persistance |
+| Voice Filter | Section | `Main.Part.Part[1..16].Add.Voice[1..8]` | `/Filter` | **Implemente** | Formant present ; valider valeurs et rendu audible |
 | Voice Modulator | Section | `Main.Part.Part[1..16].Add.Voice[1..8]` | `/Modulation` | **Implemente** | QA audio approfondie des modes et routages |
 | ADnoteUI - Voice Oscillator | Preview + ecran | `Main.Part.Part[1..16].Add.Voice[1..8]` | `/OscillatorPreview` -> `.Oscillator` | **Partiel** | OscilGen avance |
 | ADnoteUI - Modulator Oscillator | Preview + ecran | `Main.Part.Part[1..16].Add.Voice[1..8]` | `/Modulation/OscillatorPreview` -> `.ModulatorOscillator` | **Implemente** | OscilGen avance |
-| OscilGenUI / OscilEditor | Controleur d'ecran | Ecrans Oscillator | `/Parameters`, `/Harmonics`, `/Phases` | **Partiel** | Completer OscilGen et preview fidele |
+| OscilGenUI / OscilEditor | Controleur d'ecran | Ecrans Oscillator | `/Parameters`, `/Harmonics`, `/Phases` | **Partiel** | Preview natif present ; completer traitements avances et fluidite des harmoniques |
 | ResonanceUI | Preview + ecran | `Main.Part.Part[1..16].Add` | `/ResonancePreview` -> `.Resonance` | **Implemente** | QA valeurs et gestes |
-| EnvelopeUI / EnvelopeFreeEdit | Controleur | Variable | `/Amplitude|Frequency|Filter|Modulation/Envelope` | **Partiel** | Mode libre et edition graphique |
+| EnvelopeUI / EnvelopeFreeEdit | Controleur | Variable | `/Amplitude|Frequency|Filter|Modulation/Envelope` | **Partiel** | Mode libre et edition graphique presents ; harmoniser activations et valider les roles |
 | LFOUI | Controleur | Variable | `/Amplitude|Frequency|Filter/LFO` | **Partiel** | Parite fine des instances et labels |
-| FilterUI | Section reutilisable | Variable | `/Filter` | **Partiel** | Editeur Formant avance |
+| FilterUI | Section reutilisable | Variable | `/Filter` | **Partiel** | Formant avance present ; valider parite des instances et audio |
 | SUBnoteUI | Ecran moteur | `Main.Part.Part[1..16]` | `.Sub` | **Partiel** | Reprendre apres ADsynth/Voice |
 | PADnoteUI | Ecran moteur | `Main.Part.Part[1..16]` | `.Pad` | **Partiel** | Completer Profile/Spectrum/Quality |
 
@@ -169,7 +186,7 @@ Exemples :
 | EffUI - EQ | Section + controleur | `Main.Part.Part[1..16].Fx` | `/Fx[1..3]/Eq` | **Partiel** | Courbe EQ et bandes |
 | EffUI - Dynamic Filter | Section FX | `Main.Part.Part[1..16].Fx` | `/Fx[1..3]/DynamicFilter` | **Partiel** | UI specialisee et modulation |
 | EffUI - Sympathetic strings | Section FX | `Main.Part.Part[1..16].Fx` | `/Fx[1..3]/Sympathetic` | **Partiel** | UI specialisee et presets |
-| Formant Filter window | Ecran specialise | Section Filter concernee | `.FormantEditor` | **Absent** | Planifier avec FilterUI avance |
+| Formant Filter window | Editeur integre | Ecran Filter concerne | `/Formant` | **Implemente** | Voyelles, formants et sequence presents ; QA audio et gestes restante |
 | PAD harmonic profile / overtone graph | Controleur graphique | `Main.Part.Part[1..16].Pad` | `/Profile`, `/Spectrum` | **Absent** | Porter apres le moteur PAD principal |
 
 ### Avancement et priorites UI

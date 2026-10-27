@@ -183,7 +183,7 @@ private fun SynthEditorScaffold(
     content: @Composable (Modifier) -> Unit,
 ) {
     Column(modifier.fillMaxSize()) {
-        Surface(color = Color(0xFF102329), shadowElevation = 5.dp) {
+        Surface(color = Color(0xFF1E2424), shadowElevation = 5.dp) {
             Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp)) {
                 Text(contextPath, color = Color(0xFF7AB8BA), style = MaterialTheme.typography.labelSmall)
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -576,14 +576,14 @@ fun FullInstrumentEditor(
             if (wide) {
                 Surface(
                     modifier = Modifier.width(148.dp).fillMaxSize(),
-                    color = Color(0xFF0C1D22),
+                    color = Color(0xFF1A1E1E),
                     border = BorderStroke(1.dp, Color(0xFF234A53)),
                 ) {
                     Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
                         Text("Part ${state.partIndex + 1}", color = Color(0xFF8EF5EE))
                         listOf("ADD", "SUB", "PAD", "FX").forEach { item ->
                             Surface(
-                                color = if (item == module) Color(0xFF23616A) else Color(0xFF162D33),
+                                color = if (item == module) Color(0xFF23616A) else Color(0xFF272D2D),
                                 shape = RoundedCornerShape(7.dp),
                                 modifier = Modifier.fillMaxWidth().combinedClickable(
                                     onClick = { onOpenModule(item) }
@@ -796,7 +796,7 @@ private fun VoiceMatrix(
             val enabled = value("enabled")
             val resonance = value("resonance")
             Surface(
-                color = Color(0xFF10262C),
+                color = Color(0xFF202727),
                 border = BorderStroke(1.dp, Color(0xFF2E6973)),
                 shape = RoundedCornerShape(6.dp),
                 modifier = Modifier.fillMaxWidth(),
@@ -969,7 +969,7 @@ private fun AddVoiceDetailScreen(
                                             )
                                         )
                                     },
-                                color = Color(0xFF10262C),
+                                color = Color(0xFF202727),
                                 border = BorderStroke(1.dp, Color(0xFF2E6973)),
                                 shape = RoundedCornerShape(8.dp),
                             ) {
@@ -1414,7 +1414,7 @@ private fun HarmonicKnobCard(
 ) {
     Surface(
         modifier = modifier,
-        color = Color(0xFF162D33),
+        color = Color(0xFF272D2D),
         shape = RoundedCornerShape(7.dp),
         border = BorderStroke(1.dp, Color(0xFF274B54)),
     ) {
@@ -1829,7 +1829,10 @@ private fun ZynEditorSection(
             if (complex) ComplexEditorLauncher(title, onComplex)
             if (parameters.isNotEmpty()) {
                 if (verticalLabels) {
-                    parameters.groupBy { it.descriptor.group }.forEach { (group, groupedParameters) ->
+                    parameters.groupBy {
+                        if (it.descriptor.path == "add/randomGrouping") "ADD / Amplitude / Global"
+                        else it.descriptor.group
+                    }.forEach { (group, groupedParameters) ->
                         Text(
                             addSubsectionLabel(group),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1892,7 +1895,8 @@ internal fun parametersFor(
         if (descriptor.module != SynthEngine.ParameterModule.ADD) return@filter false
         return@filter when (tab) {
             "Amp" -> descriptor.scope == SynthEngine.ParameterScope.GLOBAL &&
-                descriptor.section == SynthEngine.ParameterSection.AMPLITUDE
+                (descriptor.section == SynthEngine.ParameterSection.AMPLITUDE ||
+                    descriptor.path == "add/randomGrouping")
             "Frequency" -> descriptor.scope == SynthEngine.ParameterScope.GLOBAL &&
                 descriptor.section == SynthEngine.ParameterSection.FREQUENCY
             "Filter" -> descriptor.scope == SynthEngine.ParameterScope.GLOBAL &&
@@ -1938,6 +1942,7 @@ internal fun DenseParameterGrid(
     onLongPress: (SynthEngine.ParameterValue) -> Unit,
     onDrag: (SynthEngine.ParameterValue, Double) -> Unit = onWrite,
     onCommit: () -> Unit = {},
+    trailingControl: (@Composable () -> Unit)? = null,
 ) {
     BoxWithConstraints {
         val columns = when {
@@ -1951,26 +1956,23 @@ internal fun DenseParameterGrid(
             modifier = Modifier.fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(5.dp),
         ) {
-            parameters.chunked(columns).forEach { rowParameters ->
+            (0 until parameters.size + if (trailingControl != null) 1 else 0).toList().chunked(columns).forEach { rowIndices ->
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(5.dp),
                 ) {
-                    rowParameters.forEach { parameter ->
+                    rowIndices.forEach { index ->
                         Box(Modifier.weight(1f)) {
-                            DenseParameterControl(
-                                parameter,
-                                onWrite,
-                                onLongPress,
-                                verticalLabels,
-                                valueText(parameter),
-                                enabled(parameter),
-                                onDrag,
-                                onCommit,
-                            )
+                            if (index < parameters.size) {
+                                val parameter = parameters[index]
+                                DenseParameterControl(parameter, onWrite, onLongPress, verticalLabels,
+                                    valueText(parameter), enabled(parameter), onDrag, onCommit)
+                            } else {
+                                trailingControl?.invoke()
+                            }
                         }
                     }
-                    repeat(columns - rowParameters.size) {
+                    repeat(columns - rowIndices.size) {
                         Spacer(Modifier.weight(1f))
                     }
                 }
@@ -1997,7 +1999,7 @@ internal fun DenseControlCard(
             onClick = onClick,
             onLongClick = onLongClick,
         ),
-        color = Color(0xFF162D33),
+        color = Color(0xFF272D2D),
         shape = RoundedCornerShape(7.dp),
         border = BorderStroke(1.dp, Color(0xFF274B54)),
     ) {
@@ -2134,6 +2136,8 @@ internal fun DenseParameterControl(
 
 private fun addLabelColor(descriptor: SynthEngine.ParameterDescriptor): Color {
     val hue = when {
+        descriptor.path == "add/randomGrouping" -> 285f
+        descriptor.path.startsWith("part/portamento") -> 32f
         descriptor.group.endsWith("/ Amplitude envelope") -> 205f
         descriptor.group.endsWith("/ Frequency envelope") -> 165f
         descriptor.group.endsWith("/ Envelope") && descriptor.group.contains("/ Filter") -> 325f
@@ -2158,7 +2162,7 @@ private fun addLabelColor(descriptor: SynthEngine.ParameterDescriptor): Color {
         descriptor.path in setOf("add/detune", "add/coarse", "add/octave", "add/detuneType") -> 140f
         else -> 188f
     }
-    return Color.hsv(hue, saturation = .52f, value = .22f)
+    return Color.hsv(hue, saturation = .30f, value = .22f)
 }
 
 private fun compactAddLabel(descriptor: SynthEngine.ParameterDescriptor): String = when {
@@ -2169,9 +2173,11 @@ private fun compactAddLabel(descriptor: SynthEngine.ParameterDescriptor): String
     descriptor.path == "part/keyLimit" -> "Key limit"
     descriptor.path == "part/minKey" -> "Min. key"
     descriptor.path == "part/maxKey" -> "Max. key"
+    descriptor.path == "part/portamento" -> "Portamento"
     descriptor.path == "part/portamentoTime" -> "Port. time"
     descriptor.path == "part/portamentoStretch" -> "Port. str."
     descriptor.path == "add/stereo" -> "Stereo"
+    descriptor.path == "add/randomGrouping" -> "Random group"
     descriptor.path == "add/volume" -> "Volume"
     descriptor.path == "add/panning" -> "Panning"
     descriptor.path == "add/velocity" -> "Velocity"
@@ -2212,7 +2218,7 @@ private fun compactAddLabel(descriptor: SynthEngine.ParameterDescriptor): String
 private fun CompactSelector(label: String, value: String, onClick: () -> Unit) {
     Surface(
         modifier = Modifier.combinedClickable(onClick = onClick),
-        color = Color(0xFF1A353D),
+        color = Color(0xFF2B3333),
         shape = RoundedCornerShape(6.dp),
         border = BorderStroke(1.dp, Color(0xFF2E5F68)),
     ) {
