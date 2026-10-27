@@ -126,7 +126,8 @@ Analyse du code recontrolee le 27 octobre 2026. Ordre conseille : isolation audi
 Les prompts contiennent les constats, symboles d'entree, limites et criteres de validation pour eviter de refaire l'investigation.
 A la fin de chaque implementation, mettre a jour TASKS.md et TODO.md, retirer les references au prompt termine puis supprimer son fichier. Garder les preuves utiles dans une documentation durable.
 
-- [ ] [Corriger le mute entre parts et kits](docs/000_bug_mute.md)
+- [x] Mute entre parts et kits : mute du premier kit respecte en mode non-kit ; test audible rapporte OK par Mick. Test natif `testNonKitMute` ajoute mais non execute.
+- [x] Vue Part / instrument : kits parents et nombre de kits, moteurs ADD/SUB/PAD, mute par kit, stereo par moteur, portamento regroupe et boutons LED. Compilation Kotlin OK ; verification visuelle et tactile sur appareil restante.
 - [ ] [Alleger les gestes continus AddSynth](docs/001_perf_gestes_addsynth.md)
 - [ ] [Aligner la liste des voix et corriger sa semantique](docs/002_fix_liste_voix.md)
 - [ ] [Uniformiser les activations 0/1 et reduire les enveloppes desactivees](docs/003_feat_enveloppes_01.md)

@@ -3,15 +3,15 @@ package com.mick.zynaddsubfx.ui.theme
 import androidx.compose.ui.graphics.Color
 
 val TealPrimary = Color(0xFF33C8C8)
-val TealPrimaryContainer = Color(0xFF202526)
+val TealPrimaryContainer = Color(0xFF1C1C1C)
 val TealSecondary = Color(0xFF7AC1C8)
-val TealSecondaryContainer = Color(0xFF252929)
+val TealSecondaryContainer = Color(0xFF1C1C1C)
 val TealTertiary = Color(0xFF5BE4D7)
 
-val AppBackground = Color(0xFF0E1111)
-val AppSurface = Color(0xFF191D1D)
-val AppSurfaceVariant = Color(0xFF242A2A)
-val AppOutline = Color(0xFF434D4D)
+val AppBackground = Color(0xFF101010)
+val AppSurface = Color(0xFF161616)
+val AppSurfaceVariant = Color(0xFF1C1C1C)
+val AppOutline = Color(0xFF3C3C3C)
 
 val OnPrimary = Color(0xFF001F24)
 val OnBackground = Color(0xFFD8F6F6)

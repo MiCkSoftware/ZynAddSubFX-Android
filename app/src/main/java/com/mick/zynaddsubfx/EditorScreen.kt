@@ -347,7 +347,7 @@ private fun PartEditorCard(
             Surface(
                 modifier = Modifier.weight(1f),
                 shape = RoundedCornerShape(8.dp),
-                color = Color(0xFF222727),
+                color = Color(0xFF191919),
                 border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF2E5F68))
             ) {
                 Row(
@@ -471,7 +471,7 @@ private fun PartEditorCard(
             Surface(
                 Modifier.fillMaxWidth().padding(vertical = 3.dp),
                 shape = RoundedCornerShape(8.dp),
-                color = Color(0xFF1D2222),
+                color = Color(0xFF161616),
                 border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF234A53)),
             ) {
                 Column(Modifier.padding(8.dp)) {
@@ -492,6 +492,13 @@ private fun PartEditorCard(
                             horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                             Text("$label ${index + 1}-1", color = Color(0xFFA7F4F0),
                                 modifier = Modifier.weight(1f).clickable(enabled = active) { onOpenModule(module, index) })
+                            if (active) {
+                                val stereoPath = "${module.lowercase(Locale.US)}/stereo"
+                                StudioStereoSelector(stereo = bool(kit, stereoPath),
+                                    onStereoChange = { writeKit(index, stereoPath, it) })
+                            } else {
+                                Spacer(Modifier.width(LedSlotWidth.dp))
+                            }
                             LedButton("$label enabled", active, { writeKit(index, path, !active) },
                                 Modifier.width(LedSlotWidth.dp), displayLabel = if (active) "ON" else "OFF")
                             if (active) {
@@ -499,15 +506,6 @@ private fun PartEditorCard(
                                     modifier = Modifier.width(22.dp).clickable { onOpenModule(module, index) }.padding(5.dp))
                             } else {
                                 Spacer(Modifier.width(22.dp))
-                            }
-                        }
-                        if (module == "ADD" && active) {
-                            Row(Modifier.fillMaxWidth().padding(start = 12.dp, top = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                                val stereo = bool(kit, "add/stereo")
-                                StudioStereoSelector(stereo = stereo,
-                                    onStereoChange = { writeKit(index, "add/stereo", it) })
                             }
                         }
                     }
@@ -689,7 +687,7 @@ private fun FxRouteRow(
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(7.dp),
-        color = Color(0xFF272C2C),
+        color = Color(0xFF1F1F1F),
         border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF274B54))
     ) {
         Row(
@@ -724,7 +722,7 @@ private fun EditorStatChip(
 ) {
     Surface(
         shape = RoundedCornerShape(999.dp),
-        color = Color(0xFF2B3333),
+        color = Color(0xFF252525),
         border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF2E5F68))
     ) {
         Text(
@@ -764,7 +762,7 @@ private fun PartModuleSection(
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(8.dp),
-        color = Color(0xFF1D2222),
+        color = Color(0xFF161616),
         border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF234A53))
     ) {
         Column(
@@ -783,7 +781,7 @@ private fun PartModuleSection(
                     color = Color(0xFF66F0E9),
                     style = MaterialTheme.typography.labelLarge
                 )
-                Surface(shape = RoundedCornerShape(999.dp), color = Color(0xFF2B3333)) {
+                Surface(shape = RoundedCornerShape(999.dp), color = Color(0xFF252525)) {
                     Text(
                         text = count.toString(),
                         color = Color(0xFFA7F4F0),

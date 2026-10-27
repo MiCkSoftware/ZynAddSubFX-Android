@@ -199,7 +199,7 @@ fun ZynValueChip(
     Surface(
         modifier = Modifier.clickable(enabled = editable, onClick = onClick),
         shape = RoundedCornerShape(999.dp),
-        color = Color(0xFF2B3333),
+        color = Color(0xFF252525),
         border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF2E5F68)),
     ) {
         Text(
@@ -222,7 +222,7 @@ fun ZynModuleRow(
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(8.dp),
-        color = Color(0xFF1D2222),
+        color = Color(0xFF161616),
         border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF234A53)),
     ) {
         Row(
@@ -706,7 +706,7 @@ fun LuminousActionButton(
                 shape = RoundedCornerShape(8.dp)
             ),
         shape = RoundedCornerShape(8.dp),
-        color = Color(0xFF222727),
+        color = Color(0xFF191919),
         shadowElevation = 6.dp
     ) {
         Box(

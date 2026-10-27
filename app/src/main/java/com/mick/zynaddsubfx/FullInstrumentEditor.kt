@@ -183,7 +183,7 @@ private fun SynthEditorScaffold(
     content: @Composable (Modifier) -> Unit,
 ) {
     Column(modifier.fillMaxSize()) {
-        Surface(color = Color(0xFF1E2424), shadowElevation = 5.dp) {
+        Surface(color = Color(0xFF181818), shadowElevation = 5.dp) {
             Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp)) {
                 Text(contextPath, color = Color(0xFF7AB8BA), style = MaterialTheme.typography.labelSmall)
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -576,14 +576,14 @@ fun FullInstrumentEditor(
             if (wide) {
                 Surface(
                     modifier = Modifier.width(148.dp).fillMaxSize(),
-                    color = Color(0xFF1A1E1E),
+                    color = Color(0xFF131313),
                     border = BorderStroke(1.dp, Color(0xFF234A53)),
                 ) {
                     Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
                         Text("Part ${state.partIndex + 1}", color = Color(0xFF8EF5EE))
                         listOf("ADD", "SUB", "PAD", "FX").forEach { item ->
                             Surface(
-                                color = if (item == module) Color(0xFF23616A) else Color(0xFF272D2D),
+                                color = if (item == module) Color(0xFF23616A) else Color(0xFF202020),
                                 shape = RoundedCornerShape(7.dp),
                                 modifier = Modifier.fillMaxWidth().combinedClickable(
                                     onClick = { onOpenModule(item) }
@@ -796,7 +796,7 @@ private fun VoiceMatrix(
             val enabled = value("enabled")
             val resonance = value("resonance")
             Surface(
-                color = Color(0xFF202727),
+                color = Color(0xFF191919),
                 border = BorderStroke(1.dp, Color(0xFF2E6973)),
                 shape = RoundedCornerShape(6.dp),
                 modifier = Modifier.fillMaxWidth(),
@@ -969,7 +969,7 @@ private fun AddVoiceDetailScreen(
                                             )
                                         )
                                     },
-                                color = Color(0xFF202727),
+                                color = Color(0xFF191919),
                                 border = BorderStroke(1.dp, Color(0xFF2E6973)),
                                 shape = RoundedCornerShape(8.dp),
                             ) {
@@ -1414,7 +1414,7 @@ private fun HarmonicKnobCard(
 ) {
     Surface(
         modifier = modifier,
-        color = Color(0xFF272D2D),
+        color = Color(0xFF202020),
         shape = RoundedCornerShape(7.dp),
         border = BorderStroke(1.dp, Color(0xFF274B54)),
     ) {
@@ -1999,7 +1999,7 @@ internal fun DenseControlCard(
             onClick = onClick,
             onLongClick = onLongClick,
         ),
-        color = Color(0xFF272D2D),
+        color = Color(0xFF202020),
         shape = RoundedCornerShape(7.dp),
         border = BorderStroke(1.dp, Color(0xFF274B54)),
     ) {
@@ -2218,7 +2218,7 @@ private fun compactAddLabel(descriptor: SynthEngine.ParameterDescriptor): String
 private fun CompactSelector(label: String, value: String, onClick: () -> Unit) {
     Surface(
         modifier = Modifier.combinedClickable(onClick = onClick),
-        color = Color(0xFF2B3333),
+        color = Color(0xFF252525),
         shape = RoundedCornerShape(6.dp),
         border = BorderStroke(1.dp, Color(0xFF2E5F68)),
     ) {

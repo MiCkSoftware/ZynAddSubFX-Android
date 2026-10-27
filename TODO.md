@@ -4,7 +4,6 @@ Ordre de traitement issu de l'analyse du code, recontrole le 27 octobre 2026.
 Ces prompts detaillent les notes ci-dessous sans remplacer les autres sujets du backlog.
 Chaque agent doit mettre a jour TODO.md et TASKS.md, retirer les liens vers son prompt puis supprimer le fichier quand son implementation est terminee.
 
-- [ ] [Corriger le mute entre parts et kits](docs/000_bug_mute.md)
 - [ ] [Alleger les gestes continus AddSynth](docs/001_perf_gestes_addsynth.md)
 - [ ] [Aligner la liste des voix et corriger sa semantique](docs/002_fix_liste_voix.md)
 - [ ] [Uniformiser les activations 0/1 et reduire les enveloppes desactivees](docs/003_feat_enveloppes_01.md)
@@ -15,7 +14,10 @@ Chaque agent doit mettre a jour TODO.md et TASKS.md, retirer les liens vers son 
 
 ## Notes et backlog existants
 
-- Dual String Ct1 have Pad and Add on same kit !? and mute is synched- muted part mutes all pars bug
+- [x] Clarifier la hierarchie des kits : ADD et PAD peuvent partager un kit et son mute ; afficher les moteurs sous leur kit.
+- [x] Reorganiser la vue Part : nombre de kits, stereo par moteur, portamento, controles de notes et style LED.
+- [x] Mute audible teste OK par Mick ; le test de regression natif ajoute n'a pas encore ete execute.
+- [ ] Verifier sur appareil le theme gris, la lisibilite et les boutons stereo de chaque moteur.
  
 
  - replace voice enveloppe toggles by 0 1 and apply the same to add synth main screen
@@ -35,7 +37,7 @@ Chaque agent doit mettre a jour TODO.md et TASKS.md, retirer les liens vers son 
 
 - KITs
   - all parts sur le screen d'edition avec instru en header
-  - rework kit mute button to standard (make reusable componant)
+  - [x] Kit mute utilise le bouton LED commun.
   - Screen blink during loading 
 - sub synth todo
 - pad synth todo
