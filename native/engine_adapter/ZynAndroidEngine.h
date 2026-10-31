@@ -42,6 +42,7 @@ public:
     std::string partsSummary() const;
     std::string mixerSummary() const;
     std::string parameterSnapshot(int partIndex, int kitIndex) const;
+    static float fineDetuneCents(int type, int value);
     bool setParameter(int partIndex, int kitIndex, const std::string &path, double value);
     std::string modulePreview(int partIndex, int kitIndex, int kind, int index, int role,
                               int resolution);

@@ -19,6 +19,16 @@ class CommonModulesInstrumentedTest {
     val composeRule = createComposeRule()
 
     @Test
+    fun nativeFineDetuneUsesOriginalCurves() {
+        for (type in 1..4) assertEquals(0f, SynthEngine.fineDetuneCents(type, 8192), .0001f)
+        assertEquals(-35f, SynthEngine.fineDetuneCents(1, 0), .001f)
+        assertEquals(-10f, SynthEngine.fineDetuneCents(2, 0), .001f)
+        assertEquals(-99.9f, SynthEngine.fineDetuneCents(3, 0), .001f)
+        assertEquals(-1200f, SynthEngine.fineDetuneCents(4, 0), .001f)
+        assertEquals(-35f, SynthEngine.fineDetuneCents(0, -100), .001f)
+    }
+
+    @Test
     fun nativeEnvelopePreviewAndTypedClipboardRoundTrip() {
         val engine = SynthEngine(InstrumentationRegistry.getInstrumentation().targetContext)
         assertTrue(NativeSynthBridge.nativeInit(48_000, 256))

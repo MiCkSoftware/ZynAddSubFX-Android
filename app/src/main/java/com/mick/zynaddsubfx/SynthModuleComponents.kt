@@ -27,7 +27,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -179,16 +178,18 @@ fun ModulePreview(
 
 @Composable
 fun ModuleClipboardActions(
+    title: String,
     onCopy: () -> Unit,
     onPaste: () -> Unit,
     canPaste: Boolean,
-    onOpen: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
+    enabled: Boolean = true,
 ) {
-    Row(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        LuminousActionButton("Copy", onCopy, Modifier.weight(1f))
-        LuminousActionButton("Paste", onPaste, Modifier.weight(1f), enabled = canPaste)
-        onOpen?.let { LuminousActionButton("Edit", it, Modifier.weight(1f)) }
+    Row(modifier, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+        LedButton("Copy $title", enabled, onCopy, Modifier.size(27.dp),
+            action = true, displayLabel = "C", enabled = enabled, compact = true)
+        LedButton("Paste $title", canPaste && enabled, onPaste, Modifier.size(27.dp),
+            action = true, displayLabel = "P", enabled = canPaste && enabled, compact = true)
     }
 }
 
@@ -227,14 +228,14 @@ private fun CommonParameterGrid(
 }
 
 @Composable
-private fun CompactModuleActions(
+internal fun CompactModuleActions(
     title: String,
     onCopy: () -> Unit,
     onPaste: () -> Unit,
     canPaste: Boolean,
-    onOpen: () -> Unit,
     enabledParameter: SynthEngine.ParameterValue? = null,
     onWrite: ((SynthEngine.ParameterValue, Double) -> Unit)? = null,
+    clipboardEnabled: Boolean = true,
 ) {
     Row(Modifier.fillMaxWidth().padding(top = 5.dp, bottom = 3.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -243,15 +244,17 @@ private fun CompactModuleActions(
             style = MaterialTheme.typography.labelMedium,
             maxLines = 1, overflow = TextOverflow.Ellipsis)
         if (enabledParameter != null && onWrite != null) {
-            Switch(
-                checked = enabledParameter.value >= .5,
-                onCheckedChange = { onWrite(enabledParameter, if (it) 1.0 else 0.0) },
-                modifier = Modifier.size(width = 48.dp, height = 27.dp),
+            LedButton(
+                label = "$title enabled",
+                lit = enabledParameter.value >= .5,
+                onClick = { onWrite(enabledParameter, if (enabledParameter.value >= .5) 0.0 else 1.0) },
+                modifier = Modifier.size(width = 34.dp, height = 27.dp),
+                hue = 125f,
+                displayLabel = "ON",
+                compact = true,
             )
         }
-        LuminousActionButton("C", onCopy, Modifier.size(27.dp), compact = true, description = "Copy $title")
-        LuminousActionButton("P", onPaste, Modifier.size(27.dp), enabled = canPaste, compact = true, description = "Paste $title")
-        LuminousActionButton("E", onOpen, Modifier.size(27.dp), compact = true, description = "Edit $title")
+        ModuleClipboardActions(title, onCopy, onPaste, canPaste, enabled = clipboardEnabled)
     }
 }
 
@@ -342,7 +345,7 @@ fun EnvelopeUI(
     onCommit: () -> Unit = {},
 ) {
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        CompactModuleActions(model.title, onCopy, onPaste, canPaste, onOpenEditor,
+        CompactModuleActions(model.title, onCopy, onPaste, canPaste,
             model.parameters.firstOrNull { it.descriptor.path == "add/voice/${model.address.index}/" + when (model.address.envelopeRole) {
                 EnvelopeRole.AMPLITUDE -> "ampEnvelopeEnabled"
                 EnvelopeRole.FREQUENCY -> "freqEnvelopeEnabled"
@@ -350,7 +353,7 @@ fun EnvelopeUI(
                 EnvelopeRole.MODULATOR_AMPLITUDE -> "modAmpEnvelopeEnabled"
                 EnvelopeRole.MODULATOR_FREQUENCY -> "modFreqEnvelopeEnabled"
             } }, onWrite)
-        EnvelopeCurve(model, preview, Modifier.fillMaxWidth().height(92.dp).clickable(onClick = onOpenEditor))
+        EnvelopeCurve(model, preview, Modifier.fillMaxWidth().height(92.dp).clickable(onClickLabel = "Edit ${model.title}", onClick = onOpenEditor))
         val previewFields = when (model.address.envelopeRole) {
             EnvelopeRole.AMPLITUDE, EnvelopeRole.MODULATOR_AMPLITUDE ->
                 arrayOf("attackTime", "decayTime", "sustain", "releaseTime")
@@ -377,13 +380,14 @@ fun LFOUI(
     onCommit: () -> Unit = {},
 ) {
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        CompactModuleActions(model.title, onCopy, onPaste, canPaste, onOpenEditor,
+        CompactModuleActions(model.title, onCopy, onPaste, canPaste,
             model.parameters.firstOrNull { it.descriptor.path == "add/voice/${model.address.index}/" + when (model.address.lfoRole) {
                 LfoRole.AMPLITUDE -> "ampLfoEnabled"
                 LfoRole.FREQUENCY -> "freqLfoEnabled"
                 LfoRole.FILTER -> "filterLfoEnabled"
             } }, onWrite)
-        ModulePreview(preview, Modifier.fillMaxWidth().height(72.dp), accent = Color(0xFFC08BFF))
+        ModulePreview(preview, Modifier.fillMaxWidth().height(72.dp)
+            .clickable(onClickLabel = "Edit ${model.title}", onClick = onOpenEditor), accent = Color(0xFFC08BFF))
         CommonParameterGrid(model.parameters.fields("frequency", "depth", "start", "delay"), onWrite, onDrag, onCommit, columnsOverride = 4)
     }
 }
@@ -402,13 +406,13 @@ fun FilterUI(
     onCommit: () -> Unit = {},
 ) {
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        CompactModuleActions("FILTER", onCopy, onPaste, canPaste, onOpenEditor,
+        CompactModuleActions("FILTER", onCopy, onPaste, canPaste,
             model.parameters.firstOrNull {
                 it.descriptor.path == "add/voice/${model.address.index}/filter"
             }, onWrite)
         ModulePreview(
             preview,
-            Modifier.fillMaxWidth().height(92.dp).clickable(onClick = onOpenEditor),
+            Modifier.fillMaxWidth().height(92.dp).clickable(onClickLabel = "Edit filter", onClick = onOpenEditor),
             accent = Color(0xFFFFC66A),
         )
         CommonParameterGrid(model.parameters.fields("cutoff", "q", "gain", "stages"), onWrite, onDrag, onCommit, columnsOverride = 4)
@@ -478,7 +482,7 @@ fun CommonSynthModules(
         lfoRole?.let { role ->
             val address = ModuleAddress.Lfo(voiceIndex, role)
             LfoModel.from(values, address)?.let { lfo ->
-                val preview = model.preview(address)
+                val preview = remember(model.state.revision, address) { model.preview(address) }
                 LFOUI(
                     model = lfo,
                     preview = preview,
@@ -666,11 +670,10 @@ fun FormantFilterEditor(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.labelMedium,
                 maxLines = 1, softWrap = false)
-            LuminousActionButton("C", { onCopyVowel(selectedVowel) }, Modifier.size(27.dp),
-                compact = true, description = "Copy vowel")
-            LuminousActionButton("P", { onPasteVowel(selectedVowel) }, Modifier.size(27.dp),
-                compact = true, enabled = canPasteVowel(selectedVowel),
-                description = "Paste vowel")
+            LedButton("Copy vowel", true, { onCopyVowel(selectedVowel) }, Modifier.size(27.dp),
+                action = true, displayLabel = "C", compact = true)
+            LedButton("Paste vowel", canPasteVowel(selectedVowel), { onPasteVowel(selectedVowel) }, Modifier.size(27.dp),
+                action = true, displayLabel = "P", compact = true, enabled = canPasteVowel(selectedVowel))
         }
         BoxWithConstraints(Modifier.fillMaxWidth()) {
         val showFourthColumn = maxWidth >= 350.dp
@@ -680,7 +683,7 @@ fun FormantFilterEditor(
                     TinyKnob(
                         label = "", value = (selectedVowel + 1).toFloat(),
                         min = 1f, max = FORMANT_VOWEL_SLOTS.toFloat(),
-                        valueText = "${selectedVowel + 1}/$FORMANT_VOWEL_SLOTS",
+                        valueText = { "${it.roundToInt()}/$FORMANT_VOWEL_SLOTS" },
                         dragRangePx = 220f,
                         onValueChange = {
                             onSelectVowel(it.roundToInt().minus(1).coerceIn(0, FORMANT_VOWEL_SLOTS - 1))
@@ -693,7 +696,7 @@ fun FormantFilterEditor(
                     TinyKnob(
                         label = "", value = (selectedFormant + 1).toFloat(),
                         min = 1f, max = formant.count.toFloat(),
-                        valueText = "${selectedFormant + 1}/${formant.count}",
+                        valueText = { "${it.roundToInt()}/${formant.count}" },
                         dragRangePx = 220f,
                         onValueChange = {
                             onSelectFormant(it.roundToInt().minus(1).coerceIn(0, formant.count - 1))

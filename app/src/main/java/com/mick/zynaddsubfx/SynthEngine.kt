@@ -8,8 +8,11 @@ import java.util.Locale
 import java.util.zip.GZIPInputStream
 import kotlin.system.measureNanoTime
 
-class SynthEngine(private val context: Context) {
+class SynthEngine(private val context: Context) : InstrumentEditorEngine {
     companion object {
+        fun fineDetuneCents(type: Int, value: Int): Float =
+            NativeSynthBridge.nativeFineDetuneCents(type, value)
+
         @Volatile
         private var packagedPresetCache: List<PresetAsset>? = null
     }
@@ -291,7 +294,7 @@ class SynthEngine(private val context: Context) {
     fun soloPart(partIndex: Int): Boolean =
         runCatching { NativeSynthBridge.nativeSoloPart(partIndex) }.getOrDefault(false)
 
-    fun parameterSnapshot(partIndex: Int, kitIndex: Int): ParameterSnapshot {
+    override fun parameterSnapshot(partIndex: Int, kitIndex: Int): ParameterSnapshot {
         val values = runCatching {
             NativeSynthBridge.nativeGetParameterSnapshot(partIndex, kitIndex)
         }.getOrDefault("").lineSequence().mapNotNull { line ->
@@ -332,27 +335,27 @@ class SynthEngine(private val context: Context) {
         return ParameterSnapshot(partIndex, kitIndex, values)
     }
 
-    fun writeParameter(partIndex: Int, kitIndex: Int, write: ParameterWrite): Boolean =
+    override fun writeParameter(partIndex: Int, kitIndex: Int, write: ParameterWrite): Boolean =
         runCatching {
             NativeSynthBridge.nativeSetParameter(partIndex, kitIndex, write.path, write.value)
         }.getOrDefault(false)
 
-    fun preview(partIndex: Int, kitIndex: Int, address: ModuleAddress, resolution: Int = 128): PreviewSeries =
+    override fun preview(partIndex: Int, kitIndex: Int, address: ModuleAddress, resolution: Int): PreviewSeries =
         runCatching {
             NativeSynthBridge.nativeGetModulePreview(
                 partIndex, kitIndex, address.kind, address.index, address.role, resolution.coerceIn(16, 512)
             ).split(',').mapNotNull(String::toFloatOrNull).let(::PreviewSeries)
         }.getOrDefault(PreviewSeries.Empty)
 
-    fun copyModule(partIndex: Int, kitIndex: Int, address: ModuleAddress): Boolean = runCatching {
+    override fun copyModule(partIndex: Int, kitIndex: Int, address: ModuleAddress): Boolean = runCatching {
         NativeSynthBridge.nativeCopyModule(partIndex, kitIndex, address.kind, address.index, address.role)
     }.getOrDefault(false)
 
-    fun canPasteModule(address: ModuleAddress): Boolean = runCatching {
+    override fun canPasteModule(address: ModuleAddress): Boolean = runCatching {
         NativeSynthBridge.nativeCanPasteModule(address.kind, address.role)
     }.getOrDefault(false)
 
-    fun pasteModule(partIndex: Int, kitIndex: Int, address: ModuleAddress): Boolean = runCatching {
+    override fun pasteModule(partIndex: Int, kitIndex: Int, address: ModuleAddress): Boolean = runCatching {
         NativeSynthBridge.nativePasteModule(partIndex, kitIndex, address.kind, address.index, address.role)
     }.getOrDefault(false)
 

@@ -128,8 +128,12 @@ A la fin de chaque implementation, mettre a jour TASKS.md et TODO.md, retirer le
 
 - [x] Mute entre parts et kits : mute du premier kit respecte en mode non-kit ; test audible rapporte OK par Mick. Test natif `testNonKitMute` ajoute mais non execute.
 - [x] Vue Part / instrument : kits parents et nombre de kits, moteurs ADD/SUB/PAD, mute par kit, stereo par moteur, portamento regroupe et boutons LED. Compilation Kotlin OK ; verification visuelle et tactile sur appareil restante.
-- [ ] [Alleger les gestes continus AddSynth](docs/001_perf_gestes_addsynth.md)
-- [ ] [Aligner la liste des voix et corriger sa semantique](docs/002_fix_liste_voix.md)
+- [x] Gestes continus AddSynth : knobs de voix et harmoniques sur ecritures live + etat transitoire reduit, reconciliation unique en fin/annulation ; compilation Kotlin et 13 tests JVM OK. [Resultats et limites](docs/perf_gestes_addsynth.md).
+- [ ] QA des gestes AddSynth sur appareil : longues glissades rapides, annulation/navigation, preview final et parite audible ; version locale non installee ; emulateur disponible lors de la verification de la liste Voice le 31 octobre 2026. Cout natif `OscilGen::prepare()` encore a profiler.
+- [x] Liste Voice sur une ligne : courbe/bascule, Res, Vol, Pan, Detune, Vibrato, geometrie commune, raccourcis natifs conserves, LFO corrige et detune en cents natifs ; detail Voice complete pour activation/Resonance. [Resultats et QA restante](docs/voice_list.md).
+- [ ] QA liste Voice : rendu portrait/paysage/petite largeur, grande police, bascules et navigation, gestes/annulation, sources partagees et son. Compilation native deux ABI, 24 tests JVM et 14 verifications JNI sur emulateur OK ; version locale non installee.
+- [x] Knobs a faible plage : deplacement plafonne a 32 dp par pas, tests de densite et sensibilite ; controles Voice reunis et edition interne desactivee en partage externe. QA tactile/visuelle restante.
+- [ ] [Liste de choix sur appui long des knobs enum](docs/008_feat_enum_long_press.md) : feature separee, drag direct conserve.
 - [ ] [Uniformiser les activations 0/1 et reduire les enveloppes desactivees](docs/003_feat_enveloppes_01.md)
 - [ ] [Simplifier la navigation de Resonance](docs/004_ux_resonance.md)
 - [ ] [Completer les champs globaux et Voice manquants](docs/005_feat_parite_champs_addsynth.md)
@@ -160,13 +164,13 @@ Les fonctions Envelope libre, Formant et clipboard ci-dessous sont presentes dan
 |---|---|---|---|---|---|
 | PartUI / Instrument Kit | Ecran | `Main.Part` | `.Part[1..16]` | **Partiel** | Stabiliser Kit et activations ADD/SUB/PAD |
 | ADnoteUI - Global Parameters | Sections | `Main.Part.Part[1..16].Add` | `/Amplitude`, `/Frequency`, `/Filter` | **Partiel** | Verifier whitelist, couleurs et parite |
-| ADnoteUI - Voice list | Section / navigation | `Main.Part.Part[1..16].Add` | `/VoiceList` | **Implemente** | Affiner densite, indicateurs et libelle Resonance |
+| ADnoteUI - Voice list | Section / navigation | `Main.Part.Part[1..16].Add` | `/VoiceList` | **Implemente** | Rangees une ligne + mini-courbe de bascule implementees ; QA visuelle/tactile/audio restante |
 | ADnoteUI - Voice Parameters | Ecran | `Main.Part.Part[1..16].Add` | `.Voice[1..8]` | **Partiel** | Copy/paste present ; completer champs caches et valider audio/persistance |
 | Voice Filter | Section | `Main.Part.Part[1..16].Add.Voice[1..8]` | `/Filter` | **Implemente** | Formant present ; valider valeurs et rendu audible |
 | Voice Modulator | Section | `Main.Part.Part[1..16].Add.Voice[1..8]` | `/Modulation` | **Implemente** | QA audio approfondie des modes et routages |
 | ADnoteUI - Voice Oscillator | Preview + ecran | `Main.Part.Part[1..16].Add.Voice[1..8]` | `/OscillatorPreview` -> `.Oscillator` | **Partiel** | OscilGen avance |
 | ADnoteUI - Modulator Oscillator | Preview + ecran | `Main.Part.Part[1..16].Add.Voice[1..8]` | `/Modulation/OscillatorPreview` -> `.ModulatorOscillator` | **Implemente** | OscilGen avance |
-| OscilGenUI / OscilEditor | Controleur d'ecran | Ecrans Oscillator | `/Parameters`, `/Harmonics`, `/Phases` | **Partiel** | Preview natif present ; completer traitements avances et fluidite des harmoniques |
+| OscilGenUI / OscilEditor | Controleur d'ecran | Ecrans Oscillator | `/Parameters`, `/Harmonics`, `/Phases` | **Partiel** | Preview natif present ; completer traitements avances ; chemin de geste harmonique allege, fluidite tactile/audio a valider |
 | ResonanceUI | Preview + ecran | `Main.Part.Part[1..16].Add` | `/ResonancePreview` -> `.Resonance` | **Implemente** | QA valeurs et gestes |
 | EnvelopeUI / EnvelopeFreeEdit | Controleur | Variable | `/Amplitude|Frequency|Filter|Modulation/Envelope` | **Partiel** | Mode libre et edition graphique presents ; harmoniser activations et valider les roles |
 | LFOUI | Controleur | Variable | `/Amplitude|Frequency|Filter/LFO` | **Partiel** | Parite fine des instances et labels |

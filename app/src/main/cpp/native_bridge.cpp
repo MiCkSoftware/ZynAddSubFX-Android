@@ -360,6 +360,12 @@ Java_com_mick_zynaddsubfx_NativeSynthBridge_nativeGetParameterSnapshot(
     return env->NewStringUTF(value.c_str());
 }
 
+extern "C" JNIEXPORT jfloat JNICALL
+Java_com_mick_zynaddsubfx_NativeSynthBridge_nativeFineDetuneCents(
+        JNIEnv *, jobject, jint type, jint value) {
+    return ZynAndroidEngine::fineDetuneCents(type, value);
+}
+
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_mick_zynaddsubfx_NativeSynthBridge_nativeSetParameter(
         JNIEnv *env, jobject, jint partIndex, jint kitIndex, jstring path, jdouble value) {

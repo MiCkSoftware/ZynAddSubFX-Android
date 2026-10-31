@@ -1,8 +1,10 @@
 package com.mick.zynaddsubfx
 
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import kotlin.math.roundToInt
 import androidx.lifecycle.ViewModel
 
 data class InstrumentEditorState(
@@ -17,12 +19,17 @@ data class InstrumentEditorState(
     val operation: SynthEngine.OperationState = SynthEngine.OperationState.Idle,
 )
 
-class InstrumentEditorViewModel(private val engine: SynthEngine) : ViewModel() {
-    companion object {
-        // Temporary decision flag. Audio writes are always live; enabling this only defers
-        // the expensive snapshot/preview refresh until the knob gesture finishes.
-        private const val DEFER_KNOB_SNAPSHOT_REFRESH = true
+interface InstrumentEditorEngine {
+    fun parameterSnapshot(partIndex: Int, kitIndex: Int): SynthEngine.ParameterSnapshot
+    fun writeParameter(partIndex: Int, kitIndex: Int, write: SynthEngine.ParameterWrite): Boolean
+    fun preview(partIndex: Int, kitIndex: Int, address: ModuleAddress, resolution: Int = 128): PreviewSeries
+    fun copyModule(partIndex: Int, kitIndex: Int, address: ModuleAddress): Boolean
+    fun canPasteModule(address: ModuleAddress): Boolean
+    fun pasteModule(partIndex: Int, kitIndex: Int, address: ModuleAddress): Boolean
+}
 
+class InstrumentEditorViewModel(private val engine: InstrumentEditorEngine) : ViewModel() {
+    companion object {
         fun tabsFor(engineName: String): List<String> = when (engineName) {
             "ADD" -> listOf("Frequency", "Amp", "Filter", "Voices", "Resonance")
             "SUB" -> listOf("Global", "Amp", "Frequency", "Filter", "Harmonics")
@@ -35,13 +42,29 @@ class InstrumentEditorViewModel(private val engine: SynthEngine) : ViewModel() {
     var state by mutableStateOf(InstrumentEditorState())
         private set
 
+    // Only touched parameters are retained during a gesture; the native engine owns the values.
+    private val dragValues = mutableStateMapOf<String, Double>()
+
+    private var snapshotValues = emptyMap<String, SynthEngine.ParameterValue>()
+
+    fun parameterValue(parameter: SynthEngine.ParameterValue): Double =
+        dragValues[parameter.descriptor.path] ?: snapshotValues[parameter.descriptor.path]?.value ?: parameter.value
+
+    private fun readSnapshot(partIndex: Int, kitIndex: Int): SynthEngine.ParameterSnapshot {
+        val snapshot = engine.parameterSnapshot(partIndex, kitIndex)
+        snapshotValues = snapshot.values.associateBy { it.descriptor.path }
+        dragValues.clear()
+        return snapshot
+    }
+
     fun open(partIndex: Int, kitIndex: Int = state.kitIndex) {
         val safePart = partIndex.coerceIn(0, 15)
         val safeKit = kitIndex.coerceIn(0, 15)
         state = state.copy(
             partIndex = safePart,
             kitIndex = safeKit,
-            snapshot = engine.parameterSnapshot(safePart, safeKit),
+            revision = state.revision + 1,
+            snapshot = readSnapshot(safePart, safeKit),
             operation = SynthEngine.OperationState.Idle,
         )
     }
@@ -49,6 +72,7 @@ class InstrumentEditorViewModel(private val engine: SynthEngine) : ViewModel() {
     fun selectKit(kitIndex: Int) = open(state.partIndex, kitIndex)
 
     fun selectEngine(engineName: String) {
+        finishParameterDrag()
         state = state.copy(
             selectedEngine = engineName,
             selectedTab = tabsFor(engineName).first(),
@@ -56,10 +80,12 @@ class InstrumentEditorViewModel(private val engine: SynthEngine) : ViewModel() {
     }
 
     fun selectTab(tab: String) {
+        finishParameterDrag()
         state = state.copy(selectedTab = tab)
     }
 
     fun selectVoice(voice: Int) {
+        finishParameterDrag()
         state = state.copy(selectedVoice = voice.coerceIn(0, 7))
     }
 
@@ -67,12 +93,12 @@ class InstrumentEditorViewModel(private val engine: SynthEngine) : ViewModel() {
         val descriptor = parameter.descriptor
         val normalized = when (descriptor.type) {
             SynthEngine.ParameterType.BOOLEAN -> if (value >= 0.5) 1.0 else 0.0
-            else -> value.coerceIn(descriptor.minimum, descriptor.maximum)
+            else -> value.roundToInt().toDouble().coerceIn(descriptor.minimum, descriptor.maximum)
         }
-        if (state.snapshot?.values?.firstOrNull {
-                it.descriptor.path == descriptor.path
-            }?.value == normalized
-        ) return
+        if (parameterValue(parameter) == normalized) {
+            if (refresh) finishParameterDrag()
+            return
+        }
         if (!engine.writeParameter(
                 state.partIndex,
                 state.kitIndex,
@@ -82,30 +108,31 @@ class InstrumentEditorViewModel(private val engine: SynthEngine) : ViewModel() {
             state = state.copy(operation = SynthEngine.OperationState.Failed("Could not update ${descriptor.label}"))
             return
         }
-        val optimistic = state.snapshot?.copy(values = state.snapshot?.values.orEmpty().map {
-            if (it.descriptor.path == descriptor.path) it.copy(value = normalized) else it
-        })
-        val refreshed = if (refresh) engine.parameterSnapshot(state.partIndex, state.kitIndex) else optimistic
-        state = state.copy(
-            snapshot = refreshed,
-            dirty = true,
-            revision = state.revision + if (refresh) 1 else 0,
-            operation = SynthEngine.OperationState.Idle,
-        )
+        dragValues[descriptor.path] = normalized
+        if (refresh) {
+            state = state.copy(
+                snapshot = readSnapshot(state.partIndex, state.kitIndex),
+                dirty = true,
+                revision = state.revision + 1,
+                operation = SynthEngine.OperationState.Idle,
+            )
+        } else if (!state.dirty || state.operation != SynthEngine.OperationState.Idle) {
+            state = state.copy(dirty = true, operation = SynthEngine.OperationState.Idle)
+        }
     }
 
     fun commitEdits() {
         state = state.copy(
-            snapshot = engine.parameterSnapshot(state.partIndex, state.kitIndex),
+            snapshot = readSnapshot(state.partIndex, state.kitIndex),
             revision = state.revision + 1,
         )
     }
 
     fun dragParameter(parameter: SynthEngine.ParameterValue, value: Double) =
-        write(parameter, value, refresh = !DEFER_KNOB_SNAPSHOT_REFRESH)
+        write(parameter, value, refresh = false)
 
     fun finishParameterDrag() {
-        if (DEFER_KNOB_SNAPSHOT_REFRESH) commitEdits()
+        if (dragValues.isNotEmpty()) commitEdits()
     }
 
     fun commitResonanceCurve(original: List<SynthEngine.ParameterValue>, values: List<Int>) {
@@ -128,7 +155,7 @@ class InstrumentEditorViewModel(private val engine: SynthEngine) : ViewModel() {
         }
         if (changed) {
             state = state.copy(
-                snapshot = engine.parameterSnapshot(state.partIndex, state.kitIndex),
+                snapshot = readSnapshot(state.partIndex, state.kitIndex),
                 dirty = true,
                 revision = state.revision + 1,
                 operation = SynthEngine.OperationState.Idle,
@@ -144,7 +171,7 @@ class InstrumentEditorViewModel(private val engine: SynthEngine) : ViewModel() {
             )
         ) {
             state = state.copy(
-                snapshot = engine.parameterSnapshot(state.partIndex, state.kitIndex),
+                snapshot = readSnapshot(state.partIndex, state.kitIndex),
                 dirty = true,
                 revision = state.revision + 1,
                 operation = SynthEngine.OperationState.Idle,
@@ -171,7 +198,7 @@ class InstrumentEditorViewModel(private val engine: SynthEngine) : ViewModel() {
             return
         }
         state = state.copy(
-            snapshot = engine.parameterSnapshot(state.partIndex, state.kitIndex),
+            snapshot = readSnapshot(state.partIndex, state.kitIndex),
             dirty = true,
             revision = state.revision + 1,
             operation = SynthEngine.OperationState.Succeeded,
@@ -192,7 +219,7 @@ class InstrumentEditorViewModel(private val engine: SynthEngine) : ViewModel() {
             )
         ) {
             state = state.copy(
-                snapshot = engine.parameterSnapshot(state.partIndex, state.kitIndex),
+                snapshot = readSnapshot(state.partIndex, state.kitIndex),
                 dirty = true,
                 revision = state.revision + 1,
                 operation = SynthEngine.OperationState.Idle,

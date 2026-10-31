@@ -28,6 +28,7 @@ object NativeSynthBridge {
     external fun nativeGetCurrentPartsSummary(): String
     external fun nativeGetCurrentMixerSummary(): String
     external fun nativeGetParameterSnapshot(partIndex: Int, kitIndex: Int): String
+    external fun nativeFineDetuneCents(type: Int, value: Int): Float
     external fun nativeSetParameter(partIndex: Int, kitIndex: Int, path: String, value: Double): Boolean
     external fun nativeGetModulePreview(
         partIndex: Int, kitIndex: Int, kind: Int, index: Int, role: Int, resolution: Int

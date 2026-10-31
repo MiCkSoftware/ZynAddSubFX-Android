@@ -55,11 +55,16 @@ import com.mick.zynaddsubfx.ui.theme.LedDefaultHue
 import com.mick.zynaddsubfx.ui.theme.LedFxHue
 import com.mick.zynaddsubfx.ui.theme.LedStereoHue
 import com.mick.zynaddsubfx.ui.theme.ledColors
+import kotlin.math.roundToInt
 
 enum class KnobSensitivity {
     Default,
     Adjust,
 }
+
+// Bound the physical travel per value while retaining the existing scale for wide ranges.
+internal fun knobDragRangePx(valueRange: Float, requestedRangePx: Float, pixelsPerStep: Float): Float =
+    minOf(requestedRangePx.coerceAtLeast(1f), valueRange.coerceAtLeast(1f) * pixelsPerStep.coerceAtLeast(1f))
 
 const val LedSlotWidth = 53
 
@@ -101,23 +106,32 @@ fun TinyKnob(
     max: Float,
     dragRangePx: Float = 600f,
     sensitivity: KnobSensitivity = KnobSensitivity.Default,
-    valueText: String = value.toInt().toString(),
+    valueText: (Float) -> String = { it.roundToInt().toString() },
     onValueChangeFinished: () -> Unit = {},
+    enabled: Boolean = true,
     onValueChange: (Float) -> Unit,
 ) {
     val screenHeightPx = with(androidx.compose.ui.platform.LocalDensity.current) {
         LocalConfiguration.current.screenHeightDp.dp.toPx()
     }
-    val effectiveDragRangePx = when (sensitivity) {
+    val requestedDragRangePx = when (sensitivity) {
         KnobSensitivity.Default -> dragRangePx
         KnobSensitivity.Adjust -> screenHeightPx.coerceAtLeast(1f)
     }
     val safeRange = (max - min).coerceAtLeast(1f)
+    val pixelsPerStep = with(androidx.compose.ui.platform.LocalDensity.current) { 32.dp.toPx() }
+    val effectiveDragRangePx = knobDragRangePx(safeRange, requestedDragRangePx, pixelsPerStep)
+    val shortRange = safeRange * pixelsPerStep <= requestedDragRangePx
     val normalized = ((value - min) / safeRange).coerceIn(0f, 1f)
     val currentValue by rememberUpdatedState(value)
+    val currentOnValueChange by rememberUpdatedState(onValueChange)
     val currentOnValueChangeFinished by rememberUpdatedState(onValueChangeFinished)
     var dragNormalized by remember { mutableFloatStateOf(normalized) }
     var isDragging by remember { mutableStateOf(false) }
+
+    val displayNormalized = if (isDragging) dragNormalized else normalized
+    val displayValue = if (isDragging) min + dragNormalized * safeRange else value
+    val displayText = valueText(displayValue)
 
     LaunchedEffect(normalized) {
         if (!isDragging) {
@@ -129,30 +143,39 @@ fun TinyKnob(
         Box(
             modifier = Modifier
                 .size(43.dp)
-                .pointerInput(min, max, effectiveDragRangePx, sensitivity) {
-                    detectDragGestures(
-                        onDragStart = {
-                            isDragging = true
-                            dragNormalized = ((currentValue - min) / safeRange).coerceIn(0f, 1f)
-                        },
-                        onDragEnd = {
-                            isDragging = false
-                            currentOnValueChangeFinished()
-                        },
-                        onDragCancel = {
+                .pointerInput(min, max, effectiveDragRangePx, requestedDragRangePx, sensitivity, enabled) {
+                    if (!enabled) return@pointerInput
+                    try {
+                        detectDragGestures(
+                            onDragStart = {
+                                isDragging = true
+                                dragNormalized = ((currentValue - min) / safeRange).coerceIn(0f, 1f)
+                            },
+                            onDragEnd = {
+                                isDragging = false
+                                currentOnValueChangeFinished()
+                            },
+                            onDragCancel = {
+                                isDragging = false
+                                currentOnValueChangeFinished()
+                            }
+                        ) { change, dragAmount ->
+                            change.consume()
+                            val deltaRaw = ((-dragAmount.y) + (dragAmount.x * 0.2f)) / effectiveDragRangePx
+                            val delta = if (shortRange || sensitivity == KnobSensitivity.Adjust) {
+                                deltaRaw
+                            } else {
+                                deltaRaw.coerceIn(-0.03f, 0.03f)
+                            }
+                            dragNormalized = (dragNormalized + delta).coerceIn(0f, 1f)
+                            currentOnValueChange(min + dragNormalized * safeRange)
+                        }
+                    } finally {
+                        // Pointer input can be cancelled by navigation or a changed control range.
+                        if (isDragging) {
                             isDragging = false
                             currentOnValueChangeFinished()
                         }
-                    ) { change, dragAmount ->
-                        change.consume()
-                        val deltaRaw = ((-dragAmount.y) + (dragAmount.x * 0.2f)) / effectiveDragRangePx
-                        val delta = if (sensitivity == KnobSensitivity.Adjust) {
-                            deltaRaw
-                        } else {
-                            deltaRaw.coerceIn(-0.03f, 0.03f)
-                        }
-                        dragNormalized = (dragNormalized + delta).coerceIn(0f, 1f)
-                        onValueChange(min + dragNormalized * safeRange)
                     }
                 }
         ) {
@@ -166,19 +189,19 @@ fun TinyKnob(
                 drawArc(
                     color = Color(0xFF33C8C8),
                     startAngle = 140f,
-                    sweepAngle = 260f * normalized,
+                    sweepAngle = 260f * displayNormalized,
                     useCenter = false,
                     style = androidx.compose.ui.graphics.drawscope.Stroke(stroke)
                 )
             }
             Text(
-                text = valueText,
+                text = displayText,
                 modifier = Modifier.align(Alignment.Center),
                 color = MaterialTheme.colorScheme.onSurface,
                 textAlign = TextAlign.Center,
                 fontSize = when {
-                    kotlin.math.abs(value) >= 10000f -> 9.sp
-                    kotlin.math.abs(value) >= 1000f -> 11.sp
+                    displayText.length >= 7 || kotlin.math.abs(value) >= 10000f -> 9.sp
+                    displayText.length >= 5 || kotlin.math.abs(value) >= 1000f -> 11.sp
                     kotlin.math.abs(value) >= 100f -> 13.sp
                     else -> 14.sp
                 },
@@ -601,30 +624,35 @@ fun LedButton(
     action: Boolean = false,
     displayLabel: String = label,
     halfWidth: Boolean = false,
+    enabled: Boolean = true,
+    compact: Boolean = false,
     content: (@Composable () -> Unit)? = null,
 ) {
     val colors = ledColors(lit, hue)
+    val borderColor = if (!lit && !action) Color.hsv(hue, .30f, .32f) else colors.border
+    val contentColor = if (!lit && !action) Color.hsv(hue, .30f, .55f) else colors.content
     Surface(
-        modifier = modifier.then(if (halfWidth) Modifier.width((LedSlotWidth / 2f).dp) else Modifier).height(29.dp)
+        modifier = modifier.then(if (halfWidth) Modifier.width((LedSlotWidth / 2f).dp) else Modifier).height(if (compact) 27.dp else 29.dp)
+            .alpha(if (enabled) 1f else .42f)
             .semantics {
                 contentDescription = label
                 if (!action) stateDescription = if (lit) "On" else "Off"
             }
-            .clickable(onClick = onClick),
+            .clickable(enabled = enabled, onClick = onClick),
         shape = RoundedCornerShape(6.dp),
         color = Color(0xFF090E10),
         shadowElevation = 2.dp,
     ) {
         Box(
             modifier = Modifier.fillMaxSize()
-                .background(colors.border.copy(alpha = if (lit) .55f else .45f))
+                .background(borderColor.copy(alpha = if (lit) .55f else .45f))
                 .padding(.75.dp)
                 .clip(RoundedCornerShape(5.dp))
                 .background(Brush.verticalGradient(listOf(
-                    if (lit) Color.hsv(hue, .95f, .32f) else Color(0xFF30383A),
-                    if (lit) Color.hsv(hue, .98f, .51f) else Color(0xFF292F31),
-                    if (lit) Color.hsv(hue, 1f, .58f) else Color(0xFF252B2D),
-                    if (lit) Color.hsv(hue, .97f, .34f) else Color(0xFF1D2426),
+                    if (lit) Color.hsv(hue, .95f, .32f) else if (action) Color(0xFF30383A) else Color.hsv(hue, .30f, .22f),
+                    if (lit) Color.hsv(hue, .98f, .51f) else if (action) Color(0xFF292F31) else Color.hsv(hue, .30f, .19f),
+                    if (lit) Color.hsv(hue, 1f, .58f) else if (action) Color(0xFF252B2D) else Color.hsv(hue, .30f, .17f),
+                    if (lit) Color.hsv(hue, .97f, .34f) else if (action) Color(0xFF1D2426) else Color.hsv(hue, .30f, .14f),
                 )))
                 .border(.5.dp, Color.Black.copy(alpha = .35f), RoundedCornerShape(5.dp)),
             contentAlignment = Alignment.Center,
@@ -635,8 +663,9 @@ fun LedButton(
                 .background(Brush.verticalGradient(listOf(
                     Color.White.copy(alpha = if (lit) .12f else .08f), Color.Transparent,
                 ))))
-            if (content != null) content() else Text(displayLabel, color = colors.content,
-                style = MaterialTheme.typography.labelMedium, maxLines = 1)
+            if (content != null) content() else Text(displayLabel, color = contentColor,
+                style = if (compact) MaterialTheme.typography.labelSmall else MaterialTheme.typography.labelMedium,
+                maxLines = 1)
         }
     }
 }

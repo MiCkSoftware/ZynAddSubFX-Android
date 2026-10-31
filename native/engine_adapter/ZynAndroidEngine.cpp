@@ -12,6 +12,7 @@
 
 #include "globals.h"
 #include "Misc/Config.h"
+#include "Misc/Util.h"
 #include "Misc/Master.h"
 #include "Misc/Part.h"
 #include "Misc/XMLwrapper.h"
@@ -1011,6 +1012,10 @@ std::string ZynAndroidEngine::parameterSnapshot(int partIndex, int kitIndex) con
         add("pad/fixedFreq", "Fixed frequency", "PAD / Frequency", "bool", p.Pfixedfreq, 0, 1, 0);
     }
     return out.str();
+}
+
+float ZynAndroidEngine::fineDetuneCents(int type, int value) {
+    return zyn::getdetune(std::clamp(type, 1, 4), 0, std::clamp(value, 0, 16383));
 }
 
 bool ZynAndroidEngine::setParameter(int partIndex, int kitIndex, const std::string &path, double value) {

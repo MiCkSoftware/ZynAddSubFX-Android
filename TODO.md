@@ -4,8 +4,12 @@ Ordre de traitement issu de l'analyse du code, recontrole le 27 octobre 2026.
 Ces prompts detaillent les notes ci-dessous sans remplacer les autres sujets du backlog.
 Chaque agent doit mettre a jour TODO.md et TASKS.md, retirer les liens vers son prompt puis supprimer le fichier quand son implementation est terminee.
 
-- [ ] [Alleger les gestes continus AddSynth](docs/001_perf_gestes_addsynth.md)
-- [ ] [Aligner la liste des voix et corriger sa semantique](docs/002_fix_liste_voix.md)
+- [x] Gestes continus AddSynth : knobs de voix et harmoniques sur ecritures live + etat transitoire reduit, reconciliation unique en fin/annulation ; compilation Kotlin et 13 tests JVM OK. [Resultats et limites](docs/perf_gestes_addsynth.md).
+- [ ] QA des gestes AddSynth sur appareil : longues glissades rapides, annulation/navigation, preview final et parite audible ; version locale non installee ; emulateur disponible lors de la verification de la liste Voice le 31 octobre 2026. Cout natif `OscilGen::prepare()` encore a profiler.
+- [x] Liste Voice sur une ligne : courbe/bascule, Res, Vol, Pan, Detune, Vibrato, geometrie commune, raccourcis natifs conserves, LFO corrige et detune en cents natifs ; detail Voice complete pour activation/Resonance. [Resultats et QA restante](docs/voice_list.md).
+- [ ] QA liste Voice : rendu portrait/paysage/petite largeur, grande police, bascules et navigation, gestes/annulation, sources partagees et son. Compilation native deux ABI, 24 tests JVM et 14 verifications JNI sur emulateur OK ; version locale non installee.
+- [x] Knobs a faible plage : deplacement plafonne a 32 dp par pas, tests de densite et sensibilite ; controles Voice reunis et edition interne desactivee en partage externe. QA tactile/visuelle restante.
+- [ ] [Liste de choix sur appui long des knobs enum](docs/008_feat_enum_long_press.md) : feature separee, drag direct conserve.
 - [ ] [Uniformiser les activations 0/1 et reduire les enveloppes desactivees](docs/003_feat_enveloppes_01.md)
 - [ ] [Simplifier la navigation de Resonance](docs/004_ux_resonance.md)
 - [ ] [Completer les champs globaux et Voice manquants](docs/005_feat_parite_champs_addsynth.md)
@@ -16,8 +20,8 @@ Chaque agent doit mettre a jour TODO.md et TASKS.md, retirer les liens vers son 
 - replace voice enveloppe toggles by 0 1 and apply the same to adDynth main screen
 - portamento not working ?
 - ADsynth Oscillator Editor incomplete ?
-- addsynth voices colmun not aligned
-- finish parity with legacy voices list
+- [x] Alignement liste Voice : rangees compactes avec geometrie commune sur une ligne ; verification visuelle restante.
+- [x] Raccourcis de la liste native Voice conserves et corriges (LFO/Unison, detune, Resonance) ; QA tactile/audio restante, voir docs/voice_list.md.
 - Parts : all on same screen (selected on is unfolded)
 - [x] Parts : mini clavier visible en bas, reutilise depuis les editeurs d'instrument ; verification tactile sur appareil restante.
 - Parts: 3 dot menu is werid ; why save to ? remove nav to kit X
