@@ -1,5 +1,12 @@
 # Liste des voix AddSynth — rangees compactes sur une ligne (31 octobre 2026)
 
+## Cloture
+
+Feature cloturee a la demande de Mick le 31 octobre 2026 apres validation de l'UX courante.
+Les captures fournies par Mick montrent la version utilisee ; l'agent n'a pas installe l'application.
+Cette acceptation ne vaut pas execution de toutes les verifications audio, accessibilite et multi-appareils
+listees plus bas, qui restent dans la QA transversale. La feature 008 (liste sur appui long) reste ouverte.
+
 ## Disposition et interactions implementees
 
 Les huit voix utilisent une rangee compacte dans l'ordre **courbe, Res, Vol, Pan, Detune, Vibrato**,
@@ -135,9 +142,9 @@ et `./gradlew :app:externalNativeBuildDebug --offline --no-daemon`.
 
 ## Limites et QA restante
 
-Un emulateur arm64 est disponible ; cette version de l'application n'a pas ete installee.
-Les tests Android n'ont pas ete executes par instrumentation et aucune capture de la nouvelle UI
-n'a ete produite. Les preuves de compilation/routage/conversion ne valident pas le rendu tactile ou audible.
+Un emulateur arm64 est disponible ; l'agent n'a pas installe cette version de l'application.
+Les tests Android n'ont pas ete executes par instrumentation. Les captures fournies par Mick et sa
+validation cloturent l'UX courante ; les autres parcours tactiles/audio et appareils restent a verifier.
 
 - Verifier portrait, paysage, petite largeur et grande police : alignement de la rangee unique,
   lisibilite des cents, labels et surfaces tactiles des knobs.

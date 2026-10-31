@@ -1,5 +1,12 @@
 # Gestes continus AddSynth — implementation du 31 octobre 2026
 
+## Cloture
+
+Feature cloturee a la demande de Mick le 31 octobre 2026 apres validation de l'UX courante.
+Les captures fournies par Mick montrent la version utilisee ; l'agent n'a pas installe l'application.
+Cette acceptation ne vaut pas execution de toutes les verifications audio, accessibilite et multi-appareils
+listees plus bas, qui restent dans la QA transversale. La feature 008 (liste sur appui long) reste ouverte.
+
 ## Contrat et proprietaires
 
 Le moteur natif reste la source des valeurs et recoit les ecritures pendant le geste.
@@ -59,7 +66,8 @@ par les tests JVM.
 
 ## Limites et QA restante
 
-`adb devices` ne retourne aucun appareil ni emulateur. Aucune installation effectuee.
+Lors de la verification initiale, `adb devices` ne retournait aucun appareil ni emulateur.
+Un emulateur est ensuite devenu disponible. Aucune installation effectuee par l'agent.
 Aucun changement C++ : le trajet JNI `nativeSetParameter` appelle seulement `setParameter`,
 sans snapshot ni inspection globale. Les ecritures d'oscillateur gardent `o.prepare()` pour
 appliquer les harmoniques au son : `needPrepare()` ne detecte pas seul les changements des tableaux

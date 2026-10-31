@@ -128,13 +128,13 @@ A la fin de chaque implementation, mettre a jour TASKS.md et TODO.md, retirer le
 
 - [x] Mute entre parts et kits : mute du premier kit respecte en mode non-kit ; test audible rapporte OK par Mick. Test natif `testNonKitMute` ajoute mais non execute.
 - [x] Vue Part / instrument : kits parents et nombre de kits, moteurs ADD/SUB/PAD, mute par kit, stereo par moteur, portamento regroupe et boutons LED. Compilation Kotlin OK ; verification visuelle et tactile sur appareil restante.
-- [x] Gestes continus AddSynth : knobs de voix et harmoniques sur ecritures live + etat transitoire reduit, reconciliation unique en fin/annulation ; compilation Kotlin et 13 tests JVM OK. [Resultats et limites](docs/perf_gestes_addsynth.md).
-- [ ] QA des gestes AddSynth sur appareil : longues glissades rapides, annulation/navigation, preview final et parite audible ; version locale non installee ; emulateur disponible lors de la verification de la liste Voice le 31 octobre 2026. Cout natif `OscilGen::prepare()` encore a profiler.
-- [x] Liste Voice sur une ligne : courbe/bascule, Res, Vol, Pan, Detune, Vibrato, geometrie commune, raccourcis natifs conserves, LFO corrige et detune en cents natifs ; detail Voice complete pour activation/Resonance. [Resultats et QA restante](docs/voice_list.md).
-- [ ] QA liste Voice : rendu portrait/paysage/petite largeur, grande police, bascules et navigation, gestes/annulation, sources partagees et son. Compilation native deux ABI, 24 tests JVM et 14 verifications JNI sur emulateur OK ; version locale non installee.
-- [x] Knobs a faible plage : deplacement plafonne a 32 dp par pas, tests de densite et sensibilite ; controles Voice reunis et edition interne desactivee en partage externe. QA tactile/visuelle restante.
+- [x] Gestes continus AddSynth — cloture validee par Mick le 31 octobre 2026 : knobs de voix et harmoniques sur ecritures live + etat transitoire reduit, reconciliation unique en fin/annulation ; compilation Kotlin et 13 tests JVM OK. [Resultats et limites](docs/perf_gestes_addsynth.md).
+- [ ] QA complementaire transversale des gestes : stress/annulation, autres appareils, parite audible approfondie et profilage du cout natif `OscilGen::prepare()`. La validation UX courante par Mick cloture la feature ; ces verifications etendues restent distinctes.
+- [x] Liste Voice — cloture validee par Mick le 31 octobre 2026 : courbe/bascule, Res, Vol, Pan, Detune, Vibrato, geometrie commune, raccourcis natifs conserves, LFO corrige et detune en cents natifs ; detail Voice complete pour activation/Resonance. [Resultats et QA restante](docs/voice_list.md).
+- [ ] QA complementaire liste Voice : paysage/petite largeur/grande police, lecteur d'ecran, stress des gestes, sources partagees et audio approfondi. UX courante validee par Mick ; compilation native deux ABI, 24 tests JVM et 14 verifications JNI OK.
+- [x] Knobs a faible plage : deplacement plafonne a 32 dp par pas, tests de densite et sensibilite ; controles Voice reunis et edition interne desactivee en partage externe. Validation UX courante par Mick le 31 octobre 2026 ; QA etendue dans les points transverses.
 - [ ] [Liste de choix sur appui long des knobs enum](docs/008_feat_enum_long_press.md) : feature separee, drag direct conserve.
-- [ ] [Uniformiser les activations 0/1 et reduire les enveloppes desactivees](docs/003_feat_enveloppes_01.md)
+- [ ] [Harmoniser les en-tetes ON/C/P, Polarity +/− et clipboard Amplitude dedie](docs/003_feat_enveloppes_01.md)
 - [ ] [Simplifier la navigation de Resonance](docs/004_ux_resonance.md)
 - [ ] [Completer les champs globaux et Voice manquants](docs/005_feat_parite_champs_addsynth.md)
 - [ ] [Completer OscilGen pour Voice et Modulator](docs/006_feat_oscilgen_complet.md)
