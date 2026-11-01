@@ -207,7 +207,9 @@ private fun SynthEditorScaffold(
             Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp)) {
                 Text(contextPath, color = Color(0xFF7AB8BA), style = MaterialTheme.typography.labelSmall)
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(onClick = onNavigateUp) { Text(navigationLabel) }
+                    TextButton(onClick = onNavigateUp) {
+                        Text(navigationLabel, fontFamily = FontFamily(Font(R.font.vt323regular)), fontSize = 15.sp)
+                    }
                     Text(
                         title,
                         color = Color(0xFF8EF5EE),
@@ -233,7 +235,8 @@ private fun SynthEditorScaffold(
                             shape = RoundedCornerShape(6.dp),
                             modifier = Modifier.clickable { onTabSelected(tab) },
                         ) {
-                            Text(tab, modifier = Modifier.padding(horizontal = 11.dp, vertical = 5.dp))
+                            Text(tab, fontFamily = FontFamily(Font(R.font.vt323regular)), fontSize = 15.sp,
+                                modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp))
                         }
                     }
                 }
