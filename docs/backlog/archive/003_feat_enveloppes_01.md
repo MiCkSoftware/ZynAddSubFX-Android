@@ -63,7 +63,7 @@ Quand l'implementation et les verifications de ce perimetre sont terminees :
 ## Etat local — 1 novembre 2026
 
 - Implementation locale : en-tetes et masquage des modules desactives, Polarity et clipboard dedie a l'amplitude de voix. Le bloc ADD global ne propose pas de clipboard Amplitude.
-- Compilation Kotlin/native, tests unitaires et compilation des tests instrumentes reussis. Aucun appareil Android detecte : les tests instrumentes ne sont pas executes.
+- Compilation Kotlin/native, tests unitaires et compilation des tests instrumentes reussis. Les tests instrumentes ne sont pas executes ; le cadre de cette tache ne demande pas d’installation. Des appareils sont maintenant visibles, mais cela ne constitue pas une execution des tests.
 - Reste a verifier sur appareil : tous les roles et leur restauration, mode libre, accessibilite et presentation, Polarity et reset, clipboard entre parts/kits/voix et incompatibilites, absence de changements des autres blocs, fluidite et rendu audio. Etendre le test instrumente aux scopes Part/Kit et au reset. Conserver ce fichier jusqu'a achevement de ces verifications.
 
 ## Retours de test — 1 novembre 2026
@@ -73,3 +73,10 @@ Quand l'implementation et les verifications de ce perimetre sont terminees :
 - ADD global : les enveloppes, LFO et filtre ne disposent pas de flags natifs ON/OFF equivalents aux flags des voix. Decision confirmee : ne rien ajouter.
 
 - Hierarchie corrigee apres retour visuel : barre superieure inchangee, bandeau pour les sections, trait pour leurs modules ; titre Voice redondant retire. QA visuelle sur appareil restante.
+
+## Reste pour cloture
+
+- Executer et completer les verifications du perimetre indique ci-dessus, notamment les scopes Part/Kit et le reset. La validation manuelle sur appareil est en cours avec Mick ; ne pas la considerer acquise sans resultat.
+- Le filtre de voix desactive masque desormais egalement son enveloppe et son LFO, sans changer leurs activations ; verifier leur restauration.
+- Les assertions du test Compose ont ete actualisees aux libelles accessibles actuels ; leur execution reste a faire.
+- Une fois les verifications terminees, reporter les resultats durables dans TASKS.md et TODO.md, retirer les liens vers ce fichier et le supprimer.
