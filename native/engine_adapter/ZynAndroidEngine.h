@@ -130,7 +130,6 @@ private:
     std::unique_ptr<zyn::Master> master_;
     std::unique_ptr<zyn::PresetsStore> presetsStore_;
     std::string clipboardKind_;
-    int clipboardRole_ = -1;
     std::vector<float> zynLeft_;
     std::vector<float> zynRight_;
     std::string lastLoadedPresetPath_;

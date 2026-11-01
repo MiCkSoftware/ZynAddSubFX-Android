@@ -134,7 +134,7 @@ A la fin de chaque implementation, mettre a jour TASKS.md et TODO.md, retirer le
 - [ ] QA complementaire liste Voice : paysage/petite largeur/grande police, lecteur d'ecran, stress des gestes, sources partagees et audio approfondi. UX courante validee par Mick ; compilation native deux ABI, 24 tests JVM et 14 verifications JNI OK.
 - [x] Knobs a faible plage : deplacement plafonne a 32 dp par pas, tests de densite et sensibilite ; controles Voice reunis et edition interne desactivee en partage externe. Validation UX courante par Mick le 31 octobre 2026 ; QA etendue dans les points transverses.
 - [ ] [Liste de choix sur appui long des knobs enum](docs/008_feat_enum_long_press.md) : feature separee, drag direct conserve.
-- [ ] [Harmoniser les en-tetes ON/C/P, Polarity +/− et clipboard Amplitude dedie](docs/003_feat_enveloppes_01.md)
+- [ ] Harmonisation ON/C/P, Polarity et clipboard Amplitude de voix implementes localement ; QA Android, audio et scopes Part/Kit/Voice restante (voir docs/backlog/003_feat_enveloppes_01.md).
 - [ ] [Simplifier la navigation de Resonance](docs/004_ux_resonance.md)
 - [ ] [Completer les champs globaux et Voice manquants](docs/005_feat_parite_champs_addsynth.md)
 - [ ] [Completer OscilGen pour Voice et Modulator](docs/006_feat_oscilgen_complet.md)

@@ -1324,9 +1324,9 @@ bool ZynAndroidEngine::setParameter(int partIndex, int kitIndex, const std::stri
             else if (field.rfind("filterLfo/", 0) == 0 && v.FilterLfo)
                 return writeLfo(*v.FilterLfo, field.substr(10));
             else if (field.rfind("modAmpEnvelope/", 0) == 0 && v.FMAmpEnvelope)
-                return writeEnvelope(*v.FMAmpEnvelope, field.substr(16));
+                return writeEnvelope(*v.FMAmpEnvelope, field.substr(sizeof("modAmpEnvelope/") - 1));
             else if (field.rfind("modFreqEnvelope/", 0) == 0 && v.FMFreqEnvelope)
-                return writeEnvelope(*v.FMFreqEnvelope, field.substr(17));
+                return writeEnvelope(*v.FMFreqEnvelope, field.substr(sizeof("modFreqEnvelope/") - 1));
             else if (field.rfind("filter", 0) == 0 && v.VoiceFilter) {
                 auto &filter = *v.VoiceFilter;
                 if (field.rfind("filter/formant/", 0) == 0)
@@ -1417,12 +1417,6 @@ bool ZynAndroidEngine::setParameter(int partIndex, int kitIndex, const std::stri
 }
 
 namespace {
-int normalizedEnvelopeRole(int role) {
-    if (role == 3) return 0;
-    if (role == 4) return 1;
-    return role;
-}
-
 const char *moduleKindName(int kind) {
     switch (kind) {
         case 0: return "voice";
@@ -1432,6 +1426,7 @@ const char *moduleKindName(int kind) {
         case 4: return "filter";
         case 5: return "resonance";
         case 6: return "vowel";
+        case 7: return "voice-amplitude";
         default: return "";
     }
 }
@@ -1481,16 +1476,27 @@ bool ZynAndroidEngine::copyModule(int partIndex, int kitIndex, int kind, int ind
     } else if (kind == 5) {
         if (!global.Reson) return false;
         global.Reson->copy(*presetsStore_, nullptr);
+    } else if (kind == 7) {
+        if (index < 0 || index >= NUM_VOICES) return false;
+        const auto &voice = kit.adpars->VoicePar[index];
+        zyn::XMLwrapper xml;
+        xml.beginbranch("VoiceAmplitude");
+        xml.addpar("polarity", voice.PVolumeminus);
+        xml.addparreal("volume", voice.volume);
+        xml.addpar("velocity", voice.PAmpVelocityScaleFunction);
+        xml.addpar("panning", voice.PPanning);
+        xml.endbranch();
+        char type[] = "VoiceAmplitude";
+        presetsStore_->copyclipboard(xml, type);
     } else return false;
     clipboardKind_ = moduleKindName(kind);
-    clipboardRole_ = kind == 2 ? normalizedEnvelopeRole(role) : role;
     return !presetsStore_->clipboard.data.empty();
 }
 
 bool ZynAndroidEngine::canPasteModule(int kind, int role) const {
     if (!presetsStore_ || presetsStore_->clipboard.data.empty() || clipboardKind_ != moduleKindName(kind)) return false;
-    if (kind == 2) return clipboardRole_ == normalizedEnvelopeRole(role);
-    return kind == 3 || kind == 1 || kind == 0 || kind == 4 || kind == 5 || kind == 6;
+    if (kind == 2) return role >= 0 && role <= 4;
+    return kind == 3 || kind == 1 || kind == 0 || kind == 4 || kind == 5 || kind == 6 || kind == 7;
 }
 
 bool ZynAndroidEngine::pasteModule(int partIndex, int kitIndex, int kind, int index, int role) {
@@ -1553,6 +1559,13 @@ bool ZynAndroidEngine::pasteModule(int partIndex, int kitIndex, int kind, int in
         if (!global.Reson) return false;
         global.Reson->defaults();
         global.Reson->getfromXML(xml);
+    } else if (kind == 7) {
+        if (index < 0 || index >= NUM_VOICES) return false;
+        auto &voice = kit.adpars->VoicePar[index];
+        voice.PVolumeminus = xml.getpar("polarity", voice.PVolumeminus, 0, 1);
+        voice.volume = xml.getparreal("volume", voice.volume, -60.0f, 0.0f);
+        voice.PAmpVelocityScaleFunction = xml.getpar127("velocity", voice.PAmpVelocityScaleFunction);
+        voice.PPanning = xml.getpar127("panning", voice.PPanning);
     } else return false;
     xml.exitbranch();
     return true;

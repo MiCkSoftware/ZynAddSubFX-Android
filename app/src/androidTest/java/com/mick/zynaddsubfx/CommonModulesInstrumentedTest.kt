@@ -34,10 +34,56 @@ class CommonModulesInstrumentedTest {
         assertTrue(NativeSynthBridge.nativeInit(48_000, 256))
         val address = ModuleAddress.Envelope(envelopeRole = EnvelopeRole.AMPLITUDE)
         assertTrue(engine.preview(0, 0, address, 64).values.isNotEmpty())
-        assertTrue(engine.copyModule(0, 0, address))
+        val frequency = ModuleAddress.Envelope(0, EnvelopeRole.FREQUENCY)
+        val source = "add/voice/0/freqEnvelope/attackTime"
+        val target = "add/ampEnvelope/attackTime"
+        assertTrue(engine.writeParameter(0, 0, SynthEngine.ParameterWrite(source, 51.0)))
+        assertTrue(engine.copyModule(0, 0, frequency))
         assertTrue(engine.canPasteModule(address))
-        assertFalse(engine.canPasteModule(ModuleAddress.Envelope(envelopeRole = EnvelopeRole.FREQUENCY)))
         assertTrue(engine.pasteModule(0, 0, address))
+        assertEquals(51.0, engine.parameterSnapshot(0, 0).values
+            .first { it.descriptor.path == target }.value, 0.01)
+        assertFalse(engine.canPasteModule(ModuleAddress.Lfo(0, LfoRole.FREQUENCY)))
+    }
+
+    @Test
+    fun modulatorEnvelopeParametersRoundTripThroughNativePaths() {
+        val engine = SynthEngine(InstrumentationRegistry.getInstrumentation().targetContext)
+        assertTrue(NativeSynthBridge.nativeInit(48_000, 256))
+        listOf("modAmpEnvelope", "modFreqEnvelope").forEach { envelope ->
+            listOf("attackTime" to 41.0, "releaseTime" to 78.0, "attackValue" to 52.0).forEach { (field, value) ->
+                val path = "add/voice/0/$envelope/$field"
+                assertTrue(path, engine.writeParameter(0, 0, SynthEngine.ParameterWrite(path, value)))
+                assertEquals(path, value, engine.parameterSnapshot(0, 0).values
+                    .first { it.descriptor.path == path }.value, 0.01)
+            }
+        }
+    }
+
+    @Test
+    fun voiceAmplitudeClipboardCopiesOnlyDirectParameters() {
+        val engine = SynthEngine(InstrumentationRegistry.getInstrumentation().targetContext)
+        assertTrue(NativeSynthBridge.nativeInit(48_000, 256))
+        fun write(voice: Int, field: String, value: Double) = assertTrue(
+            engine.writeParameter(0, 0, SynthEngine.ParameterWrite("add/voice/$voice/$field", value))
+        )
+        fun read(voice: Int, field: String) = engine.parameterSnapshot(0, 0).values
+            .first { it.descriptor.path == "add/voice/$voice/$field" }.value
+        val source = ModuleAddress.Amplitude(0)
+        val target = ModuleAddress.Amplitude(1)
+        listOf("volumeMinus" to 1.0, "volume" to 91.0, "velocity" to 45.0, "panning" to 72.0)
+            .forEach { (field, value) -> write(0, field, value) }
+        write(1, "ampEnvelope/attackTime", 37.0)
+        write(1, "ampLfo/depth", 43.0)
+        write(1, "detune", 8000.0)
+        assertTrue(engine.copyModule(0, 0, source))
+        assertTrue(engine.canPasteModule(target))
+        assertFalse(engine.canPasteModule(ModuleAddress.Voice(1)))
+        assertFalse(engine.canPasteModule(ModuleAddress.Envelope(1, EnvelopeRole.AMPLITUDE)))
+        assertTrue(engine.pasteModule(0, 0, target))
+        listOf("volumeMinus" to 1.0, "volume" to 91.0, "velocity" to 45.0, "panning" to 72.0,
+            "ampEnvelope/attackTime" to 37.0, "ampLfo/depth" to 43.0, "detune" to 8000.0)
+            .forEach { (field, value) -> assertEquals(field, value, read(1, field), 0.01) }
     }
 
     @Test

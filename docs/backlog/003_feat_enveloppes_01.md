@@ -59,3 +59,17 @@ Quand l'implementation et les verifications de ce perimetre sont terminees :
 1. Mettre a jour TASKS.md et TODO.md : statut reel, anciens points correspondants, limites et QA restante.
 2. Retirer de ces deux fichiers tous les liens vers ce prompt avant sa suppression ; conserver une note durable des resultats utiles.
 3. Supprimer ce fichier prompt a la fin de l'implementation. Ne pas le supprimer pour une simple analyse ou si le travail reste incomplet ; dans ce cas, y noter le reste a faire.
+
+## Etat local — 1 novembre 2026
+
+- Implementation locale : en-tetes et masquage des modules desactives, Polarity et clipboard dedie a l'amplitude de voix. Le bloc ADD global ne propose pas de clipboard Amplitude.
+- Compilation Kotlin/native, tests unitaires et compilation des tests instrumentes reussis. Aucun appareil Android detecte : les tests instrumentes ne sont pas executes.
+- Reste a verifier sur appareil : tous les roles et leur restauration, mode libre, accessibilite et presentation, Polarity et reset, clipboard entre parts/kits/voix et incompatibilites, absence de changements des autres blocs, fluidite et rendu audio. Etendre le test instrumente aux scopes Part/Kit et au reset. Conserver ce fichier jusqu'a achevement de ces verifications.
+
+## Retours de test — 1 novembre 2026
+
+- Libelle Polarity en double corrige ; bandeaux de niveau 1 et style de niveau 2 ajoutes. Verification visuelle sur appareil restante.
+- Corrige les chemins natifs des enveloppes du modulateur. Le clipboard accepte maintenant les collages entre tous les roles d'enveloppe, selon la demande ; la cible conserve son mode natif. Tests instrumentes ajoutes et compiles, execution sur appareil restante.
+- ADD global : les enveloppes, LFO et filtre ne disposent pas de flags natifs ON/OFF equivalents aux flags des voix. Decision confirmee : ne rien ajouter.
+
+- Hierarchie corrigee apres retour visuel : barre superieure inchangee, bandeau pour les sections, trait pour leurs modules ; titre Voice redondant retire. QA visuelle sur appareil restante.

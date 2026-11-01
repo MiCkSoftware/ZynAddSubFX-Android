@@ -34,6 +34,11 @@ sealed interface ModuleAddress {
         override val role = vowel.coerceIn(0, FORMANT_VOWEL_SLOTS - 1)
     }
 
+    data class Amplitude(override val index: Int) : ModuleAddress {
+        override val kind = 7
+        override val role = 0
+    }
+
     data object Resonance : ModuleAddress {
         override val kind = 5
         override val index = -1

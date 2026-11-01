@@ -165,7 +165,7 @@ private fun parentDestination(destination: InstrumentEditorDestination): Instrum
 }
 
 private val voiceEditorSections =
-    listOf("Voice", "Oscillator", "Amplitude", "Frequency", "Filter", "Modulation", "Unison")
+    listOf("Voice", "Oscillator", "Frequency", "Amplitude", "Filter", "Modulation", "Unison")
 private val oscillatorEditorSections =
     listOf("Preview", "Output", "Shape & filter", "Harmonics")
 private val resonanceEditorSections = listOf("Curve", "Parameters")
@@ -1050,7 +1050,11 @@ private fun AddVoiceDetailScreen(
                         modifier = Modifier.onGloballyPositioned {
                             onSectionPosition(section, it.positionInParent().y.roundToInt())
                         },
-                        header = if (section == "Oscillator" || (section == "Modulation" && externalModulator == 0)) ({
+                        header = if (section == "Voice") ({}) else if (section == "Amplitude") ({
+                            val address = ModuleAddress.Amplitude(state.selectedVoice)
+                            CompactModuleActions("Amplitude", { model.copyModule(address) },
+                                { model.pasteModule(address) }, model.canPasteModule(address), sectionHeading = true)
+                        }) else if (section == "Filter") ({}) else if (section == "Oscillator" || (section == "Modulation" && externalModulator == 0)) ({
                             val modulator = section == "Modulation"
                             val address = ModuleAddress.Oscillator(
                                 if (modulator) modulatorOscillatorOwner else state.selectedVoice,
@@ -1066,6 +1070,7 @@ private fun AddVoiceDetailScreen(
                                 onPaste = { model.pasteModule(address) },
                                 canPaste = model.canPasteModule(address),
                                 clipboardEnabled = modulator || !carrierShared,
+                                sectionHeading = true,
                             )
                         }) else null,
                     ) {
@@ -1337,15 +1342,7 @@ private fun ZynVoiceSection(
     content: @Composable () -> Unit,
 ) {
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        if (header != null) header() else Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(title.uppercase(), color = Color(0xFF66F0E9), style = MaterialTheme.typography.labelSmall)
-            Spacer(Modifier.width(7.dp))
-            Surface(
-                modifier = Modifier.weight(1f),
-                color = Color(0xFF234A53),
-                shape = RoundedCornerShape(99.dp),
-            ) { Spacer(Modifier.fillMaxWidth().height(1.dp)) }
-        }
+        if (header != null) header() else SectionBanner(title)
         content()
     }
 }
@@ -1970,7 +1967,9 @@ private fun ZynEditorSection(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        EditorSectionHeader(title)
+        if (!(title == "Filter" && verticalLabels && parameters.isEmpty())) {
+            if (verticalLabels) SectionBanner(title) else EditorSectionHeader(title)
+        }
         Column(Modifier.fillMaxWidth().padding(horizontal = 2.dp)) {
             if (!leadingContentAfterParameters) leadingContent?.invoke()
             if (complex) ComplexEditorLauncher(title, onComplex)
@@ -1980,12 +1979,14 @@ private fun ZynEditorSection(
                         if (it.descriptor.path == "add/randomGrouping") "ADD / Amplitude / Global"
                         else it.descriptor.group
                     }.forEach { (group, groupedParameters) ->
-                        Text(
-                            addSubsectionLabel(group),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = MaterialTheme.typography.labelMedium,
-                            modifier = Modifier.padding(start = 4.dp, top = 5.dp, bottom = 2.dp),
-                        )
+                        if (!group.endsWith("/ Global")) {
+                            Text(
+                                addSubsectionLabel(group),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.labelMedium,
+                                modifier = Modifier.padding(start = 4.dp, top = 5.dp, bottom = 2.dp),
+                            )
+                        }
                         DenseParameterGrid(
                             groupedParameters,
                             onWrite,
@@ -2208,7 +2209,7 @@ internal fun DenseParameterControl(
     val descriptor = parameter.descriptor
     val labelHue = addLabelHue(descriptor)
     DenseControlCard(
-        label = if (verticalLabel) compactAddLabel(descriptor) else descriptor.label,
+        label = if (descriptor.path.endsWith("/volumeMinus")) "Polarity" else if (verticalLabel) compactAddLabel(descriptor) else descriptor.label,
         labelColor = Color.hsv(labelHue, saturation = .30f, value = .22f),
         verticalLabel = verticalLabel,
         enabled = enabled,
@@ -2218,7 +2219,7 @@ internal fun DenseParameterControl(
             else -> ""
         },
         onClick = {
-            if (descriptor.type == SynthEngine.ParameterType.BOOLEAN) {
+            if (descriptor.type == SynthEngine.ParameterType.BOOLEAN && !descriptor.path.endsWith("/volumeMinus")) {
                 onWrite(parameter, if (parameter.value >= .5) 0.0 else 1.0)
             }
         },
@@ -2228,8 +2229,14 @@ internal fun DenseParameterControl(
             }
         },
     ) {
-        when (descriptor.type) {
-                SynthEngine.ParameterType.BOOLEAN -> LedButton(
+        when {
+                descriptor.path.endsWith("/volumeMinus") -> TinyKnob(
+                    label = "", value = parameter.value.toFloat(), min = 0f, max = 1f,
+                    valueText = { if (it < .5f) "+" else "−" }, enabled = enabled,
+                    onValueChange = { onDrag(parameter, it.roundToInt().toDouble()) },
+                    onValueChangeFinished = onCommit,
+                )
+                descriptor.type == SynthEngine.ParameterType.BOOLEAN -> LedButton(
                     label = descriptor.label,
                     lit = parameter.value >= .5,
                     onClick = { onWrite(parameter, if (parameter.value >= .5) 0.0 else 1.0) },
@@ -2239,7 +2246,7 @@ internal fun DenseParameterControl(
                     enabled = enabled,
                     compact = true,
                 )
-                SynthEngine.ParameterType.ENUM -> if (verticalLabel) {
+                descriptor.type == SynthEngine.ParameterType.ENUM -> if (verticalLabel) {
                     TinyKnob(
                         label = "",
                         value = parameter.value.toFloat(),
@@ -2267,7 +2274,7 @@ internal fun DenseParameterControl(
                         onClick = { if (enabled) onLongPress(parameter) },
                     )
                 }
-                SynthEngine.ParameterType.INTEGER -> TinyKnob(
+                else -> TinyKnob(
                     label = "",
                     value = parameter.value.toFloat(),
                     min = descriptor.minimum.toFloat(),

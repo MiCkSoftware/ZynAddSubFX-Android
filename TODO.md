@@ -7,14 +7,14 @@ Chaque agent doit mettre a jour TODO.md et TASKS.md, retirer les liens vers son 
 - [ ] QA complementaire transversale des gestes : stress/annulation, autres appareils, parite audible approfondie et profilage du cout natif `OscilGen::prepare()`. La validation UX courante par Mick cloture la feature ; ces verifications etendues restent distinctes.
 - [ ] QA complementaire liste Voice : paysage/petite largeur/grande police, lecteur d'ecran, stress des gestes, sources partagees et audio approfondi. UX courante validee par Mick ; compilation native deux ABI, 24 tests JVM et 14 verifications JNI OK.
 - [ ] [Liste de choix sur appui long des knobs enum](docs/008_feat_enum_long_press.md) : feature separee, drag direct conserve.
-- [ ] [Harmoniser les en-tetes ON/C/P, Polarity +/− et clipboard Amplitude dedie](docs/003_feat_enveloppes_01.md)
+- [ ] Harmonisation ON/C/P, Polarity et clipboard Amplitude de voix implementes localement ; QA Android, audio et scopes Part/Kit/Voice restante (voir docs/backlog/003_feat_enveloppes_01.md).
 - [ ] [Simplifier la navigation de Resonance](docs/004_ux_resonance.md)
 - [ ] [Completer les champs globaux et Voice manquants](docs/005_feat_parite_champs_addsynth.md)
 - [ ] [Completer OscilGen pour Voice et Modulator](docs/006_feat_oscilgen_complet.md)
 - [ ] [Valider audio, clipboard et aller-retour XIZ](docs/007_qa_audio_xiz_addsynth.md)
 
 ## Notes et backlog existants
-- replace voice enveloppe toggles by 0 1 and apply the same to adDynth main screen
+- Les activations natives utilisent ON ; les modules globaux sans flag ne proposent pas de faux enable. QA appareil restante.
 - portamento not working ?
 - ADsynth Oscillator Editor incomplete ?
 - Parts : all on same screen (selected on is unfolded)
@@ -36,7 +36,7 @@ LIB
 - keyb to library + one tap to select another ti nav back
 
 MISC-UX
-- For enveloppe, if disabled hide controle and or replace by a gfx editor or preview with on demande knobs
+- Enveloppes, LFO et filtre de voix masquent leurs controles lorsqu’ils sont desactives ; verifier restauration et ergonomie sur appareil.
 
 
 ## ADD SYNTH Fields

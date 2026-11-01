@@ -185,9 +185,12 @@ class InstrumentEditorViewModel(private val engine: InstrumentEditorEngine) : Vi
         engine.preview(state.partIndex, state.kitIndex, address, resolution)
 
     fun copyModule(address: ModuleAddress) {
-        state = state.copy(operation = if (engine.copyModule(state.partIndex, state.kitIndex, address)) {
-            SynthEngine.OperationState.Succeeded
-        } else SynthEngine.OperationState.Failed("Could not copy module"))
+        val copied = engine.copyModule(state.partIndex, state.kitIndex, address)
+        state = state.copy(
+            revision = if (copied) state.revision + 1 else state.revision,
+            operation = if (copied) SynthEngine.OperationState.Succeeded
+                else SynthEngine.OperationState.Failed("Could not copy module"),
+        )
     }
 
     fun canPasteModule(address: ModuleAddress): Boolean = engine.canPasteModule(address)
