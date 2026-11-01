@@ -379,12 +379,10 @@ private fun PartEditorCard(
         onPartChanged()
     }
     Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(10.dp))
-            .padding(6.dp)
+        modifier = Modifier.fillMaxWidth(),
     ) {
-        EditorSectionHeader("Part parameters")
+        SectionBanner("Part parameters")
+        Spacer(Modifier.height(4.dp))
         DenseParameterGrid(
             listOf(
                 "part/volume", "part/panning", "part/keyShift", "part/channel",
@@ -422,7 +420,8 @@ private fun PartEditorCard(
             },
         )
         Spacer(Modifier.height(12.dp))
-        EditorSectionHeader("Key range")
+        SectionBanner("Key range")
+        Spacer(Modifier.height(4.dp))
         DenseParameterGrid(
             structure.values.filter { it.descriptor.path in setOf("part/minKey", "part/maxKey") },
             onWrite = { parameter, value ->
@@ -460,7 +459,8 @@ private fun PartEditorCard(
             }
         }
         Spacer(Modifier.height(12.dp))
-        EditorSectionHeader("Instrument kits")
+        SectionBanner("Instrument kits")
+        Spacer(Modifier.height(4.dp))
         if (structural("part/kitMode", "Off") == "Off" && kitSnapshots.drop(1).any { bool(it, "kit/enabled") }) {
             Text("Kit mode is off: only Kit 1 plays", color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.labelSmall)
@@ -553,7 +553,8 @@ private fun PartEditorCard(
             onToggle = { onOpenModule("FX", 0) },
         )
         Spacer(Modifier.height(12.dp))
-        EditorSectionHeader("To system FX")
+        SectionBanner("To system FX")
+        Spacer(Modifier.height(4.dp))
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
             repeat(4) { fx ->
                 val amount = mixer.systemSends.firstOrNull { it.partIndex == part.partIndex && it.systemFxSlot == fx }?.sendValue ?: 0

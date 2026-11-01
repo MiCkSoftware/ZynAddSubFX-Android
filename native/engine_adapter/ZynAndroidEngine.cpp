@@ -359,6 +359,8 @@ bool ZynAndroidEngine::loadPresetFile(const std::string &path, int partIndex) {
                 if (!applyAndInitPartWithTimeout(part, deadline)) {
                     rc = -2;
                     presetLoadTimeoutCount_.fetch_add(1);
+                } else {
+                    part->Penabled = true;
                 }
             }
         }

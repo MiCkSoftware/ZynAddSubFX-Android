@@ -205,8 +205,10 @@ fun ZynAddSubFXApp(nativeStatus: NativeSmokeStatus = NativeSmokeStatus.preview()
     var actionStatus by rememberSaveable { mutableStateOf("Audio idle") }
     var heldNote by rememberSaveable { mutableStateOf<Int?>(null) }
     val heldNotes = remember { mutableStateListOf<Int>() }
+    val heldNoteChannels = remember { mutableMapOf<Int, Int>() }
     var masterVolume by rememberSaveable { mutableStateOf(0.6f) }
     var keyboardVelocity by rememberSaveable { mutableStateOf(110) }
+    var keyboardChannel by rememberSaveable { mutableStateOf(-1) }
     var keyboardOctaveShift by rememberSaveable { mutableStateOf(0) }
     var presetLoading by rememberSaveable { mutableStateOf(false) }
     var stressRunning by rememberSaveable { mutableStateOf(false) }
@@ -222,6 +224,7 @@ fun ZynAddSubFXApp(nativeStatus: NativeSmokeStatus = NativeSmokeStatus.preview()
     var mixerInspector by remember { mutableStateOf(SynthEngine.MixerInspector(emptyList(), emptyList())) }
     var inspectorRefreshToken by rememberSaveable { mutableStateOf(0) }
     var selectedPlayPartIndex by rememberSaveable { mutableStateOf(0) }
+    val presetPathsByPart = remember { mutableStateMapOf<Int, String>() }
     val statusText = remember(nativeStatus) { nativeStatus.toDisplayString() }
     val zynProbeText = remember(nativeStatus) { nativeStatus.zynProbeDisplayString() }
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -230,19 +233,20 @@ fun ZynAddSubFXApp(nativeStatus: NativeSmokeStatus = NativeSmokeStatus.preview()
     var shouldResumeAudioAfterPause by rememberSaveable { mutableStateOf(false) }
     var shouldResumeToneAfterPause by rememberSaveable { mutableStateOf(false) }
 
-    fun keyboardChannel(): Int = partInspectors.getOrNull(selectedPlayPartIndex)
-        ?.receiveChannel?.coerceIn(0, 15) ?: 0
-
     fun pressNote(effectiveNote: Int) {
         if (!heldNotes.contains(effectiveNote)) {
+            val channel = if (keyboardChannel < 0) partInspectors.firstOrNull { it.partIndex == selectedPlayPartIndex }?.receiveChannel?.coerceIn(0, 15) ?: 0 else keyboardChannel
             heldNotes.add(effectiveNote)
-            runCatching { engine.noteOn(keyboardChannel(), effectiveNote, keyboardVelocity) }
+            heldNoteChannels[effectiveNote] = channel
+            runCatching { engine.noteOn(channel, effectiveNote, keyboardVelocity) }
         }
         heldNote = effectiveNote
     }
 
     fun releaseNote(effectiveNote: Int) {
-        runCatching { engine.noteOff(keyboardChannel(), effectiveNote) }
+        heldNoteChannels.remove(effectiveNote)?.let { channel ->
+            runCatching { engine.noteOff(channel, effectiveNote) }
+        }
         heldNotes.removeAll { it == effectiveNote }
         if (heldNote == effectiveNote) {
             heldNote = heldNotes.lastOrNull()
@@ -251,9 +255,10 @@ fun ZynAddSubFXApp(nativeStatus: NativeSmokeStatus = NativeSmokeStatus.preview()
 
     fun releaseAllHeldNotes() {
         heldNotes.distinct().forEach { note ->
-            runCatching { engine.noteOff(keyboardChannel(), note) }
+            heldNoteChannels[note]?.let { channel -> runCatching { engine.noteOff(channel, note) } }
         }
         heldNotes.clear()
+        heldNoteChannels.clear()
         heldNote = null
     }
     remember(nativeStatus) {
@@ -399,6 +404,7 @@ fun ZynAddSubFXApp(nativeStatus: NativeSmokeStatus = NativeSmokeStatus.preview()
             presetLoading = true
             actionStatus = "Loading preset: ${preset.displayName}…"
             heldNotes.clear()
+            heldNoteChannels.clear()
             heldNote = null
             val targetPart = selectedPlayPartIndex
             scope.launch {
@@ -408,8 +414,12 @@ fun ZynAddSubFXApp(nativeStatus: NativeSmokeStatus = NativeSmokeStatus.preview()
                 }
                 if (result.ok) {
                     if (preset.assetPath.endsWith(".xmz", ignoreCase = true)) {
+                        presetPathsByPart.clear()
                         (0 until 16).forEach { engine.markInstrumentSaved(it) }
-                    } else engine.markInstrumentSaved(targetPart)
+                    } else {
+                        presetPathsByPart[targetPart] = preset.assetPath
+                        engine.markInstrumentSaved(targetPart)
+                    }
                 }
                 inspectorRefreshToken += 1
                 currentPresetPath = preset.assetPath
@@ -434,7 +444,7 @@ fun ZynAddSubFXApp(nativeStatus: NativeSmokeStatus = NativeSmokeStatus.preview()
                 persistScanState()
                 Log.i(
                     SCAN_LOG_TAG,
-                    "$SCAN_LOG_PREFIX load preset=${preset.displayName} section=${preset.section} ok=${result.ok} timeout=${result.timedOut} load_ms=${result.loadMs} status=${status.short}"
+                    "$SCAN_LOG_PREFIX load part=${targetPart + 1} preset=${preset.displayName} section=${preset.section} ok=${result.ok} timeout=${result.timedOut} load_ms=${result.loadMs} status=${status.short}"
                 )
                 masterVolume = runCatching {
                     engine.getMasterVolumeNormalized()
@@ -442,7 +452,7 @@ fun ZynAddSubFXApp(nativeStatus: NativeSmokeStatus = NativeSmokeStatus.preview()
                 Log.d(APP_LOG_TAG, "diag: ${engine.runtimeDiagnostics()}")
                 logScanSummary(packagedPresets, scanResults.toMap())
                 actionStatus = if (result.ok) {
-                    "Preset loaded: ${preset.displayName} (${result.loadMs}ms)"
+                    "Preset loaded in Part ${targetPart + 1}: ${preset.displayName} (${result.loadMs}ms)"
                 } else {
                     "Preset load failed: ${preset.displayName} (${result.loadMs}ms)"
                 }
@@ -580,6 +590,7 @@ fun ZynAddSubFXApp(nativeStatus: NativeSmokeStatus = NativeSmokeStatus.preview()
                     if (ok) {
                         if (partIndex == selectedPlayPartIndex) {
                             heldNotes.clear()
+                            heldNoteChannels.clear()
                             heldNote = null
                         }
                         inspectorRefreshToken += 1
@@ -596,7 +607,8 @@ fun ZynAddSubFXApp(nativeStatus: NativeSmokeStatus = NativeSmokeStatus.preview()
                     packagedPresets = packagedPresets,
                     scanResults = scanResults.toMap(),
                     presetRatings = presetRatings.toMap(),
-                    currentPresetPath = currentPresetPath,
+                    currentPresetPath = presetPathsByPart[selectedPlayPartIndex],
+                    selectedPartIndex = selectedPlayPartIndex,
                     presetLoading = presetLoading,
                     catalogLoading = presetCatalogLoading,
                     expandedSections = bankExpandedSections.toMap(),
@@ -618,16 +630,18 @@ fun ZynAddSubFXApp(nativeStatus: NativeSmokeStatus = NativeSmokeStatus.preview()
                     uiState = PlayUiState(
                         audioRunning = audioRunning,
                         actionStatus = actionStatus,
-                        currentPresetName = currentPresetPath?.let { File(it).nameWithoutExtension },
-                        currentPresetRating = currentPresetPath?.let { presetRatings[it] } ?: 0,
+                        currentPresetName = partInspectors.firstOrNull { it.partIndex == selectedPlayPartIndex }?.name?.takeIf { it.isNotBlank() },
+                        currentPresetRating = presetPathsByPart[selectedPlayPartIndex]?.let { presetRatings[it] } ?: 0,
                         masterVolume = masterVolume,
                         keyboardVelocity = keyboardVelocity,
+                        keyboardChannel = keyboardChannel,
                         keyboardOctaveShift = keyboardOctaveShift,
                         heldNote = heldNote,
                         heldNotes = heldNotes.toSet(),
                         presetLoading = presetLoading,
                         parts = partInspectors,
                         selectedPartIndex = selectedPlayPartIndex,
+                        loadedPartIndices = presetPathsByPart.keys.toSet(),
                     ),
                     onOpenBanks = { currentDestination = AppDestinations.BANKS },
                     onPressKeyboardNote = { note ->
@@ -647,6 +661,7 @@ fun ZynAddSubFXApp(nativeStatus: NativeSmokeStatus = NativeSmokeStatus.preview()
                     onPanic = {
                         runCatching { engine.panic() }
                         heldNotes.clear()
+                        heldNoteChannels.clear()
                         heldNote = null
                         currentPresetPath?.let { path ->
                             val prev = scanResults[path] ?: PresetScanRecord()
@@ -661,7 +676,7 @@ fun ZynAddSubFXApp(nativeStatus: NativeSmokeStatus = NativeSmokeStatus.preview()
                         actionStatus = "Panic (voices reset)"
                     },
                     onSetCurrentPresetRating = { rating ->
-                        currentPresetPath?.let { path ->
+                        presetPathsByPart[selectedPlayPartIndex]?.let { path ->
                             val clamped = rating.coerceIn(0, 5)
                             presetRatings[path] = clamped
                             persistPresetRatingsState()
@@ -675,6 +690,12 @@ fun ZynAddSubFXApp(nativeStatus: NativeSmokeStatus = NativeSmokeStatus.preview()
                         runCatching { engine.setMasterVolumeNormalized(value) }
                     },
                     onKeyboardVelocityChange = { keyboardVelocity = it.coerceIn(1, 127) },
+                    onKeyboardChannelChange = { channel ->
+                        if (keyboardChannel != channel) {
+                            releaseAllHeldNotes()
+                            keyboardChannel = channel.coerceIn(-1, 15)
+                        }
+                    },
                     onKeyboardOctaveShiftChange = { keyboardOctaveShift = it.coerceIn(-2, 2) },
                     onPartTapped = { partIndex, wasSelected ->
                         if (wasSelected) {

@@ -28,6 +28,7 @@ fun BankBrowserScreen(
     scanResults: Map<String, PresetScanRecord>,
     presetRatings: Map<String, Int>,
     currentPresetPath: String?,
+    selectedPartIndex: Int,
     presetLoading: Boolean,
     catalogLoading: Boolean,
     expandedSections: Map<String, Boolean>,
@@ -58,6 +59,8 @@ fun BankBrowserScreen(
             .padding(12.dp)
             .verticalScroll(rememberScrollState())
     ) {
+        Text("Load instrument into Part ${selectedPartIndex + 1}", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.titleSmall)
+        Spacer(Modifier.height(10.dp))
         if (catalogLoading) {
             Text("Loading catalog…", color = MaterialTheme.colorScheme.primary)
             Spacer(modifier = Modifier.height(10.dp))

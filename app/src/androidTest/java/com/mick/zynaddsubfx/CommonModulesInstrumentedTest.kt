@@ -45,6 +45,7 @@ class CommonModulesInstrumentedTest {
         val parts = engine.inspectParts().associateBy { it.partIndex }
         assertEquals("Part zero marker", parts.getValue(0).name)
         assertTrue(parts.getValue(1).name != "Part one marker")
+        assertTrue(parts.getValue(1).enabled)
     }
 
     @Test

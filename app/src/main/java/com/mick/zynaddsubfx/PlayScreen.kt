@@ -39,12 +39,14 @@ data class PlayUiState(
     val currentPresetRating: Int,
     val masterVolume: Float,
     val keyboardVelocity: Int,
+    val keyboardChannel: Int,
     val keyboardOctaveShift: Int,
     val heldNote: Int?,
     val heldNotes: Set<Int>,
     val presetLoading: Boolean,
     val parts: List<SynthEngine.PartInspector>,
     val selectedPartIndex: Int,
+    val loadedPartIndices: Set<Int> = emptySet(),
 )
 
 @Composable
@@ -58,6 +60,7 @@ fun PlayScreen(
     onSetCurrentPresetRating: (Int) -> Unit,
     onMasterVolumeChange: (Float) -> Unit,
     onKeyboardVelocityChange: (Int) -> Unit,
+    onKeyboardChannelChange: (Int) -> Unit,
     onKeyboardOctaveShiftChange: (Int) -> Unit,
     onPartTapped: (Int, Boolean) -> Unit,
     onSetSelectedPartChannel: (Int) -> Unit,
@@ -122,39 +125,23 @@ fun PlayScreen(
                                 val part = partsByIndex[partIndex]
                                 val active = part?.enabled == true
                                 val selected = uiState.selectedPartIndex == partIndex
-                                val buttonColor = if (active) Color(0xFF0A2D33) else Color(0xFF1D2B30)
-                                val glowColor = if (active) Color(0xFF33C8C8) else Color(0xFF4F6469)
-                                val textColor = if (active) Color(0xFFE6FFFF) else Color(0xFFB0BEC5)
-                                Surface(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .border(
-                                            width = if (selected) 2.dp else 0.dp,
-                                            color = if (selected) Color(0xFF33C8C8) else Color.Transparent,
-                                            shape = RoundedCornerShape(6.dp)
-                                        )
-                                        .clickable { onPartTapped(partIndex, selected) },
-                                    shape = RoundedCornerShape(6.dp),
-                                    color = buttonColor,
-                                    shadowElevation = if (active) 8.dp else 1.dp
+                                val loaded = partIndex in uiState.loadedPartIndices || !part?.name.isNullOrBlank()
+                                Box(
+                                    Modifier.weight(1f).border(
+                                        width = if (selected) 2.dp else 0.dp,
+                                        color = if (selected) Color(0xFF8EF5EE) else Color.Transparent,
+                                        shape = RoundedCornerShape(6.dp),
+                                    ).padding(2.dp),
                                 ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(vertical = 6.dp),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Text(
-                                            text = (partIndex + 1).toString(),
-                                            color = textColor,
-                                            modifier = Modifier
-                                                .background(
-                                                    color = glowColor.copy(alpha = if (active) 0.20f else 0.06f),
-                                                    shape = RoundedCornerShape(4.dp)
-                                                )
-                                                .padding(horizontal = 6.dp, vertical = 1.dp)
-                                        )
-                                    }
+                                    LedButton(
+                                        label = "Part ${partIndex + 1}: ${if (active) "enabled" else if (loaded) "instrument loaded, disabled" else "empty, disabled"}${if (selected) ", selected" else ""}",
+                                        lit = active,
+                                        onClick = { onPartTapped(partIndex, selected) },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        hue = if (active) 125f else 2f,
+                                        action = !active && !loaded,
+                                        displayLabel = (partIndex + 1).toString(),
+                                    )
                                 }
                             }
                         }
@@ -191,6 +178,13 @@ fun PlayScreen(
                 ) {
                     Box(Modifier.weight(1f)) { DenseKnobCard("Master", uiState.masterVolume * 127f, 0f, 127f,
                         { onMasterVolumeChange((it / 127f).coerceIn(0f, 1f)) }) }
+                    Box(Modifier.weight(1f)) {
+                        DenseControlCard("Channel", Color(0xFF1C474B)) {
+                            TinyKnob("", (uiState.keyboardChannel + 1).toFloat(), 0f, 16f,
+                                valueText = { if (it.roundToInt() == 0) "A${(selectedPart?.receiveChannel ?: 0) + 1}" else it.roundToInt().toString() },
+                                onValueChange = { onKeyboardChannelChange(it.roundToInt().coerceIn(0, 16) - 1) })
+                        }
+                    }
                     Box(Modifier.weight(1f)) { DenseKnobCard("Velocity", uiState.keyboardVelocity.toFloat(), 1f, 127f,
                         { onKeyboardVelocityChange(it.roundToInt().coerceIn(1, 127)) }) }
                     Box(Modifier.weight(1f)) { DenseKnobCard("Octave", uiState.keyboardOctaveShift.toFloat(), -2f, 2f,
