@@ -107,6 +107,7 @@ fun TinyKnob(
     dragRangePx: Float = 600f,
     sensitivity: KnobSensitivity = KnobSensitivity.Default,
     valueText: (Float) -> String = { it.roundToInt().toString() },
+    compactValueLabel: Boolean = false,
     onValueChangeFinished: () -> Unit = {},
     enabled: Boolean = true,
     onValueChange: (Float) -> Unit,
@@ -196,16 +197,22 @@ fun TinyKnob(
             }
             Text(
                 text = displayText,
-                modifier = Modifier.align(Alignment.Center),
+                modifier = Modifier.align(Alignment.Center).then(
+                    if (compactValueLabel) Modifier.width(32.dp) else Modifier
+                ),
                 color = MaterialTheme.colorScheme.onSurface,
                 textAlign = TextAlign.Center,
                 fontSize = when {
+                    compactValueLabel && displayText.length >= 10 -> 7.sp
+                    compactValueLabel && displayText.length >= 5 -> 9.sp
                     displayText.length >= 7 || kotlin.math.abs(value) >= 10000f -> 9.sp
                     displayText.length >= 5 || kotlin.math.abs(value) >= 1000f -> 11.sp
                     kotlin.math.abs(value) >= 100f -> 13.sp
                     else -> 14.sp
                 },
-                maxLines = 1,
+                lineHeight = if (compactValueLabel) 9.sp else androidx.compose.ui.unit.TextUnit.Unspecified,
+                maxLines = if (compactValueLabel) 2 else 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
             )
         }
         if (label.isNotBlank()) Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant)

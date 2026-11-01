@@ -403,6 +403,7 @@ private fun PartEditorCard(
                 }
             },
             verticalLabels = true,
+            enumContext = part.partIndex,
             valueText = { parameter ->
                 val raw = parameter.value.toInt()
                 if (parameter.descriptor.path == "part/channel") (raw + 1).toString() else raw.toString()
@@ -437,6 +438,7 @@ private fun PartEditorCard(
                 }
             },
             verticalLabels = true,
+            enumContext = part.partIndex,
             onLongPress = { editedStructuralParameter = it },
             onCommit = onPartChanged,
         )

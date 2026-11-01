@@ -6,7 +6,7 @@ Chaque agent doit mettre a jour TODO.md et TASKS.md, retirer les liens vers son 
 
 - [ ] QA complementaire transversale des gestes : stress/annulation, autres appareils, parite audible approfondie et profilage du cout natif `OscilGen::prepare()`. La validation UX courante par Mick cloture la feature ; ces verifications etendues restent distinctes.
 - [ ] QA complementaire liste Voice : paysage/petite largeur/grande police, lecteur d'ecran, stress des gestes, sources partagees et audio approfondi. UX courante validee par Mick ; compilation native deux ABI, 24 tests JVM et 14 verifications JNI OK.
-- [ ] [Liste de choix sur appui long des knobs enum](docs/008_feat_enum_long_press.md) : feature separee, drag direct conserve.
+- [ ] [Liste de choix sur appui long des knobs enum](docs/backlog/008_feat_enum_long_press.md) : implementation locale, drag conserve ; QA tactile, audio et accessibilite restante.
 - [ ] Harmonisation ON/C/P, Polarity et clipboard Amplitude de voix implementes localement ; validations et tests Android encore incomplets (roles, mode libre, reset, clipboard Part/Kit/Voice, accessibilite, tactile et audio). Suivi : [backlog 003](docs/backlog/003_feat_enveloppes_01.md).
 - [x] Resonance — feature validee par Mick le 1 novembre 2026 : navigation simplifiee, section avant Voices, clipboard, libelles lisibles et affichage frequence/amplitude pendant le dessin. Compilation Kotlin et ParameterRoutingTest OK ; tests utilisateur OK. Le commit natif reste effectue en fin de geste.
 - [ ] [Champs ADD/Voice](docs/backlog/005_feat_parite_champs_addsynth.md) : lecture/ecriture JNI et aller-retour XIZ verifies sur emulateur (rapport QA ADD) ; verification tactile/audio et reset restent a faire.

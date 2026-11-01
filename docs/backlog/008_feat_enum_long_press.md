@@ -37,3 +37,10 @@ La correction de sensibilite des petits ranges est deja traitee dans TinyKnob vi
 32 dp de deplacement par pas. Cette feature concerne seulement la selection explicite par liste.
 Implementation locale, sans commit/push/installation/publication demandes.
 A la fin, actualiser TASKS.md/TODO.md et conserver une note durable des resultats et de la QA restante.
+
+## Resultat local — 1 novembre 2026
+
+- Appui long sur un enum : menu sombre ancre au controle, avec la police retro VT323 utilisee par HarmonyX ; l'option courante est mise en evidence et annoncee comme selectionnee.
+- Seuls les indices presents dans les options et compris dans les bornes natives sont proposes. Le drag reste disponible ; l'ouverture termine une eventuelle edition en cours, sans reset. La selection passe par le callback d'ecriture existant et la fermeture ne modifie rien.
+- La fenetre est refermee si le contexte Part/Kit/voix change. Le compilateur Kotlin valide la modification.
+- QA a faire sur appareil : placement du menu aux bords de l'ecran ; conflits entre appui long, drag et scroll ; choix identique, annulation et bornes restreintes ; Use oscillator, external modulator, modes et filtres ; grands textes, TalkBack et retour du focus ; verification audio et changement de contexte.
