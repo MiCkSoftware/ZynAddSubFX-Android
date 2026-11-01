@@ -44,6 +44,7 @@ data class PlayUiState(
     val audioRunning: Boolean,
     val actionStatus: String,
     val currentPresetName: String?,
+    val currentBankName: String? = null,
     val currentPresetRating: Int,
     val masterVolume: Float,
     val keyboardVelocity: Int,
@@ -95,7 +96,7 @@ fun PlayScreen(
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
         Surface(
             modifier = Modifier.weight(1f),
-            shape = RoundedCornerShape(22.dp),
+            shape = RoundedCornerShape(6.dp),
             color = Color(0xFF111A1B),
             border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFF815E)),
         ) {
@@ -107,16 +108,22 @@ fun PlayScreen(
                     modifier = Modifier.width(38.dp).height(40.dp).alpha(if (canPreviousPreset) 1f else .35f)
                         .semantics { contentDescription = "Previous instrument" }
                         .clickable(enabled = canPreviousPreset, onClick = onPreviousPreset),
-                    shape = RoundedCornerShape(topStart = 22.dp, bottomStart = 22.dp), color = Color(0xFFFF815E),
+                    shape = RoundedCornerShape(topStart = 6.dp, bottomStart = 6.dp), color = Color(0xFFFF815E),
                 ) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = null, tint = Color(0xFF301B16), modifier = Modifier.padding(4.dp)) }
                 Row(
                     modifier = Modifier.weight(1f).clickable(onClick = onOpenBanks).padding(horizontal = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Icon(Icons.Default.FolderOpen, contentDescription = "Open instrument library", tint = Color(0xFFFFAD91), modifier = Modifier.size(25.dp))
-                    Text(presetDisplayName, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-                        color = Color(0xFFFFAD91), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Icon(Icons.Default.FolderOpen, contentDescription = "Open instrument library", tint = Color(0xFFFFAD91), modifier = Modifier.size(32.dp))
+                    Column {
+                        uiState.currentBankName?.let { bank ->
+                            Text(bank, style = MaterialTheme.typography.labelSmall, color = Color(0xFFC98B77),
+                                maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                        Text(presetDisplayName, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                            color = Color(0xFFFFAD91), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
                 }
                 PresetStarRating(rating = uiState.currentPresetRating.coerceIn(0, 5), onSetRating = onSetCurrentPresetRating)
                 Spacer(Modifier.width(5.dp))
@@ -124,7 +131,7 @@ fun PlayScreen(
                     modifier = Modifier.width(38.dp).height(40.dp).alpha(if (canNextPreset) 1f else .35f)
                         .semantics { contentDescription = "Next instrument" }
                         .clickable(enabled = canNextPreset, onClick = onNextPreset),
-                    shape = RoundedCornerShape(topEnd = 22.dp, bottomEnd = 22.dp), color = Color(0xFFFF815E),
+                    shape = RoundedCornerShape(topEnd = 6.dp, bottomEnd = 6.dp), color = Color(0xFFFF815E),
                 ) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = Color(0xFF301B16), modifier = Modifier.padding(4.dp)) }
             }
         }

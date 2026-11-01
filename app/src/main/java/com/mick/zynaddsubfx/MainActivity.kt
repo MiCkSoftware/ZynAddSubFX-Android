@@ -660,6 +660,7 @@ fun ZynAddSubFXApp(nativeStatus: NativeSmokeStatus = NativeSmokeStatus.preview()
                         audioRunning = audioRunning,
                         actionStatus = actionStatus,
                         currentPresetName = partInspectors.firstOrNull { it.partIndex == selectedPlayPartIndex }?.name?.takeIf { it.isNotBlank() },
+                        currentBankName = selectedPreset?.section?.removePrefix("Bank: "),
                         currentPresetRating = presetPathsByPart[selectedPlayPartIndex]?.let { presetRatings[it] } ?: 0,
                         masterVolume = masterVolume,
                         keyboardVelocity = keyboardVelocity,
