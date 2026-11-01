@@ -99,6 +99,7 @@ fun PlayScreen(
     onReleaseKeyboardNote: (Int) -> Unit,
     onAllNotesOff: () -> Unit,
     onPanic: () -> Unit,
+    onRestartAudio: () -> Unit,
     onSetCurrentPresetRating: (Int) -> Unit,
     onMasterVolumeChange: (Float) -> Unit,
     onKeyboardVelocityChange: (Int) -> Unit,
@@ -253,18 +254,9 @@ fun PlayScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    LuminousActionButton(
-                        label = "ALL OFF",
-                        onClick = onAllNotesOff,
-                        modifier = Modifier.weight(1f),
-                        accent = Color(0xFF33C8C8)
-                    )
-                    LuminousActionButton(
-                        label = "PANIC",
-                        onClick = onPanic,
-                        modifier = Modifier.weight(1f),
-                        accent = Color(0xFFFF815E)
-                    )
+                    LedButton("All notes off", false, onAllNotesOff, Modifier.weight(1f), action = true, displayLabel = "ALL OFF")
+                    LedButton("Panic", false, onPanic, Modifier.weight(1f), hue = 2f, action = true, displayLabel = "PANIC")
+                    LedButton("Restart audio", false, onRestartAudio, Modifier.weight(1f), hue = 28f, action = true, displayLabel = "RESTART")
                     Surface(
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(999.dp),

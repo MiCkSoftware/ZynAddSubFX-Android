@@ -207,6 +207,9 @@ class SynthEngine(private val context: Context) : InstrumentEditorEngine {
         return NativeSynthBridge.nativeLoadPresetFile(path.absolutePath, partIndex)
     }
 
+    fun loadInstrument(file: File, partIndex: Int): Boolean =
+        NativeSynthBridge.nativeLoadPresetFile(file.absolutePath, partIndex)
+
     fun loadPackagedPresetMeasured(assetPath: String, partIndex: Int = 0): PresetLoadResult {
         val before = runtimeCounters()
         var ok = false

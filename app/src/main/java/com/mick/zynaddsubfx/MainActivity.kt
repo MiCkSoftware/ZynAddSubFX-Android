@@ -220,6 +220,7 @@ fun ZynAddSubFXApp(nativeStatus: NativeSmokeStatus = NativeSmokeStatus.preview()
     var keyboardChannel by rememberSaveable { mutableStateOf(-1) }
     var keyboardOctaveShift by rememberSaveable { mutableStateOf(0) }
     var presetLoading by rememberSaveable { mutableStateOf(false) }
+    var audioRestarting by remember { mutableStateOf(false) }
     var stressRunning by rememberSaveable { mutableStateOf(false) }
     var currentPresetPath by rememberSaveable { mutableStateOf(loadLastSelectedPresetPath(context)) }
     var firstNoteTimingPresetPath by rememberSaveable { mutableStateOf<String?>(null) }
@@ -611,6 +612,42 @@ fun ZynAddSubFXApp(nativeStatus: NativeSmokeStatus = NativeSmokeStatus.preview()
                     if (ok) inspectorRefreshToken += 1
                 },
                 onPartChanged = { inspectorRefreshToken += 1 },
+                onImportInstrument = { uri, partIndex, onResult ->
+                    if (presetLoading) onResult(false) else {
+                        presetLoading = true
+                        releaseAllHeldNotes()
+                        scope.launch {
+                            val ok = withContext(Dispatchers.IO) {
+                                runCatching {
+                                    val file = File.createTempFile("zyn-import-", ".xiz", context.cacheDir)
+                                    try {
+                                        val name = context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
+                                            if (it.moveToFirst()) it.getString(0) else null
+                                        }
+                                        require(name == null || name.endsWith(".xiz", ignoreCase = true))
+                                        context.contentResolver.openInputStream(uri)?.use { input ->
+                                            file.outputStream().use { input.copyTo(it) }
+                                        } ?: error("Cannot open instrument")
+                                        engine.loadInstrument(file, partIndex)
+                                    } finally { file.delete() }
+                                }.getOrDefault(false)
+                            }
+                            if (ok) {
+                                engine.markInstrumentSaved(partIndex)
+                                presetPathsByPart.remove(partIndex)
+                                context.getSharedPreferences("part_presets", Context.MODE_PRIVATE).edit().remove("part_$partIndex").apply()
+                                if (selectedPlayPartIndex == partIndex) {
+                                    currentPresetPath = null
+                                    persistLastSelectedPresetPath(context, null)
+                                }
+                                inspectorRefreshToken += 1
+                            }
+                            presetLoading = false
+                            actionStatus = if (ok) "Instrument loaded in Part ${partIndex + 1}" else "Instrument load failed"
+                            onResult(ok)
+                        }
+                    }
+                },
                 onAllNotesOffPart = { partIndex ->
                     val ok = engine.allNotesOffPart(partIndex)
                     if (ok) {
@@ -712,6 +749,25 @@ fun ZynAddSubFXApp(nativeStatus: NativeSmokeStatus = NativeSmokeStatus.preview()
                             )
                         }
                         actionStatus = "Panic (voices reset)"
+                    },
+                    onRestartAudio = {
+                        if (!audioRestarting) {
+                            audioRestarting = true
+                            releaseAllHeldNotes()
+                            actionStatus = "Restarting audio…"
+                            scope.launch {
+                                val running = withContext(Dispatchers.IO) {
+                                    runCatching {
+                                        engine.stopAudio()
+                                        val started = engine.startAudio()
+                                        engine.isAudioRunning() && started
+                                    }.getOrDefault(false)
+                                }
+                                audioRunning = running
+                                audioRestarting = false
+                                actionStatus = if (running) "Audio restarted" else "Audio restart failed"
+                            }
+                        }
                     },
                     onSetCurrentPresetRating = { rating ->
                         presetPathsByPart[selectedPlayPartIndex]?.let { path ->

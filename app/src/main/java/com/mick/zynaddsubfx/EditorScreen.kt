@@ -6,6 +6,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.KeyboardActions
@@ -83,6 +84,7 @@ fun PresetEditorScreen(
     onSoloPart: (Int) -> Unit,
     onPartChanged: () -> Unit,
     onAllNotesOffPart: (Int) -> Unit,
+    onImportInstrument: (android.net.Uri, Int, (Boolean) -> Unit) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var selectedModule by rememberSaveable(uiState.selectedPartIndex) { mutableStateOf<String?>(null) }
@@ -101,6 +103,12 @@ fun PresetEditorScreen(
     var nameError by remember(uiState.selectedPartIndex) { mutableStateOf(false) }
     var hadNameFocus by remember(uiState.selectedPartIndex) { mutableStateOf(false) }
     val nameFocus = remember { FocusRequester() }
+    var importPart by rememberSaveable { mutableStateOf(0) }
+    val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) onImportInstrument(uri, importPart) { ok ->
+            status = if (ok) "Instrument loaded" else "Instrument load failed"
+        }
+    }
     fun finishRename() {
         val trimmed = name.trim()
         if (trimmed.isEmpty() || trimmed.toByteArray(Charsets.UTF_8).size >= 30 || trimmed.contains('\u0000')) {
@@ -174,6 +182,13 @@ fun PresetEditorScreen(
                             LedButton("Enable part", selectedPart.enabled, { onSetPartEnabled(selectedPart.partIndex, true) }, hue = 125f, displayLabel = "1", halfWidth = true)
                             Spacer(Modifier.width(7.dp))
                             LedButton("Solo part", false, { onSoloPart(selectedPart.partIndex) }, hue = 28f, action = true, displayLabel = "S", halfWidth = true)
+                            Spacer(Modifier.width(7.dp))
+                            LedButton("Open XIZ", false, {
+                                importPart = selectedPart.partIndex
+                                importLauncher.launch(arrayOf("*/*"))
+                            }, Modifier.width(38.dp), hue = 28f, action = true) {
+                                Icon(Icons.Default.FolderOpen, contentDescription = null, tint = Color(0xFFABC0C2))
+                            }
                             Spacer(Modifier.width(7.dp))
                             LedButton("Export XIZ", engine.instrumentDirty(selectedPart.partIndex), {
                                 if (renaming) { finishRename() } else {
