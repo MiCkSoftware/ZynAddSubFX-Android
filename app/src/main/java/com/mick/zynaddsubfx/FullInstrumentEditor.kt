@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
@@ -58,6 +59,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -276,7 +278,6 @@ fun FullInstrumentEditor(
             restore = ::decodeDestination,
         )
     ) { mutableStateOf<InstrumentEditorDestination?>(null) }
-    var editedParameter by remember { mutableStateOf<SynthEngine.ParameterValue?>(null) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val contentScroll = remember(partIndex, kitIndex, module) { LazyListState() }
     val voiceDetailScroll = rememberScrollState()
@@ -667,7 +668,7 @@ fun FullInstrumentEditor(
                                 if (destination == null) selector = "complex"
                             },
                             onWrite = model::write,
-                            onEdit = { editedParameter = it },
+                            onEdit = model::reset,
                             onDrag = model::dragParameter,
                             onCommit = model::finishParameterDrag,
                             verticalLabels = module == "ADD",
@@ -732,14 +733,6 @@ fun FullInstrumentEditor(
         }
     }
 
-    editedParameter?.let { parameter ->
-        ParameterEditSheet(
-            parameter = parameter,
-            onDismiss = { editedParameter = null },
-            onValue = { model.write(parameter, it) },
-            onReset = { model.reset(parameter) },
-        )
-    }
     selector?.let { kind ->
         ModalBottomSheet(onDismissRequest = { selector = null }, sheetState = sheetState) {
             when (kind) {
@@ -1186,6 +1179,7 @@ private fun AddVoiceDetailScreen(
                                 onCommit = model::finishParameterDrag,
                                 verticalLabels = true,
                                 onLongPress = { model.reset(it) },
+                                onReset = model::reset,
                                 enabled = { parameter ->
                                     externalModulator == 0 || section != "Modulation" ||
                                         !isInternalModulatorFrequencyParameter(parameter.descriptor.path)
@@ -1354,7 +1348,6 @@ private fun AddOscillatorEditorScreen(
     val magnitudes = remember(values, group) { values.filter { it.descriptor.group == "$group harmonics" } }
     val phases = remember(values, group) { values.filter { it.descriptor.group == "$group phases" } }
     var selectedHarmonic by remember(target) { mutableStateOf(0) }
-    var editedParameter by remember { mutableStateOf<SynthEngine.ParameterValue?>(null) }
     val magnitude = magnitudes.getOrNull(selectedHarmonic)
     val phase = phases.getOrNull(selectedHarmonic)
     val field: (SynthEngine.ParameterValue) -> String = {
@@ -1411,7 +1404,8 @@ private fun AddOscillatorEditorScreen(
                             onWrite = model::write,
                             onDrag = model::dragParameter,
                             onCommit = model::finishParameterDrag,
-                            onLongPress = { editedParameter = it },
+                            onLongPress = model::reset,
+                            onReset = model::reset,
                             verticalLabels = true,
                             enabled = { oscillatorEditable || it in voiceOscillatorControls },
                         )
@@ -1492,14 +1486,6 @@ private fun AddOscillatorEditorScreen(
             Spacer(Modifier.height(scrollBottomPadding))
     }
 
-    editedParameter?.let { parameter ->
-        ParameterEditSheet(
-            parameter = parameter,
-            onDismiss = { editedParameter = null },
-            onValue = { model.write(parameter, it) },
-            onReset = { model.reset(parameter) },
-        )
-    }
 }
 
 @Composable
@@ -1810,6 +1796,7 @@ private fun AddResonanceEditorScreen(
             onCommit = model::finishParameterDrag,
             verticalLabels = true,
             onLongPress = { model.reset(it) },
+            onReset = model::reset,
             valueText = { parameter ->
                 when {
                     parameter.descriptor.path.endsWith("/maxDb") ->
@@ -1994,6 +1981,7 @@ private fun ZynEditorSection(
                             onWrite,
                             verticalLabels = true,
                             onLongPress = onEdit,
+                            onReset = onEdit,
                             onDrag = onDrag,
                             onCommit = onCommit,
                         )
@@ -2004,6 +1992,7 @@ private fun ZynEditorSection(
                         onWrite,
                         verticalLabels = false,
                         onLongPress = onEdit,
+                        onReset = onEdit,
                         onDrag = onDrag,
                         onCommit = onCommit,
                     )
@@ -2094,6 +2083,7 @@ internal fun DenseParameterGrid(
     onCommit: () -> Unit = {},
     trailingControl: (@Composable () -> Unit)? = null,
     enumContext: Any? = null,
+    onReset: ((SynthEngine.ParameterValue) -> Unit)? = null,
 ) {
     BoxWithConstraints {
         val columns = when {
@@ -2117,7 +2107,7 @@ internal fun DenseParameterGrid(
                             if (index < parameters.size) {
                                 val parameter = parameters[index]
                                 DenseParameterControl(parameter, onWrite, onLongPress, verticalLabels,
-                                    valueText, enabled(parameter), onDrag, onCommit, enumContext)
+                                    valueText, enabled(parameter), onDrag, onCommit, enumContext, onReset)
                             } else {
                                 trailingControl?.invoke()
                             }
@@ -2211,10 +2201,13 @@ internal fun DenseParameterControl(
     onDrag: (SynthEngine.ParameterValue, Double) -> Unit = onWrite,
     onCommit: () -> Unit = {},
     enumContext: Any? = null,
+    onReset: ((SynthEngine.ParameterValue) -> Unit)? = null,
 ) {
     val descriptor = parameter.descriptor
     val labelHue = addLabelHue(descriptor)
     var enumOpen by remember(descriptor.path, LocalEnumContext.current, enumContext) { mutableStateOf(false) }
+    var numberOpen by remember(descriptor.path, LocalEnumContext.current, enumContext) { mutableStateOf(false) }
+    var draft by remember(descriptor.path, LocalEnumContext.current, enumContext) { mutableStateOf(parameter.value.toFloat()) }
     val openEnum = {
         onCommit()
         enumOpen = true
@@ -2225,7 +2218,7 @@ internal fun DenseParameterControl(
         labelColor = Color.hsv(labelHue, saturation = .30f, value = .22f),
         verticalLabel = verticalLabel,
         enabled = enabled,
-        longClickLabel = if (descriptor.type == SynthEngine.ParameterType.ENUM) "Choose ${descriptor.label}" else null,
+        longClickLabel = "Choose ${descriptor.label}",
         unit = when {
             descriptor.path.endsWith("/maxDb") -> "dB"
             descriptor.path.endsWith("/center") -> "Hz"
@@ -2237,7 +2230,12 @@ internal fun DenseParameterControl(
             }
         },
         onLongClick = {
-            if (descriptor.type == SynthEngine.ParameterType.ENUM) openEnum() else onLongPress(parameter)
+            if (descriptor.type != SynthEngine.ParameterType.INTEGER) openEnum()
+            else if (descriptor.type == SynthEngine.ParameterType.INTEGER) {
+                onCommit()
+                draft = parameter.value.toFloat()
+                numberOpen = true
+            }
         },
     ) {
         when {
@@ -2256,6 +2254,7 @@ internal fun DenseParameterControl(
                     displayLabel = if (parameter.value >= .5) "1" else "0",
                     enabled = enabled,
                     compact = true,
+                    onLongClick = openEnum,
                 )
                 descriptor.type == SynthEngine.ParameterType.ENUM -> if (verticalLabel) {
                     TinyKnob(
@@ -2301,14 +2300,33 @@ internal fun DenseParameterControl(
     EnumChoiceMenu(
         expanded = enumOpen && enabled,
         title = descriptor.label,
-        indices = remember(descriptor.options, descriptor.minimum, descriptor.maximum) {
-            descriptor.options.indices.filter { it.toDouble() in descriptor.minimum..descriptor.maximum }
-        },
+        indices = if (descriptor.type == SynthEngine.ParameterType.BOOLEAN) 0..1 else
+            remember(descriptor.options, descriptor.minimum, descriptor.maximum) {
+                descriptor.options.indices.filter { it.toDouble() in descriptor.minimum..descriptor.maximum }
+            },
         selectedIndex = parameter.value.roundToInt(),
-        label = { descriptor.options[it] },
+        label = { if (descriptor.type == SynthEngine.ParameterType.BOOLEAN) {
+            if (descriptor.path.endsWith("/volumeMinus")) { if (it == 0) "+" else "−" }
+            else if (it == 0) "Off" else "On"
+        } else descriptor.options[it] },
         onDismiss = { enumOpen = false },
         onSelect = { onWrite(parameter, it.toDouble()); enumOpen = false },
     )
+    ControlPopup(numberOpen && enabled, descriptor.label, { numberOpen = false }) {
+        Text(draft.roundToInt().toString(), color = Color(0xFFFF9A16),
+            fontFamily = FontFamily(Font(R.font.vt323regular)), fontSize = 18.sp)
+        if (descriptor.minimum < descriptor.maximum) {
+            Slider(value = draft.coerceIn(descriptor.minimum.toFloat(), descriptor.maximum.toFloat()),
+                onValueChange = { draft = it.roundToInt().toFloat() },
+                valueRange = descriptor.minimum.toFloat()..descriptor.maximum.toFloat())
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            TextButton(onClick = { draft = (draft - 1).coerceAtLeast(descriptor.minimum.toFloat()) }) { Text("−", fontFamily = FontFamily(Font(R.font.vt323regular))) }
+            TextButton(onClick = { draft = (draft + 1).coerceAtMost(descriptor.maximum.toFloat()) }) { Text("+", fontFamily = FontFamily(Font(R.font.vt323regular))) }
+            TextButton(onClick = { onWrite(parameter, draft.toDouble()); numberOpen = false }) { Text("Apply", fontFamily = FontFamily(Font(R.font.vt323regular))) }
+        }
+        if (onReset != null) TextButton(onClick = { onReset(parameter); numberOpen = false }) { Text("Reset", fontFamily = FontFamily(Font(R.font.vt323regular))) }
+    }
     }
 }
 
@@ -2322,6 +2340,22 @@ internal fun EnumChoiceMenu(
     onDismiss: () -> Unit,
     onSelect: (Int) -> Unit,
 ) {
+    ControlPopup(expanded, title, onDismiss) {
+                indices.forEach { index ->
+                        val selected = index == selectedIndex
+                        Text(label(index), color = if (selected) Color(0xFFFF9A16) else Color(0xFFE7E2DA),
+                            fontFamily = FontFamily(Font(R.font.vt323regular)), fontSize = 18.sp,
+                            modifier = Modifier.fillMaxWidth()
+                                .selectable(selected = selected, role = Role.RadioButton) {
+                                    onSelect(index)
+                                }.semantics { stateDescription = if (selected) "Selected" else "Not selected" }
+                                .padding(horizontal = 8.dp, vertical = 5.dp))
+                }
+    }
+}
+
+@Composable
+private fun ControlPopup(expanded: Boolean, title: String, onDismiss: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
     DropdownMenu(
         expanded = expanded,
         onDismissRequest = onDismiss,
@@ -2336,16 +2370,7 @@ internal fun EnumChoiceMenu(
                     fontFamily = FontFamily(Font(R.font.vt323regular)),
                     modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp))
                 androidx.compose.material3.HorizontalDivider(color = Color(0xFF514D48))
-                indices.forEach { index ->
-                        val selected = index == selectedIndex
-                        Text(label(index), color = if (selected) Color(0xFFFF9A16) else Color(0xFFE7E2DA),
-                            fontFamily = FontFamily(Font(R.font.vt323regular)), fontSize = 18.sp,
-                            modifier = Modifier.fillMaxWidth()
-                                .selectable(selected = selected, role = Role.RadioButton) {
-                                    onSelect(index)
-                                }.semantics { stateDescription = if (selected) "Selected" else "Not selected" }
-                                .padding(horizontal = 8.dp, vertical = 5.dp))
-                }
+                content()
     }
 }
 
@@ -2448,57 +2473,6 @@ private fun ComplexEditorLauncher(name: String, onClick: () -> Unit) {
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
     )
-}
-
-@Composable
-@OptIn(ExperimentalLayoutApi::class)
-private fun ParameterEditSheet(
-    parameter: SynthEngine.ParameterValue,
-    onDismiss: () -> Unit,
-    onValue: (Double) -> Unit,
-    onReset: () -> Unit,
-) {
-    ModalBottomSheet(onDismissRequest = onDismiss) {
-        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(parameter.descriptor.label, style = MaterialTheme.typography.titleMedium)
-            if (parameter.descriptor.type == SynthEngine.ParameterType.ENUM) {
-                val selected = parameter.value.roundToInt()
-                Text(
-                    parameter.descriptor.options.getOrNull(selected) ?: "Option ${selected + 1}",
-                    color = Color(0xFF8EF5EE),
-                )
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    parameter.descriptor.options.forEachIndexed { index, option ->
-                        if (index == selected) {
-                            Button(onClick = {
-                                onValue(index.toDouble())
-                                onDismiss()
-                            }) { Text(option) }
-                        } else {
-                            OutlinedButton(onClick = {
-                                onValue(index.toDouble())
-                                onDismiss()
-                            }) { Text(option) }
-                        }
-                    }
-                }
-                OutlinedButton(onClick = {
-                    onReset()
-                    onDismiss()
-                }) { Text("Reset") }
-            } else {
-                Text("Current: ${parameter.value.roundToInt()}")
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = { onValue(parameter.value - 1) }) { Text("−") }
-                    OutlinedButton(onClick = { onValue(parameter.value + 1) }) { Text("+") }
-                    Button(onClick = {
-                        onReset()
-                        onDismiss()
-                    }) { Text("Reset") }
-                }
-            }
-        }
-    }
 }
 
 @Composable

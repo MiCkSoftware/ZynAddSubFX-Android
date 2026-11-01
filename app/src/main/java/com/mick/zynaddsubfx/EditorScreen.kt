@@ -322,7 +322,6 @@ private fun PartEditorCard(
     }
     var requestedKitCount by remember(part.partIndex) { mutableStateOf<Int?>(null) }
     var kitCountPreview by remember(part.partIndex) { mutableStateOf(kitSnapshots.count { snapshot -> snapshot.values.any { it.descriptor.path == "kit/enabled" && it.value >= .5 } }) }
-    var editedStructuralParameter by remember { mutableStateOf<SynthEngine.ParameterValue?>(null) }
     LaunchedEffect(part) {
         structure = engine.parameterSnapshot(part.partIndex, 0)
         kitSnapshots = (0 until 16).map { engine.parameterSnapshot(part.partIndex, it) }
@@ -337,9 +336,6 @@ private fun PartEditorCard(
                 SynthEngine.ParameterType.INTEGER -> value.value.toInt().toString()
             }
         } ?: fallback
-    fun edit(path: String) {
-        editedStructuralParameter = structure.values.firstOrNull { it.descriptor.path == path }
-    }
     fun bool(snapshot: SynthEngine.ParameterSnapshot, path: String): Boolean =
         snapshot.values.firstOrNull { it.descriptor.path == path }?.value?.let { it >= .5 } == true
     fun refreshKits() {
@@ -393,7 +389,7 @@ private fun PartEditorCard(
                 if (engine.writeParameter(part.partIndex, 0,
                         SynthEngine.ParameterWrite(parameter.descriptor.path, value))) {
                     structure = engine.parameterSnapshot(part.partIndex, 0)
-                    if (parameter.descriptor.type == SynthEngine.ParameterType.BOOLEAN) onPartChanged()
+                    onPartChanged()
                 }
             },
             onDrag = { parameter, value ->
@@ -408,7 +404,7 @@ private fun PartEditorCard(
                 val raw = parameter.value.toInt()
                 if (parameter.descriptor.path == "part/channel") (raw + 1).toString() else raw.toString()
             },
-            onLongPress = { editedStructuralParameter = it },
+            onLongPress = {},
             onCommit = onPartChanged,
             trailingControl = {
                 DenseKnobCard("Kit count", kitCountPreview.toFloat(), 1f, 16f,
@@ -429,6 +425,7 @@ private fun PartEditorCard(
                 if (engine.writeParameter(part.partIndex, 0,
                         SynthEngine.ParameterWrite(parameter.descriptor.path, value))) {
                     structure = engine.parameterSnapshot(part.partIndex, 0)
+                    onPartChanged()
                 }
             },
             onDrag = { parameter, value ->
@@ -439,7 +436,7 @@ private fun PartEditorCard(
             },
             verticalLabels = true,
             enumContext = part.partIndex,
-            onLongPress = { editedStructuralParameter = it },
+            onLongPress = {},
             onCommit = onPartChanged,
         )
         Row(Modifier.fillMaxWidth().padding(top = 6.dp),
@@ -532,20 +529,6 @@ private fun PartEditorCard(
                 }.padding(8.dp)) },
             )
         }
-        editedStructuralParameter?.let { parameter ->
-            ParameterEditorDialog(
-                parameter = parameter,
-                onDismiss = { editedStructuralParameter = null },
-                onApply = { value ->
-                    if (engine.writeParameter(part.partIndex, 0,
-                            SynthEngine.ParameterWrite(parameter.descriptor.path, value))) {
-                        structure = engine.parameterSnapshot(part.partIndex, 0)
-                        onPartChanged()
-                    }
-                    editedStructuralParameter = null
-                },
-            )
-        }
         Spacer(modifier = Modifier.height(4.dp))
         ZynModuleRow(
             title = "FX",
@@ -571,31 +554,6 @@ private fun PartEditorCard(
             }
         }
     }
-}
-
-@Composable
-private fun ParameterEditorDialog(
-    parameter: SynthEngine.ParameterValue,
-    onDismiss: () -> Unit,
-    onApply: (Double) -> Unit,
-) {
-    var value by remember(parameter.descriptor.path) { mutableStateOf(parameter.value) }
-    androidx.compose.material3.AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(parameter.descriptor.label) },
-        text = {
-            Column {
-                Text((value.toInt() + if (parameter.descriptor.path == "part/channel") 1 else 0).toString())
-                androidx.compose.material3.Slider(
-                    value = value.toFloat(),
-                    onValueChange = { value = it.toDouble() },
-                    valueRange = parameter.descriptor.minimum.toFloat()..parameter.descriptor.maximum.toFloat(),
-                )
-            }
-        },
-        confirmButton = { Text("Apply", modifier = Modifier.clickable { onApply(value) }.padding(8.dp)) },
-        dismissButton = { Text("Cancel", modifier = Modifier.clickable(onClick = onDismiss).padding(8.dp)) },
-    )
 }
 
 @Composable

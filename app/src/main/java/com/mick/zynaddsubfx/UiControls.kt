@@ -4,6 +4,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
@@ -621,6 +622,7 @@ fun TinyKnobDisplay(
     }
 }
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun LedButton(
     label: String,
@@ -633,6 +635,7 @@ fun LedButton(
     halfWidth: Boolean = false,
     enabled: Boolean = true,
     compact: Boolean = false,
+    onLongClick: (() -> Unit)? = null,
     content: (@Composable () -> Unit)? = null,
 ) {
     val colors = ledColors(lit, hue)
@@ -645,7 +648,8 @@ fun LedButton(
                 contentDescription = label
                 if (!action) stateDescription = if (lit) "On" else "Off"
             }
-            .clickable(enabled = enabled, onClick = onClick),
+            .then(if (onLongClick != null) Modifier.combinedClickable(enabled = enabled, onClick = onClick, onLongClick = onLongClick, onLongClickLabel = "Choose $label")
+                else Modifier.clickable(enabled = enabled, onClick = onClick)),
         shape = RoundedCornerShape(6.dp),
         color = Color(0xFF090E10),
         shadowElevation = 2.dp,
