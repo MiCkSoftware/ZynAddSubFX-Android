@@ -1354,6 +1354,9 @@ void Part::add2XML(XMLwrapper& xml)
 int Part::saveXML(const char *filename)
 {
     XMLwrapper xml;
+    // An instrument export must preserve edits in disabled voices/modules too.
+    // Minimal XML omits them and a later load replaces them with defaults.
+    xml.minimal = false;
 
     xml.beginbranch("INSTRUMENT");
     add2XMLinstrument(xml);
@@ -1379,6 +1382,9 @@ int Part::loadXMLinstrument(const char *filename)
     // set last element to \0 in case filename is too long or not terminated
     loaded_file[length]='\0';
 
+    // XIZ replaces the instrument. Sparse presets must not inherit ADD voices,
+    // envelopes or kit settings from the previously loaded instrument.
+    defaultsinstrument();
     getfromXMLinstrument(xml);
     xml.exitbranch();
 

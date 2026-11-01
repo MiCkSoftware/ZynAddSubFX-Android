@@ -136,9 +136,10 @@ A la fin de chaque implementation, mettre a jour TASKS.md et TODO.md, retirer le
 - [ ] [Liste de choix sur appui long des knobs enum](docs/008_feat_enum_long_press.md) : feature separee, drag direct conserve.
 - [ ] Harmonisation ON/C/P, Polarity et clipboard Amplitude de voix implementes localement ; validations et tests Android encore incomplets (roles, mode libre, reset, clipboard Part/Kit/Voice, accessibilite, tactile et audio). Suivi : [backlog 003](docs/backlog/003_feat_enveloppes_01.md).
 - [x] Resonance — feature validee par Mick le 1 novembre 2026 : navigation simplifiee, section avant Voices, clipboard, libelles lisibles et affichage frequence/amplitude pendant le dessin. Compilation Kotlin et ParameterRoutingTest OK ; tests utilisateur OK. Le commit natif reste effectue en fin de geste.
-- [ ] [Champs ADD/Voice](docs/backlog/005_feat_parite_champs_addsynth.md) : fade-in, bend, offset et phase randomness exposes localement ; compilation OK, QA appareil et XIZ restantes.
+- [ ] [Champs ADD/Voice](docs/backlog/005_feat_parite_champs_addsynth.md) : fade-in, bend, offset et phase randomness exposes localement ; lecture/ecriture JNI et aller-retour XIZ testes sur emulateur (voir rapport QA ADD) ; QA tactile/audio restante.
 - [ ] [Completer OscilGen pour Voice et Modulator](docs/006_feat_oscilgen_complet.md)
-- [ ] [Valider audio, clipboard et aller-retour XIZ](docs/007_qa_audio_xiz_addsynth.md)
+- [x] QA ADD transversale — cloture validee par Mick le 1 novembre 2026 : 24 tests JVM et 15 tests instrumentes OK sur emulateur Android 15 ; export des modules desactives et rechargement des presets partiels corriges. [Rapport et matrice](docs/qa_addsynth_audio_xiz.md).
+- [ ] Validation finale ADD : ecoute comparative, routages audibles, notes fantomes, gestes et navigation systeme sur appareil, clipboard et champs avances complementaires. [Checklist detaillee](docs/qa_addsynth_audio_xiz.md#validation-finale-restante).
 
 Les fonctions Envelope libre, Formant et clipboard ci-dessous sont presentes dans le code ; leur presence ne vaut pas validation audio ou tactile complete. La QA rapide M5 deja cochee concerne uniquement son perimetre historique.
 
