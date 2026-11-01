@@ -1,6 +1,7 @@
 package com.mick.zynaddsubfx
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -28,6 +29,7 @@ fun BankBrowserScreen(
     scanResults: Map<String, PresetScanRecord>,
     presetRatings: Map<String, Int>,
     currentPresetPath: String?,
+    presetPathsByPart: Map<Int, String>,
     selectedPartIndex: Int,
     presetLoading: Boolean,
     catalogLoading: Boolean,
@@ -115,17 +117,18 @@ fun BankBrowserScreen(
                     sortedPresets.forEachIndexed { index, preset ->
                         val isLast = index == sortedPresets.lastIndex
                         val prefix = if (isLast) "└─" else "├─"
+                        val loadedParts = presetPathsByPart.filterValues { it == preset.assetPath }.keys.sorted()
+                        val selected = preset.assetPath == currentPresetPath
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .background(
-                                    if (preset.assetPath == currentPresetPath) {
-                                        MaterialTheme.colorScheme.primaryContainer
-                                    } else {
-                                        Color.Transparent
-                                    },
+                                    if (selected) Color(0xFF24585C)
+                                    else if (loadedParts.isNotEmpty()) Color(0xFF233234)
+                                    else Color.Transparent,
                                     RoundedCornerShape(4.dp)
                                 )
+                                .border(1.dp, if (selected) Color(0xFF66F0E9) else Color.Transparent, RoundedCornerShape(4.dp))
                                 .clickable(enabled = !presetLoading) { onLoadPreset(preset) }
                                 .padding(horizontal = 6.dp, vertical = 4.dp),
                             verticalAlignment = Alignment.CenterVertically,
@@ -136,12 +139,24 @@ fun BankBrowserScreen(
                             PresetTypeBadge(preset.assetPath)
                             Text(
                                 text = preset.displayName,
+                                modifier = Modifier.weight(1f),
+                                maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                                 color = when {
-                                    preset.assetPath == currentPresetPath -> MaterialTheme.colorScheme.onPrimaryContainer
+                                    selected -> Color(0xFFE5FFFF)
                                     presetLoading -> MaterialTheme.colorScheme.onSurfaceVariant
                                     else -> MaterialTheme.colorScheme.onSurface
                                 }
                             )
+                            if (loadedParts.isNotEmpty()) {
+                                Text(loadedParts.joinToString(",") { (it + 1).toString() },
+                                    modifier = Modifier.background(
+                                        if (selected) Color(0xFF66F0E9) else Color(0xFF385C5E),
+                                        RoundedCornerShape(4.dp),
+                                    ).padding(horizontal = 5.dp, vertical = 2.dp),
+                                    color = if (selected) Color(0xFF102B2C) else Color(0xFFD1F4F2),
+                                    style = MaterialTheme.typography.labelSmall)
+                            }
                             PresetStarRating(
                                 rating = (presetRatings[preset.assetPath] ?: 0).coerceIn(0, 5),
                                 onSetRating = { onSetPresetRating(preset.assetPath, it) }

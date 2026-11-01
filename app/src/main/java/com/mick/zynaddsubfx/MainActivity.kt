@@ -411,7 +411,7 @@ fun ZynAddSubFXApp(nativeStatus: NativeSmokeStatus = NativeSmokeStatus.preview()
         persistBankExpandedSections(context, bankExpandedSections.toMap())
     }
 
-    val handleLoadPreset: (SynthEngine.PresetAsset) -> Unit = { preset ->
+    val handleLoadPreset: (SynthEngine.PresetAsset, Boolean) -> Unit = { preset, returnToPlay ->
         if (presetLoading) {
             actionStatus = "Preset load already in progress…"
         } else {
@@ -434,6 +434,9 @@ fun ZynAddSubFXApp(nativeStatus: NativeSmokeStatus = NativeSmokeStatus.preview()
                         presetPathsByPart[targetPart] = preset.assetPath
                         engine.markInstrumentSaved(targetPart)
                     }
+                }
+                if (result.ok && returnToPlay && currentDestination == AppDestinations.BANKS) {
+                    currentDestination = AppDestinations.HOME
                 }
                 if (result.ok) {
                     context.getSharedPreferences("part_presets", Context.MODE_PRIVATE).edit().clear().apply {
@@ -501,7 +504,7 @@ fun ZynAddSubFXApp(nativeStatus: NativeSmokeStatus = NativeSmokeStatus.preview()
             actionStatus = "Saved preset not found in catalog"
             return@LaunchedEffect
         }
-        handleLoadPreset(preset)
+        handleLoadPreset(preset, false)
     }
 
     DisposableEffect(lifecycleOwner, audioRunning, toneEnabled) {
@@ -631,11 +634,12 @@ fun ZynAddSubFXApp(nativeStatus: NativeSmokeStatus = NativeSmokeStatus.preview()
                     scanResults = scanResults.toMap(),
                     presetRatings = presetRatings.toMap(),
                     currentPresetPath = presetPathsByPart[selectedPlayPartIndex],
+                    presetPathsByPart = presetPathsByPart.toMap(),
                     selectedPartIndex = selectedPlayPartIndex,
                     presetLoading = presetLoading,
                     catalogLoading = presetCatalogLoading,
                     expandedSections = bankExpandedSections.toMap(),
-                    onLoadPreset = handleLoadPreset,
+                    onLoadPreset = { handleLoadPreset(it, true) },
                     onToggleSectionExpanded = { section ->
                         bankExpandedSections[section] = !(bankExpandedSections[section] ?: false)
                         persistBankExpandedSectionsState()
@@ -674,8 +678,8 @@ fun ZynAddSubFXApp(nativeStatus: NativeSmokeStatus = NativeSmokeStatus.preview()
                         loadedPartIndices = presetPathsByPart.keys.toSet(),
                     ),
                     onOpenBanks = { currentDestination = AppDestinations.BANKS },
-                    onPreviousPreset = { if (bankIndex > 0) handleLoadPreset(bankPresets[bankIndex - 1]) },
-                    onNextPreset = { if (bankIndex >= 0 && bankIndex < bankPresets.lastIndex) handleLoadPreset(bankPresets[bankIndex + 1]) },
+                    onPreviousPreset = { if (bankIndex > 0) handleLoadPreset(bankPresets[bankIndex - 1], false) },
+                    onNextPreset = { if (bankIndex >= 0 && bankIndex < bankPresets.lastIndex) handleLoadPreset(bankPresets[bankIndex + 1], false) },
                     canPreviousPreset = !presetLoading && bankIndex > 0,
                     canNextPreset = !presetLoading && bankIndex >= 0 && bankIndex < bankPresets.lastIndex,
                     onPressKeyboardNote = { note ->

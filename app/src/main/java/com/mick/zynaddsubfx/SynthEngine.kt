@@ -476,7 +476,8 @@ class SynthEngine(private val context: Context) : InstrumentEditorEngine {
     }
 
     private fun ensurePresetAssetOnDisk(assetPath: String): File {
-        val outRoot = File(context.cacheDir, "zyn_packaged_presets").apply { mkdirs() }
+        val appUpdateTime = context.packageManager.getPackageInfo(context.packageName, 0).lastUpdateTime
+        val outRoot = File(context.cacheDir, "zyn_packaged_presets/$appUpdateTime").apply { mkdirs() }
         val outFile = File(outRoot, assetPath)
         outFile.parentFile?.mkdirs()
         if (outFile.exists() && outFile.length() > 0L) return outFile
