@@ -482,38 +482,42 @@ fun CommonSynthModules(
                 )
             }
         }
-        envelopeRoles.forEach { role ->
-            val address = ModuleAddress.Envelope(voiceIndex, role)
-            EnvelopeModel.from(values, address)?.let { envelope ->
-                val preview = remember(model.state.revision, address) { model.preview(address) }
-                EnvelopeUI(
-                    model = envelope,
-                    preview = preview,
-                    onWrite = model::write,
-                    onOpenEditor = { onOpenEnvelope(address) },
-                    onCopy = { model.copyModule(address) },
-                    onPaste = { model.pasteModule(address) },
-                    canPaste = model.canPasteModule(address),
-                    onDrag = model::dragParameter,
-                    onCommit = model::finishParameterDrag,
-                )
+        val filterEnabled = section != SynthEngine.ParameterSection.FILTER || voiceIndex < 0 ||
+            values.firstOrNull { it.descriptor.path == "add/voice/$voiceIndex/filter" }?.value != 0.0
+        if (filterEnabled) {
+            envelopeRoles.forEach { role ->
+                val address = ModuleAddress.Envelope(voiceIndex, role)
+                EnvelopeModel.from(values, address)?.let { envelope ->
+                    val preview = remember(model.state.revision, address) { model.preview(address) }
+                    EnvelopeUI(
+                        model = envelope,
+                        preview = preview,
+                        onWrite = model::write,
+                        onOpenEditor = { onOpenEnvelope(address) },
+                        onCopy = { model.copyModule(address) },
+                        onPaste = { model.pasteModule(address) },
+                        canPaste = model.canPasteModule(address),
+                        onDrag = model::dragParameter,
+                        onCommit = model::finishParameterDrag,
+                    )
+                }
             }
-        }
-        lfoRole?.let { role ->
-            val address = ModuleAddress.Lfo(voiceIndex, role)
-            LfoModel.from(values, address)?.let { lfo ->
-                val preview = remember(model.state.revision, address) { model.preview(address) }
-                LFOUI(
-                    model = lfo,
-                    preview = preview,
-                    onWrite = model::write,
-                    onOpenEditor = { onOpenLfo(address) },
-                    onCopy = { model.copyModule(address) },
-                    onPaste = { model.pasteModule(address) },
-                    canPaste = model.canPasteModule(address),
-                    onDrag = model::dragParameter,
-                    onCommit = model::finishParameterDrag,
-                )
+            lfoRole?.let { role ->
+                val address = ModuleAddress.Lfo(voiceIndex, role)
+                LfoModel.from(values, address)?.let { lfo ->
+                    val preview = remember(model.state.revision, address) { model.preview(address) }
+                    LFOUI(
+                        model = lfo,
+                        preview = preview,
+                        onWrite = model::write,
+                        onOpenEditor = { onOpenLfo(address) },
+                        onCopy = { model.copyModule(address) },
+                        onPaste = { model.pasteModule(address) },
+                        canPaste = model.canPasteModule(address),
+                        onDrag = model::dragParameter,
+                        onCommit = model::finishParameterDrag,
+                    )
+                }
             }
         }
     }
