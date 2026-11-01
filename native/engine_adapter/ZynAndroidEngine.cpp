@@ -1,6 +1,7 @@
 #include "ZynAndroidEngine.h"
 
 #include <cmath>
+#include <cstring>
 #include <algorithm>
 #include <sstream>
 #include <cctype>
@@ -104,7 +105,7 @@ ParameterMetadata parameterMetadata(std::string_view path, std::string_view grou
             }
         } else if (field.rfind("amp", 0) == 0 || field.rfind("volume", 0) == 0 ||
                    field.rfind("panning", 0) == 0 || field.rfind("velocity", 0) == 0 ||
-                   field.rfind("punch", 0) == 0) {
+                   field.rfind("punch", 0) == 0 || field.rfind("fadeIn", 0) == 0) {
             metadata.section = "amplitude";
         } else if (field.rfind("freq", 0) == 0 || field.rfind("detune", 0) == 0 ||
                    field.rfind("octave", 0) == 0 || field.rfind("coarse", 0) == 0) {
@@ -307,9 +308,9 @@ bool ZynAndroidEngine::loadMasterXml(const std::string &path) {
     return rc == 0;
 }
 
-bool ZynAndroidEngine::loadPresetFile(const std::string &path) {
+bool ZynAndroidEngine::loadPresetFile(const std::string &path, int partIndex) {
     presetLoadCount_.fetch_add(1);
-    if (!zynReady_.load() || !master_ || path.empty()) {
+    if (!zynReady_.load() || !master_ || path.empty() || partIndex < 0 || partIndex >= NUM_MIDI_PARTS) {
         presetLoadFailCount_.fetch_add(1);
         return false;
     }
@@ -350,12 +351,12 @@ bool ZynAndroidEngine::loadPresetFile(const std::string &path) {
 #endif
         }
     } else if (lowerPath.size() >= 4 && lowerPath.rfind(".xiz") == lowerPath.size() - 4) {
-        auto *part0 = master_->part[0];
-        if (part0 != nullptr) {
-            rc = part0->loadXMLinstrument(path.c_str());
+        auto *part = master_->part[partIndex];
+        if (part != nullptr) {
+            rc = part->loadXMLinstrument(path.c_str());
             if (rc == 0) {
                 const auto deadline = std::chrono::steady_clock::now() + kInstrumentApplyTimeout;
-                if (!applyAndInitPartWithTimeout(part0, deadline)) {
+                if (!applyAndInitPartWithTimeout(part, deadline)) {
                     rc = -2;
                     presetLoadTimeoutCount_.fetch_add(1);
                 }
@@ -730,6 +731,8 @@ std::string ZynAndroidEngine::parameterSnapshot(int partIndex, int kitIndex) con
             static_cast<int>(std::lround(96.0f * (1.0f + (g.Volume - 12.0412f) / 60.0f))), 0, 127),
             0, 127, 96);
         add("add/panning", "Panning", "ADD / Amplitude / Global", "int", g.PPanning, 0, 127, 64);
+        add("add/fadeIn", "Fade-in adjustment", "ADD / Amplitude / Global", "int",
+            g.Fadein_adjustment, 0, 127, FADEIN_ADJUSTMENT_SCALE);
         add("add/detune", "Fine detune", "ADD / Frequency / Global", "int", g.PDetune, 0, 16383, 8192);
         add("add/detuneType", "Detune type", "ADD / Frequency / Global", "enum", g.PDetuneType, 0, 3, 1,
             "L35,L10E,L100E,E1200");
@@ -852,7 +855,7 @@ std::string ZynAndroidEngine::parameterSnapshot(int partIndex, int kitIndex) con
             add((prefix + "fixedFreqEt").c_str(), "Eq.T.", frequencyGroup.c_str(), "int",
                 v.PfixedfreqET, 0, 127, 0);
             add((prefix + "bend").c_str(), "Pitch bend", frequencyGroup.c_str(), "int",
-                static_cast<int>(v.PBendAdjust) - 64, -64, 63, 0);
+                static_cast<int>(v.PBendAdjust) - 64, -64, 63, 24);
             add((prefix + "offsetHz").c_str(), "Frequency offset", frequencyGroup.c_str(), "int",
                 static_cast<int>(v.POffsetHz) - 64, -64, 63, 0);
             add((prefix + "filter").c_str(), "Voice filter", filterGroup.c_str(), "bool", v.PFilterEnabled, 0, 1, 0);
@@ -1176,6 +1179,7 @@ bool ZynAndroidEngine::setParameter(int partIndex, int kitIndex, const std::stri
         if (path == "add/stereo") g.PStereo = b();
         else if (path == "add/volume") g.Volume = 12.0412f - 60.0f * (1.0f - i(0, 127) / 96.0f);
         else if (path == "add/panning") g.PPanning = i(0, 127);
+        else if (path == "add/fadeIn") g.Fadein_adjustment = i(0, 127);
         else if (path == "add/detune") g.PDetune = i(0, 16383);
         else if (path == "add/detuneType") g.PDetuneType = i(0, 3);
         else if (path == "add/velocity") g.PAmpVelocityScaleFunction = i(0, 127);
@@ -1703,6 +1707,13 @@ std::string ZynAndroidEngine::modulePreview(
         out << points[n];
     }
     return out.str();
+}
+
+bool ZynAndroidEngine::renameInstrument(int partIndex, const std::string &name) {
+    if (!zynReady_.load() || !master_ || partIndex < 0 || partIndex >= NUM_MIDI_PARTS ||
+        !master_->part[partIndex] || name.empty() || name.size() >= PART_MAX_NAME_LEN) return false;
+    std::memcpy(master_->part[partIndex]->Pname, name.c_str(), name.size() + 1);
+    return true;
 }
 
 bool ZynAndroidEngine::exportInstrument(int partIndex, const std::string &path) {

@@ -136,7 +136,7 @@ A la fin de chaque implementation, mettre a jour TASKS.md et TODO.md, retirer le
 - [ ] [Liste de choix sur appui long des knobs enum](docs/008_feat_enum_long_press.md) : feature separee, drag direct conserve.
 - [ ] Harmonisation ON/C/P, Polarity et clipboard Amplitude de voix implementes localement ; validations et tests Android encore incomplets (roles, mode libre, reset, clipboard Part/Kit/Voice, accessibilite, tactile et audio). Suivi : [backlog 003](docs/backlog/003_feat_enveloppes_01.md).
 - [x] Resonance — feature validee par Mick le 1 novembre 2026 : navigation simplifiee, section avant Voices, clipboard, libelles lisibles et affichage frequence/amplitude pendant le dessin. Compilation Kotlin et ParameterRoutingTest OK ; tests utilisateur OK. Le commit natif reste effectue en fin de geste.
-- [ ] [Completer les champs globaux et Voice manquants](docs/005_feat_parite_champs_addsynth.md)
+- [ ] [Champs ADD/Voice](docs/backlog/005_feat_parite_champs_addsynth.md) : fade-in, bend, offset et phase randomness exposes localement ; compilation OK, QA appareil et XIZ restantes.
 - [ ] [Completer OscilGen pour Voice et Modulator](docs/006_feat_oscilgen_complet.md)
 - [ ] [Valider audio, clipboard et aller-retour XIZ](docs/007_qa_audio_xiz_addsynth.md)
 

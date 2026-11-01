@@ -251,7 +251,7 @@ extern "C" JNIEXPORT jboolean JNICALL
 Java_com_mick_zynaddsubfx_NativeSynthBridge_nativeLoadPresetFile(
         JNIEnv *env,
         jobject /* thiz */,
-        jstring path) {
+        jstring path, jint partIndex) {
     if (path == nullptr) {
         return JNI_FALSE;
     }
@@ -267,7 +267,7 @@ Java_com_mick_zynaddsubfx_NativeSynthBridge_nativeLoadPresetFile(
     if (wasRunning) {
         stopAudioLocked();
     }
-    const bool ok = gEngine.loadPresetFile(pathString);
+    const bool ok = gEngine.loadPresetFile(pathString, partIndex);
     if (wasRunning) {
         (void) startAudioLocked();
     }
@@ -407,6 +407,17 @@ extern "C" JNIEXPORT jstring JNICALL
 Java_com_mick_zynaddsubfx_NativeSynthBridge_nativeGetClipboardType(JNIEnv *env, jobject) {
     const std::string value = gEngine.clipboardType();
     return env->NewStringUTF(value.c_str());
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_mick_zynaddsubfx_NativeSynthBridge_nativeRenameInstrument(
+        JNIEnv *env, jobject, jint partIndex, jstring name) {
+    if (!name) return JNI_FALSE;
+    const char *raw = env->GetStringUTFChars(name, nullptr);
+    if (!raw) return JNI_FALSE;
+    const std::string value(raw);
+    env->ReleaseStringUTFChars(name, raw);
+    return gEngine.renameInstrument(partIndex, value) ? JNI_TRUE : JNI_FALSE;
 }
 
 extern "C" JNIEXPORT jboolean JNICALL

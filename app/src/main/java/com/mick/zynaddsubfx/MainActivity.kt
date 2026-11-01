@@ -400,11 +400,18 @@ fun ZynAddSubFXApp(nativeStatus: NativeSmokeStatus = NativeSmokeStatus.preview()
             actionStatus = "Loading preset: ${preset.displayName}…"
             heldNotes.clear()
             heldNote = null
+            val targetPart = selectedPlayPartIndex
             scope.launch {
                 val result = withContext(Dispatchers.IO) {
-                    runCatching { engine.loadPackagedPresetMeasured(preset.assetPath) }
+                    runCatching { engine.loadPackagedPresetMeasured(preset.assetPath, targetPart) }
                         .getOrElse { SynthEngine.PresetLoadResult(false, 0L, false) }
                 }
+                if (result.ok) {
+                    if (preset.assetPath.endsWith(".xmz", ignoreCase = true)) {
+                        (0 until 16).forEach { engine.markInstrumentSaved(it) }
+                    } else engine.markInstrumentSaved(targetPart)
+                }
+                inspectorRefreshToken += 1
                 currentPresetPath = preset.assetPath
                 persistLastSelectedPresetPath(context, preset.assetPath)
                 currentPresetLoadToken += 1

@@ -20,6 +20,57 @@ class CommonModulesInstrumentedTest {
     val composeRule = createComposeRule()
 
     @Test
+    fun exportRevisionDoesNotClearLaterInstrumentEdits() {
+        val engine = SynthEngine(InstrumentationRegistry.getInstrumentation().targetContext)
+        assertTrue(NativeSynthBridge.nativeInit(48_000, 256))
+        assertTrue(engine.writeParameter(0, 0, SynthEngine.ParameterWrite("add/fadeIn", 21.0)))
+        val exported = engine.instrumentRevision(0)
+        assertTrue(engine.instrumentDirty(0))
+        assertTrue(engine.writeParameter(0, 0, SynthEngine.ParameterWrite("add/fadeIn", 22.0)))
+        engine.markInstrumentSaved(0, exported)
+        assertTrue(engine.instrumentDirty(0))
+        assertFalse(engine.instrumentDirty(1))
+        engine.markInstrumentSaved(0)
+        assertFalse(engine.instrumentDirty(0))
+    }
+
+    @Test
+    fun xizLoadTargetsSelectedPart() {
+        val engine = SynthEngine(InstrumentationRegistry.getInstrumentation().targetContext)
+        assertTrue(NativeSynthBridge.nativeInit(48_000, 256))
+        assertTrue(engine.renameInstrument(0, "Part zero marker"))
+        assertTrue(engine.renameInstrument(1, "Part one marker"))
+        val preset = engine.listPackagedPresets().first { it.assetPath.endsWith(".xiz", ignoreCase = true) }
+        assertTrue(engine.loadPackagedPreset(preset.assetPath, 1))
+        val parts = engine.inspectParts().associateBy { it.partIndex }
+        assertEquals("Part zero marker", parts.getValue(0).name)
+        assertTrue(parts.getValue(1).name != "Part one marker")
+    }
+
+    @Test
+    fun addParityParametersRoundTripWithTheirNativeScopes() {
+        val engine = SynthEngine(InstrumentationRegistry.getInstrumentation().targetContext)
+        assertTrue(NativeSynthBridge.nativeInit(48_000, 256))
+        val paths = listOf("add/fadeIn", "add/voice/1/bend", "add/voice/1/offsetHz", "add/voice/1/phaseRandom")
+        val initial = engine.parameterSnapshot(0, 0).values.associateBy { it.descriptor.path }
+        assertEquals(20.0, initial.getValue(paths[0]).descriptor.defaultValue, 0.0)
+        assertEquals(24.0, initial.getValue(paths[1]).descriptor.defaultValue, 0.0)
+        assertEquals(SynthEngine.ParameterSection.AMPLITUDE, initial.getValue(paths[0]).descriptor.section)
+        assertEquals(SynthEngine.ParameterScope.GLOBAL, initial.getValue(paths[0]).descriptor.scope)
+        paths.drop(1).forEach {
+            assertEquals(SynthEngine.ParameterScope.VOICE, initial.getValue(it).descriptor.scope)
+            assertEquals(1, initial.getValue(it).descriptor.ownerIndex)
+        }
+        listOf(127.0, -64.0, 63.0, 17.0).forEachIndexed { index, value ->
+            assertTrue(engine.writeParameter(0, 0, SynthEngine.ParameterWrite(paths[index], value)))
+        }
+        val after = engine.parameterSnapshot(0, 0).values.associateBy { it.descriptor.path }
+        listOf(127.0, -64.0, 63.0, 17.0).forEachIndexed { index, value ->
+            assertEquals(value, after.getValue(paths[index]).value, 0.0)
+        }
+    }
+
+    @Test
     fun nativeFineDetuneUsesOriginalCurves() {
         for (type in 1..4) assertEquals(0f, SynthEngine.fineDetuneCents(type, 8192), .0001f)
         assertEquals(-35f, SynthEngine.fineDetuneCents(1, 0), .001f)

@@ -264,8 +264,6 @@ fun FullInstrumentEditor(
         )
     ) { mutableStateOf<InstrumentEditorDestination?>(null) }
     var editedParameter by remember { mutableStateOf<SynthEngine.ParameterValue?>(null) }
-    var exportedFile by remember { mutableStateOf<File?>(null) }
-    var exportedRevision by remember { mutableStateOf(0L) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val contentScroll = remember(partIndex, kitIndex, module) { LazyListState() }
     val voiceDetailScroll = rememberScrollState()
@@ -275,20 +273,6 @@ fun FullInstrumentEditor(
     val oscillatorPreviewOcclusion = with(density) { 112.dp.roundToPx() }
     val resonanceScroll = rememberScrollState()
     val scope = rememberCoroutineScope()
-    val exportLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.CreateDocument("application/octet-stream")
-    ) { uri ->
-        val source = exportedFile
-        val ok = uri != null && source != null && runCatching {
-            context.contentResolver.openOutputStream(uri)?.use { output ->
-                source.inputStream().use { it.copyTo(output) }
-            } != null
-        }.getOrDefault(false)
-        model.finishExport(ok, exportedRevision)
-        source?.delete()
-        exportedFile = null
-    }
-
     LaunchedEffect(partIndex, kitIndex, module) {
         model.open(partIndex, kitIndex)
         model.selectEngine(module)
@@ -624,7 +608,7 @@ fun FullInstrumentEditor(
                     ?: sectionNames.firstOrNull().orEmpty(),
                 onTabSelected = openSection,
                 dirty = state.dirty,
-                onActions = { selector = "actions" },
+                onActions = null,
                 heldNotes = heldNotes,
                 keyboardOctaveShift = keyboardOctaveShift,
                 onPressKeyboardNote = onPressKeyboardNote,
@@ -749,20 +733,6 @@ fun FullInstrumentEditor(
                 "voice" -> SelectorSheet("Voice", 8, state.selectedVoice) {
                     model.selectVoice(it)
                     selector = null
-                }
-                "actions" -> Column(Modifier.fillMaxWidth().padding(16.dp)) {
-                    Text("Instrument", style = MaterialTheme.typography.titleMedium)
-                    Button(onClick = {
-                        selector = null
-                        model.beginExport()
-                        val file = File(context.cacheDir, "zyn-export-${System.nanoTime()}.xiz")
-                        exportedRevision = state.revision
-                        if (engine.exportInstrument(state.partIndex, file)) {
-                            exportedFile = file
-                            exportLauncher.launch("instrument-part-${state.partIndex + 1}.xiz")
-                        } else model.finishExport(false, exportedRevision)
-                    }) { Text("Export XIZ") }
-                    OutlinedButton(onClick = { selector = "kit" }) { Text("Select kit item") }
                 }
                 "kit" -> SelectorSheet("Kit item", 16, state.kitIndex) {
                     model.selectKit(it)
@@ -1022,7 +992,7 @@ private fun AddVoiceDetailScreen(
                             "$voiceRoot / Frequency" ->
                                 value.descriptor.path.substringAfterLast('/') in setOf(
                                     "detune", "fixedFreq", "fixedFreqEt", "octave",
-                                    "detuneType", "coarse"
+                                    "detuneType", "coarse", "bend", "offsetHz"
                                 )
                             "$voiceRoot / Frequency / Envelope",
                             "$voiceRoot / Frequency / LFO" -> true
@@ -1033,7 +1003,7 @@ private fun AddVoiceDetailScreen(
                             group == "$voiceRoot / Filter / LFO"
                         "Modulation" -> group.startsWith("$voiceRoot / Modulation")
                         else -> value.descriptor.path.substringAfterLast('/') in setOf(
-                            "unison", "spread", "stereoSpread",
+                            "unison", "spread", "phaseRandom", "stereoSpread",
                             "vibrato", "vibratoSpeed", "unisonInvert"
                         )
                     }
@@ -1286,7 +1256,7 @@ private fun voiceParameterOrder(section: String, group: String, path: String): I
             "amplitudeRandom", "frequencyRandom", "waveform"
         )
         section == "Frequency" && group.endsWith("/ Frequency") -> listOf(
-            "detune", "fixedFreq", "fixedFreqEt", "octave", "detuneType", "coarse"
+            "detune", "fixedFreq", "fixedFreqEt", "octave", "detuneType", "coarse", "bend", "offsetHz"
         )
         section == "Frequency" && group.endsWith("/ Envelope") -> listOf(
             "freqEnvelopeEnabled", "attackValue", "attackTime", "releaseTime",

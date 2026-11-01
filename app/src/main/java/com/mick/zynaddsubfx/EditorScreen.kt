@@ -1,6 +1,24 @@
 package com.mick.zynaddsubfx
 
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Save
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.material3.Icon
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
+import java.io.File
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -15,6 +33,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -25,7 +45,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -33,6 +52,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import java.util.Locale
@@ -64,22 +85,47 @@ fun PresetEditorScreen(
     onAllNotesOffPart: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val partExpanded = remember { mutableStateMapOf<Int, Boolean>() }
     var selectedModule by rememberSaveable(uiState.selectedPartIndex) { mutableStateOf<String?>(null) }
     var selectedKitIndex by rememberSaveable(uiState.selectedPartIndex) { mutableStateOf(0) }
     val selectedPart = remember(uiState.parts, uiState.selectedPartIndex) {
         uiState.parts.firstOrNull { it.partIndex == uiState.selectedPartIndex }
             ?: uiState.parts.firstOrNull()
     }
-    BackHandler(enabled = selectedModule != null) { selectedModule = null }
-
-    LaunchedEffect(uiState.parts) {
-        uiState.parts.forEach { part ->
-            if (partExpanded[part.partIndex] == null) {
-                partExpanded[part.partIndex] = part.enabled
-            }
-        }
+    val context = LocalContext.current
+    var exportFile by remember { mutableStateOf<File?>(null) }
+    var exportPart by remember { mutableStateOf(0) }
+    var exportRevision by remember { mutableStateOf(0L) }
+    var status by remember { mutableStateOf<String?>(null) }
+    var renaming by remember(uiState.selectedPartIndex) { mutableStateOf(false) }
+    var name by remember(uiState.selectedPartIndex) { mutableStateOf("") }
+    var nameError by remember(uiState.selectedPartIndex) { mutableStateOf(false) }
+    var hadNameFocus by remember(uiState.selectedPartIndex) { mutableStateOf(false) }
+    val nameFocus = remember { FocusRequester() }
+    fun finishRename() {
+        val trimmed = name.trim()
+        if (trimmed.isEmpty() || trimmed.toByteArray(Charsets.UTF_8).size >= 30 || trimmed.contains('\u0000')) {
+            nameError = true
+        } else if (selectedPart != null && (trimmed == selectedPart.name || engine.renameInstrument(selectedPart.partIndex, trimmed))) {
+            nameError = false
+            renaming = false
+            onPartChanged()
+        } else status = "Rename failed"
     }
+    LaunchedEffect(renaming) { if (renaming) nameFocus.requestFocus() }
+    val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
+        val file = exportFile
+        if (uri != null && file != null) {
+            val ok = runCatching {
+                context.contentResolver.openOutputStream(uri)?.use { output -> file.inputStream().use { it.copyTo(output) } } != null
+            }.getOrDefault(false)
+            if (ok) engine.markInstrumentSaved(exportPart, exportRevision)
+            status = if (ok) "Instrument exported" else "Export failed"
+        }
+        file?.delete()
+        exportFile = null
+    }
+    status?.let { message -> AlertDialog(onDismissRequest = { status = null }, title = { Text(message) }, confirmButton = { TextButton(onClick = { status = null }) { Text("OK") } }) }
+    BackHandler(enabled = selectedModule != null) { selectedModule = null }
 
     Box(modifier.fillMaxSize()) {
         if (selectedModule != null && selectedPart != null) {
@@ -99,6 +145,60 @@ fun PresetEditorScreen(
             return@Box
         }
         Column(Modifier.fillMaxSize()) {
+            Surface(color = Color(0xFF181818), shadowElevation = 5.dp) {
+                Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp)) {
+                    Text("Part ${uiState.selectedPartIndex + 1}", color = Color(0xFF7AB8BA), style = MaterialTheme.typography.labelSmall)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (renaming) {
+                            BasicTextField(
+                                value = name,
+                                onValueChange = { name = it; nameError = false },
+                                singleLine = true,
+                                textStyle = MaterialTheme.typography.titleMedium.copy(color = Color(0xFF8EF5EE)),
+                                cursorBrush = SolidColor(Color(0xFF8EF5EE)),
+                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                                keyboardActions = KeyboardActions(onDone = { finishRename() }),
+                                modifier = Modifier.weight(1f).focusRequester(nameFocus).onFocusChanged {
+                                    if (it.isFocused) hadNameFocus = true
+                                    else if (hadNameFocus && renaming) { hadNameFocus = false; finishRename() }
+                                }.semantics { contentDescription = "Instrument name" },
+                            )
+                        } else {
+                            Text(selectedPart?.name?.takeIf { it.isNotBlank() } ?: "Instrument", color = Color(0xFF8EF5EE), style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f).clickable(enabled = selectedPart != null) {
+                                name = selectedPart?.name.orEmpty(); nameError = false; hadNameFocus = false; renaming = true
+                            }.semantics { contentDescription = "Rename instrument" })
+                        }
+                        if (selectedPart != null) {
+                            LedButton("Disable part", !selectedPart.enabled, { onSetPartEnabled(selectedPart.partIndex, false) }, hue = 2f, displayLabel = "0", halfWidth = true)
+                            Spacer(Modifier.width(7.dp))
+                            LedButton("Enable part", selectedPart.enabled, { onSetPartEnabled(selectedPart.partIndex, true) }, hue = 125f, displayLabel = "1", halfWidth = true)
+                            Spacer(Modifier.width(7.dp))
+                            LedButton("Solo part", false, { onSoloPart(selectedPart.partIndex) }, hue = 28f, action = true, displayLabel = "S", halfWidth = true)
+                            Spacer(Modifier.width(7.dp))
+                            LedButton("Export XIZ", engine.instrumentDirty(selectedPart.partIndex), {
+                                if (renaming) { finishRename() } else {
+                                    val file = File(context.cacheDir, "zyn-export-${System.nanoTime()}.xiz")
+                                    val revision = engine.instrumentRevision(selectedPart.partIndex)
+                                    if (engine.exportInstrument(selectedPart.partIndex, file)) {
+                                        exportFile = file
+                                        exportPart = selectedPart.partIndex
+                                        exportRevision = revision
+                                        val base = selectedPart.name.trim().replace(Regex("[\\\\/:*?\"<>|]"), "_").ifBlank { "instrument-part-${selectedPart.partIndex + 1}" }
+                                        exportLauncher.launch("$base.xiz")
+                                    } else { file.delete(); status = "Export failed" }
+                                }
+                            }, Modifier.width(38.dp), hue = 28f, action = true) {
+                                Icon(Icons.Default.Save, contentDescription = null, tint = if (engine.instrumentDirty(selectedPart.partIndex)) Color.White else Color(0xFFABC0C2))
+                            }
+                        }
+                    }
+                    if (nameError) Text("Enter a name of at most 29 UTF-8 bytes.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall)
+                    if (selectedPart != null) {
+                        Spacer(Modifier.height(4.dp))
+                        PartControls(engine, selectedPart, onAllNotesOffPart, onPartChanged)
+                    }
+                }
+            }
             Column(
                 modifier = Modifier
                     .weight(1f)
@@ -111,18 +211,10 @@ fun PresetEditorScreen(
                     PartEditorCard(
                         engine = engine,
                         part = selectedPart,
-                        expanded = partExpanded[selectedPart.partIndex] ?: selectedPart.enabled,
-                        onToggleExpanded = {
-                            val current = partExpanded[selectedPart.partIndex] ?: selectedPart.enabled
-                            partExpanded[selectedPart.partIndex] = !current
-                        },
-                        onSetPartEnabled = onSetPartEnabled,
                         onSetPartAddEnabled = onSetPartAddEnabled,
                         onSetPartSubEnabled = onSetPartSubEnabled,
                         onSetPartPadEnabled = onSetPartPadEnabled,
-                        onSoloPart = onSoloPart,
                         onPartChanged = onPartChanged,
-                        onAllNotesOffPart = onAllNotesOffPart,
                         heldNote = heldNote,
                         onOpenModule = { module, kit ->
                             selectedKitIndex = kit
@@ -151,19 +243,72 @@ fun PresetEditorScreen(
 }
 
 @Composable
+private fun PartControls(
+    engine: SynthEngine,
+    part: SynthEngine.PartInspector,
+    onAllNotesOffPart: (Int) -> Unit,
+    onPartChanged: () -> Unit,
+) {
+    var currentPeak by remember(part.partIndex) { mutableStateOf(0f) }
+    var heldPeak by remember(part.partIndex) { mutableStateOf(0f) }
+    LaunchedEffect(part.partIndex) {
+        while (true) {
+            currentPeak = engine.inspectParts().firstOrNull { it.partIndex == part.partIndex }?.outputPeak ?: 0f
+            heldPeak = maxOf(heldPeak, currentPeak)
+            delay(200)
+        }
+    }
+        Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).widthIn(min = 270.dp),
+            horizontalArrangement = Arrangement.spacedBy(7.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Surface(
+                modifier = Modifier.weight(1f).height(29.dp),
+                shape = RoundedCornerShape(8.dp),
+                color = Color(0xFF191919),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF2E5F68))
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = "Peak",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.labelMedium
+                    )
+                    Spacer(modifier = Modifier.weight(1f))
+                    Text(
+                        text = String.format(Locale.US, "%.3f / %.3f", currentPeak, heldPeak),
+                        color = Color(0xFFA7F4F0),
+                        style = MaterialTheme.typography.labelMedium
+                    )
+                    Text("↺", color = Color(0xFFA7F4F0), modifier = Modifier.clickable { heldPeak = 0f })
+                }
+            }
+            val noteOn = part.noteOn
+            LedButton("Note on", noteOn, {
+                if (engine.writeParameter(part.partIndex, 0,
+                        SynthEngine.ParameterWrite("part/noteOn", if (noteOn) 0.0 else 1.0))) onPartChanged()
+            }, Modifier.width(58.dp), displayLabel = "NOTE ON")
+            LedButton("All notes off", false, { onAllNotesOffPart(part.partIndex) },
+                Modifier.width(58.dp), 28f, action = true, displayLabel = "ALL OFF")
+        }
+}
+
+@Composable
 @OptIn(ExperimentalLayoutApi::class)
 private fun PartEditorCard(
     engine: SynthEngine,
     part: SynthEngine.PartInspector,
-    expanded: Boolean,
-    onToggleExpanded: () -> Unit,
-    onSetPartEnabled: (Int, Boolean) -> Unit,
     onSetPartAddEnabled: (Int, Boolean) -> Unit,
     onSetPartSubEnabled: (Int, Boolean) -> Unit,
     onSetPartPadEnabled: (Int, Boolean) -> Unit,
-    onSoloPart: (Int) -> Unit,
     onPartChanged: () -> Unit,
-    onAllNotesOffPart: (Int) -> Unit,
     heldNote: Int?,
     onOpenModule: (String, Int) -> Unit,
     activeFxSlots: List<SynthEngine.ActiveFxSlot>,
@@ -178,15 +323,6 @@ private fun PartEditorCard(
     var requestedKitCount by remember(part.partIndex) { mutableStateOf<Int?>(null) }
     var kitCountPreview by remember(part.partIndex) { mutableStateOf(kitSnapshots.count { snapshot -> snapshot.values.any { it.descriptor.path == "kit/enabled" && it.value >= .5 } }) }
     var editedStructuralParameter by remember { mutableStateOf<SynthEngine.ParameterValue?>(null) }
-    var currentPeak by remember(part.partIndex) { mutableStateOf(0f) }
-    var heldPeak by remember(part.partIndex) { mutableStateOf(0f) }
-    LaunchedEffect(part.partIndex, expanded) {
-        while (expanded) {
-            currentPeak = engine.inspectParts().firstOrNull { it.partIndex == part.partIndex }?.outputPeak ?: 0f
-            heldPeak = maxOf(heldPeak, currentPeak)
-            delay(200)
-        }
-    }
     LaunchedEffect(part) {
         structure = engine.parameterSnapshot(part.partIndex, 0)
         kitSnapshots = (0 until 16).map { engine.parameterSnapshot(part.partIndex, it) }
@@ -242,83 +378,12 @@ private fun PartEditorCard(
         kitCountPreview = actualCount
         onPartChanged()
     }
-    val partTitle = if (part.name.isBlank()) {
-        "Part ${part.partIndex + 1}"
-    } else {
-        "Part ${part.partIndex + 1} - ${part.name.take(20)}"
-    }
-
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(10.dp))
             .padding(6.dp)
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(text = partTitle, color = MaterialTheme.colorScheme.onSurface)
-            Row(horizontalArrangement = Arrangement.spacedBy(7.dp), verticalAlignment = Alignment.CenterVertically) {
-                LedButton("Disable part", !part.enabled, { onSetPartEnabled(part.partIndex, false) }, hue = 2f, displayLabel = "0", halfWidth = true)
-                LedButton("Enable part", part.enabled, { onSetPartEnabled(part.partIndex, true) }, hue = 125f, displayLabel = "1", halfWidth = true)
-                LedButton("Solo part", false, { onSoloPart(part.partIndex) }, hue = 28f, action = true, displayLabel = "S", halfWidth = true)
-                Text(
-                    text = if (expanded) "▾" else "▸",
-                    modifier = Modifier.width(22.dp).clickable { onToggleExpanded() },
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-        if (!expanded) return
-
-        Spacer(modifier = Modifier.height(4.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Surface(
-                modifier = Modifier.weight(1f),
-                shape = RoundedCornerShape(8.dp),
-                color = Color(0xFF191919),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF2E5F68))
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 8.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Text(
-                        text = "Peak",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.labelMedium
-                    )
-                    Spacer(modifier = Modifier.weight(1f))
-                    Text(
-                        text = String.format(Locale.US, "%.3f / %.3f", currentPeak, heldPeak),
-                        color = Color(0xFFA7F4F0),
-                        style = MaterialTheme.typography.labelMedium
-                    )
-                    Text("↺", color = Color(0xFFA7F4F0), modifier = Modifier.clickable { heldPeak = 0f })
-                }
-            }
-            val noteOn = structure.values.firstOrNull { it.descriptor.path == "part/noteOn" }
-                ?.value?.let { it >= .5 } ?: part.noteOn
-            LedButton("Note on", noteOn, {
-                if (engine.writeParameter(part.partIndex, 0,
-                        SynthEngine.ParameterWrite("part/noteOn", if (noteOn) 0.0 else 1.0))) {
-                    structure = engine.parameterSnapshot(part.partIndex, 0)
-                    onPartChanged()
-                }
-            }, Modifier.width(58.dp), displayLabel = "NOTE ON")
-            LedButton("All notes off", false, { onAllNotesOffPart(part.partIndex) },
-                Modifier.width(58.dp), 28f, action = true, displayLabel = "ALL OFF")
-        }
-        Spacer(Modifier.height(12.dp))
         EditorSectionHeader("Part parameters")
         DenseParameterGrid(
             listOf(

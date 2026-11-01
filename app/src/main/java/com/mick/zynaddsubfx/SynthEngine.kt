@@ -1,6 +1,7 @@
 package com.mick.zynaddsubfx
 
 import android.content.Context
+import androidx.compose.runtime.mutableStateMapOf
 import java.io.File
 import java.io.FileInputStream
 import java.io.InputStreamReader
@@ -9,6 +10,18 @@ import java.util.zip.GZIPInputStream
 import kotlin.system.measureNanoTime
 
 class SynthEngine(private val context: Context) : InstrumentEditorEngine {
+    private val instrumentRevisions = mutableStateMapOf<Int, Long>()
+    private val savedInstrumentRevisions = mutableStateMapOf<Int, Long>()
+
+    fun instrumentRevision(partIndex: Int): Long = instrumentRevisions[partIndex] ?: 0L
+    fun instrumentDirty(partIndex: Int): Boolean = instrumentRevision(partIndex) != (savedInstrumentRevisions[partIndex] ?: 0L)
+    fun markInstrumentSaved(partIndex: Int, revision: Long = instrumentRevision(partIndex)) {
+        savedInstrumentRevisions[partIndex] = revision
+    }
+    private fun instrumentChanged(partIndex: Int) {
+        instrumentRevisions[partIndex] = instrumentRevision(partIndex) + 1
+    }
+
     companion object {
         fun fineDetuneCents(type: Int, value: Int): Float =
             NativeSynthBridge.nativeFineDetuneCents(type, value)
@@ -189,16 +202,16 @@ class SynthEngine(private val context: Context) : InstrumentEditorEngine {
         return loadPackagedPreset("presets/examples/$assetName")
     }
 
-    fun loadPackagedPreset(assetPath: String): Boolean {
+    fun loadPackagedPreset(assetPath: String, partIndex: Int = 0): Boolean {
         val path = ensurePresetAssetOnDisk(assetPath)
-        return NativeSynthBridge.nativeLoadPresetFile(path.absolutePath)
+        return NativeSynthBridge.nativeLoadPresetFile(path.absolutePath, partIndex)
     }
 
-    fun loadPackagedPresetMeasured(assetPath: String): PresetLoadResult {
+    fun loadPackagedPresetMeasured(assetPath: String, partIndex: Int = 0): PresetLoadResult {
         val before = runtimeCounters()
         var ok = false
         val elapsedNanos = measureNanoTime {
-            ok = loadPackagedPreset(assetPath)
+            ok = loadPackagedPreset(assetPath, partIndex)
         }
         val after = runtimeCounters()
         return PresetLoadResult(
@@ -284,12 +297,15 @@ class SynthEngine(private val context: Context) : InstrumentEditorEngine {
 
     fun setPartAddEnabled(partIndex: Int, enabled: Boolean): Boolean =
         runCatching { NativeSynthBridge.nativeSetPartAddEnabled(partIndex, enabled) }.getOrDefault(false)
+            .also { if (it) instrumentChanged(partIndex) }
 
     fun setPartSubEnabled(partIndex: Int, enabled: Boolean): Boolean =
         runCatching { NativeSynthBridge.nativeSetPartSubEnabled(partIndex, enabled) }.getOrDefault(false)
+            .also { if (it) instrumentChanged(partIndex) }
 
     fun setPartPadEnabled(partIndex: Int, enabled: Boolean): Boolean =
         runCatching { NativeSynthBridge.nativeSetPartPadEnabled(partIndex, enabled) }.getOrDefault(false)
+            .also { if (it) instrumentChanged(partIndex) }
 
     fun soloPart(partIndex: Int): Boolean =
         runCatching { NativeSynthBridge.nativeSoloPart(partIndex) }.getOrDefault(false)
@@ -338,7 +354,9 @@ class SynthEngine(private val context: Context) : InstrumentEditorEngine {
     override fun writeParameter(partIndex: Int, kitIndex: Int, write: ParameterWrite): Boolean =
         runCatching {
             NativeSynthBridge.nativeSetParameter(partIndex, kitIndex, write.path, write.value)
-        }.getOrDefault(false)
+        }.getOrDefault(false).also { ok ->
+            if (ok && (!write.path.startsWith("part/") || write.path in setOf("part/kitMode", "part/drumMode"))) instrumentChanged(partIndex)
+        }
 
     override fun preview(partIndex: Int, kitIndex: Int, address: ModuleAddress, resolution: Int): PreviewSeries =
         runCatching {
@@ -357,9 +375,13 @@ class SynthEngine(private val context: Context) : InstrumentEditorEngine {
 
     override fun pasteModule(partIndex: Int, kitIndex: Int, address: ModuleAddress): Boolean = runCatching {
         NativeSynthBridge.nativePasteModule(partIndex, kitIndex, address.kind, address.index, address.role)
-    }.getOrDefault(false)
+    }.getOrDefault(false).also { if (it) instrumentChanged(partIndex) }
 
     fun clipboardType(): String = runCatching { NativeSynthBridge.nativeGetClipboardType() }.getOrDefault("")
+
+    fun renameInstrument(partIndex: Int, name: String): Boolean =
+        runCatching { NativeSynthBridge.nativeRenameInstrument(partIndex, name) }.getOrDefault(false)
+            .also { if (it) instrumentChanged(partIndex) }
 
     fun exportInstrument(partIndex: Int, destination: File): Boolean =
         runCatching {

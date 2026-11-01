@@ -35,6 +35,7 @@ class ParameterRoutingTest {
     fun addAmplitudeRoutesOnlyGlobalParameters() {
         val global = listOf(
             value("add/volume", SynthEngine.ParameterScope.GLOBAL, SynthEngine.ParameterSection.AMPLITUDE),
+            value("add/fadeIn", SynthEngine.ParameterScope.GLOBAL, SynthEngine.ParameterSection.AMPLITUDE),
             value(
                 "add/ampEnvelope/attackTime",
                 SynthEngine.ParameterScope.GLOBAL,

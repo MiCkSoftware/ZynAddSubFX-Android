@@ -31,7 +31,7 @@ public:
     bool isZynReady() const;
     std::string renderBackendName() const;
     bool loadMasterXml(const std::string &path);
-    bool loadPresetFile(const std::string &path);
+    bool loadPresetFile(const std::string &path, int partIndex);
     void setMasterVolumeNormalized(float normalized);
     float masterVolumeNormalized() const;
     float recentOutputPeak() const;
@@ -51,6 +51,7 @@ public:
     bool pasteModule(int partIndex, int kitIndex, int kind, int index, int role);
     std::string clipboardType() const;
     bool exportInstrument(int partIndex, const std::string &path);
+    bool renameInstrument(int partIndex, const std::string &name);
     bool setPart0Enabled(bool enabled);
     bool setPartEnabled(int partIndex, bool enabled);
     bool allNotesOffPart(int partIndex);

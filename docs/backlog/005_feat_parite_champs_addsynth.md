@@ -1,5 +1,11 @@
 # 005 — Completer les champs globaux et Voice manquants
 
+## Avancement du 1 novembre 2026
+
+Implementation locale : `Fadein_adjustment` → `add/fadeIn` → ADD / Amp ; `PBendAdjust` → `add/voice/<index>/bend` et `POffsetHz` → `add/voice/<index>/offsetHz` → Voice / Frequency ; `Unison_phase_randomness` → `add/voice/<index>/phaseRandom` → Voice / Unison. Le fade-in est un entier natif 0–127, defaut 20 ; bend et offset exposent la valeur native moins 64, plage -64–63, defauts 24 et 0. Le moteur serialize ces champs en XIZ. Le controle phase reste le chemin existant. Stereo et Random grouping restent au niveau ADD du kit.
+
+Compilation debug et APK de tests Android, tests JVM : OK. Un test Android de lecture/ecriture et metadonnees a ete ajoute mais pas execute. Reste a verifier sur appareil la visibilite, l'edition, le reset, l'isolation part/kit/voice, l'aller-retour XIZ et le rendu audio ; aucune installation n'est demandee par cette fiche. Conserver ce prompt tant que ces verifications ne sont pas terminees.
+
 ## Mission et limites
 
 Fermer les ecarts ponctuels de parite ADD/Voice sans refaire OscilGen (prompt 006) ni les composants communs deja implementes. L'objectif est la parite du fork vendored, pas une copie de l'interface desktop.

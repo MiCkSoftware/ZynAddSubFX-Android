@@ -17,7 +17,7 @@ object NativeSynthBridge {
     external fun nativeNoteOff(channel: Int, note: Int)
     external fun nativePanic()
     external fun nativeLoadMasterXml(path: String): Boolean
-    external fun nativeLoadPresetFile(path: String): Boolean
+    external fun nativeLoadPresetFile(path: String, partIndex: Int): Boolean
     external fun nativeSetMasterVolumeNormalized(normalized: Float)
     external fun nativeGetMasterVolumeNormalized(): Float
     external fun nativeGetRuntimeDiagnostics(): String
@@ -37,6 +37,7 @@ object NativeSynthBridge {
     external fun nativeCanPasteModule(kind: Int, role: Int): Boolean
     external fun nativePasteModule(partIndex: Int, kitIndex: Int, kind: Int, index: Int, role: Int): Boolean
     external fun nativeGetClipboardType(): String
+    external fun nativeRenameInstrument(partIndex: Int, name: String): Boolean
     external fun nativeExportInstrument(partIndex: Int, path: String): Boolean
     external fun nativeSetPart0Enabled(enabled: Boolean): Boolean
     external fun nativeSetPartEnabled(partIndex: Int, enabled: Boolean): Boolean
