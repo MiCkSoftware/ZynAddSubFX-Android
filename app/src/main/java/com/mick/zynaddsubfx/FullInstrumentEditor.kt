@@ -168,7 +168,6 @@ private val voiceEditorSections =
     listOf("Voice", "Oscillator", "Frequency", "Amplitude", "Filter", "Modulation", "Unison")
 private val oscillatorEditorSections =
     listOf("Preview", "Output", "Shape & filter", "Harmonics")
-private val resonanceEditorSections = listOf("Curve", "Parameters")
 
 @Composable
 private fun SynthEditorScaffold(
@@ -275,7 +274,6 @@ fun FullInstrumentEditor(
     val oscillatorSectionOffsets = remember { mutableStateOf<Map<String, Int>>(emptyMap()) }
     val oscillatorPreviewOcclusion = with(density) { 112.dp.roundToPx() }
     val resonanceScroll = rememberScrollState()
-    val resonanceSectionOffsets = remember { mutableStateOf<Map<String, Int>>(emptyMap()) }
     val scope = rememberCoroutineScope()
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/octet-stream")
@@ -382,17 +380,9 @@ fun FullInstrumentEditor(
             contextPath = contextPath,
             navigationLabel = "‹ ADD",
             onNavigateUp = navigateBack,
-            tabs = resonanceEditorSections,
-            selectedTab = activeAnchor(
-                resonanceScroll.value,
-                resonanceEditorSections,
-                resonanceSectionOffsets.value,
-            ),
-            onTabSelected = { section ->
-                scope.launch {
-                    resonanceScroll.animateScrollTo(resonanceSectionOffsets.value[section] ?: 0)
-                }
-            },
+            tabs = emptyList(),
+            selectedTab = "",
+            onTabSelected = {},
             dirty = state.dirty,
             onActions = null,
             heldNotes = heldNotes,
@@ -400,16 +390,20 @@ fun FullInstrumentEditor(
             onPressKeyboardNote = onPressKeyboardNote,
             onReleaseKeyboardNote = onReleaseKeyboardNote,
             modifier = modifier,
+            headerActions = {
+                val address = ModuleAddress.Resonance
+                ModuleClipboardActions(
+                    title = "Resonance",
+                    onCopy = { model.copyModule(address) },
+                    onPaste = { model.pasteModule(address) },
+                    canPaste = model.canPasteModule(address),
+                )
+            },
         ) { contentModifier ->
             AddResonanceEditorScreen(
                 model = model,
                 modifier = contentModifier,
                 scrollState = resonanceScroll,
-                onSectionPosition = { section, offset ->
-                    if (resonanceSectionOffsets.value[section] != offset) {
-                        resonanceSectionOffsets.value = resonanceSectionOffsets.value + (section to offset)
-                    }
-                },
             )
         }
         return
@@ -1694,7 +1688,6 @@ private fun AddResonanceEditorScreen(
     model: InstrumentEditorViewModel,
     modifier: Modifier = Modifier,
     scrollState: ScrollState,
-    onSectionPosition: (String, Int) -> Unit,
 ) {
     val values = model.state.snapshot?.values.orEmpty()
     val controls = values.filter { it.descriptor.group == "ADD / Resonance" }
@@ -1706,21 +1699,27 @@ private fun AddResonanceEditorScreen(
     val protect = controls.firstOrNull { it.descriptor.path.endsWith("/protectFundamental") }
     var graphSize by remember { mutableStateOf(IntSize.Zero) }
     var drawingValues by remember { mutableStateOf<List<Int>?>(null) }
+    var drawingPosition by remember { mutableStateOf<androidx.compose.ui.geometry.Offset?>(null) }
     val currentPoints by rememberUpdatedState(points)
 
-    BoxWithConstraints(modifier) {
-        val viewportHeight = maxHeight
-        Column(
-            Modifier.fillMaxSize().verticalScroll(scrollState).padding(7.dp),
-            verticalArrangement = Arrangement.spacedBy(7.dp),
-        ) {
+    Column(
+        modifier.fillMaxSize().verticalScroll(scrollState).padding(7.dp),
+        verticalArrangement = Arrangement.spacedBy(7.dp),
+    ) {
+        val position = drawingPosition
+        val centerHz = center?.value?.let { 10000.0 * 10.0.pow(-(1.0 - it / 127.0) * 2.0) }
+        val octaveSpan = octaves?.value?.let { 0.25 + 10.0 * it / 127.0 }
+        val frequency = if (position != null && centerHz != null && octaveSpan != null) {
+            centerHz * 2.0.pow(octaveSpan * (position.x - 0.5))
+        } else null
+        val amplitude = if (position != null && maxDb != null) {
+            (1.0 - position.y * 2.0) * maxDb.value
+        } else null
+        Box(Modifier.fillMaxWidth()) {
             ResonanceCurve(
                 points = points,
                 drawingValues = drawingValues,
                 modifier = Modifier.fillMaxWidth().height(260.dp)
-                    .onGloballyPositioned {
-                        onSectionPosition("Curve", it.positionInParent().y.roundToInt())
-                    }
                     .onSizeChanged { graphSize = it }.pointerInput(graphSize, points.size) {
                     var previousPosition: androidx.compose.ui.geometry.Offset? = null
                     var gestureValues: MutableList<Int>? = null
@@ -1746,6 +1745,10 @@ private fun AddResonanceEditorScreen(
                             values[pointIndex] = value
                         }
                         drawingValues = values.toList()
+                        drawingPosition = androidx.compose.ui.geometry.Offset(
+                            (positionX / graphSize.width).coerceIn(0f, 1f),
+                            (positionY / graphSize.height).coerceIn(0f, 1f),
+                        )
                         previousPosition = androidx.compose.ui.geometry.Offset(positionX, positionY)
                     }
                     detectDragGestures(
@@ -1762,66 +1765,81 @@ private fun AddResonanceEditorScreen(
                             gestureValues?.let { model.commitResonanceCurve(currentPoints, it) }
                             gestureValues = null
                             drawingValues = null
+                            drawingPosition = null
                             previousPosition = null
                         },
                         onDragCancel = {
                             gestureValues = null
                             drawingValues = null
+                            drawingPosition = null
                             previousPosition = null
                         },
                     )
                 },
             )
-            val curveActions = listOf(
-                "Zero" to "add/resonance/zero",
-                "Smooth" to "add/resonance/smooth",
-                "Interp." to "add/resonance/interpolateSmooth",
-                "Linear" to "add/resonance/interpolateLinear",
-                "R1" to "add/resonance/random/0",
-                "R2" to "add/resonance/random/1",
-                "R3" to "add/resonance/random/2",
-            )
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                curveActions.forEach { (label, path) ->
-                    OutlinedButton(
-                        onClick = { model.writePath(path, 1.0) },
-                        modifier = Modifier.weight(1f),
-                        contentPadding = ButtonDefaults.TextButtonContentPadding,
-                    ) {
-                        Text(label, fontSize = 9.sp, maxLines = 1)
-                    }
+            if (amplitude != null) {
+                Surface(
+                    modifier = Modifier.align(Alignment.TopStart).padding(6.dp),
+                    color = Color(0xCC50151A),
+                    shape = RoundedCornerShape(6.dp),
+                ) {
+                    Text("%+.1f dB".format(amplitude), color = Color(0xFFFF8A90),
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp))
                 }
             }
-            val resonanceControls = listOfNotNull(enabled, maxDb, center, octaves, protect)
-            Box(
-                Modifier.fillMaxWidth().onGloballyPositioned {
-                    onSectionPosition("Parameters", it.positionInParent().y.roundToInt())
-                },
-            ) {
-                DenseParameterGrid(
-                    parameters = resonanceControls,
-                    onWrite = model::write,
-                    onDrag = model::dragParameter,
-                    onCommit = model::finishParameterDrag,
-                    verticalLabels = true,
-                    onLongPress = { model.reset(it) },
-                    valueText = { parameter ->
-                        when {
-                            parameter.descriptor.path.endsWith("/maxDb") ->
-                                parameter.value.roundToInt().toString()
-                            parameter.descriptor.path.endsWith("/center") -> {
-                                val hz = 10000.0 * 10.0.pow(-(1.0 - parameter.value / 127.0) * 2.0)
-                                if (hz >= 1000) "%.1fk".format(hz / 1000) else "%.0f".format(hz)
-                            }
-                            parameter.descriptor.path.endsWith("/octaves") ->
-                                "%.1f".format(0.25 + 10.0 * parameter.value / 127.0)
-                            else -> parameter.value.roundToInt().toString()
-                        }
-                    },
-                )
+            if (frequency != null) {
+                Surface(
+                    modifier = Modifier.align(Alignment.BottomEnd).padding(6.dp),
+                    color = Color(0xCC50151A),
+                    shape = RoundedCornerShape(6.dp),
+                ) {
+                    Text("%.2f kHz".format(frequency / 1000.0), color = Color(0xFFFF8A90),
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp))
+                }
             }
-            Spacer(Modifier.fillMaxWidth().height(viewportHeight))
         }
+        val curveActions = listOf(
+            "Zero" to "add/resonance/zero",
+            "Smooth" to "add/resonance/smooth",
+            "Interp." to "add/resonance/interpolateSmooth",
+            "Linear" to "add/resonance/interpolateLinear",
+            "R1" to "add/resonance/random/0",
+            "R2" to "add/resonance/random/1",
+            "R3" to "add/resonance/random/2",
+        )
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+            curveActions.forEach { (label, path) ->
+                OutlinedButton(
+                    onClick = { model.writePath(path, 1.0) },
+                    modifier = Modifier.weight(1f),
+                    contentPadding = ButtonDefaults.TextButtonContentPadding,
+                ) {
+                    Text(label, fontSize = 9.sp, maxLines = 1)
+                }
+            }
+        }
+        val resonanceControls = listOfNotNull(enabled, maxDb, center, octaves, protect)
+        DenseParameterGrid(
+            parameters = resonanceControls,
+            onWrite = model::write,
+            onDrag = model::dragParameter,
+            onCommit = model::finishParameterDrag,
+            verticalLabels = true,
+            onLongPress = { model.reset(it) },
+            valueText = { parameter ->
+                when {
+                    parameter.descriptor.path.endsWith("/maxDb") ->
+                        parameter.value.roundToInt().toString()
+                    parameter.descriptor.path.endsWith("/center") -> {
+                        val hz = 10000.0 * 10.0.pow(-(1.0 - parameter.value / 127.0) * 2.0)
+                        if (hz >= 1000) "%.1fk".format(hz / 1000) else "%.0f".format(hz)
+                    }
+                    parameter.descriptor.path.endsWith("/octaves") ->
+                        "%.1f".format(0.25 + 10.0 * parameter.value / 127.0)
+                    else -> parameter.value.roundToInt().toString()
+                }
+            },
+        )
     }
 }
 
@@ -2334,6 +2352,8 @@ private fun compactAddLabel(descriptor: SynthEngine.ParameterDescriptor): String
     descriptor.path == "part/portamento" -> "Portamento"
     descriptor.path == "part/portamentoTime" -> "Port. time"
     descriptor.path == "part/portamentoStretch" -> "Port. str."
+    descriptor.path == "add/resonance/maxDb" -> "Max dB"
+    descriptor.path == "add/resonance/protectFundamental" -> "Prot. 1st"
     descriptor.path == "add/stereo" -> "Stereo"
     descriptor.path == "add/randomGrouping" -> "Random group"
     descriptor.path == "add/volume" -> "Volume"

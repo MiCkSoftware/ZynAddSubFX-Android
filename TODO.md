@@ -8,7 +8,7 @@ Chaque agent doit mettre a jour TODO.md et TASKS.md, retirer les liens vers son 
 - [ ] QA complementaire liste Voice : paysage/petite largeur/grande police, lecteur d'ecran, stress des gestes, sources partagees et audio approfondi. UX courante validee par Mick ; compilation native deux ABI, 24 tests JVM et 14 verifications JNI OK.
 - [ ] [Liste de choix sur appui long des knobs enum](docs/008_feat_enum_long_press.md) : feature separee, drag direct conserve.
 - [ ] Harmonisation ON/C/P, Polarity et clipboard Amplitude de voix implementes localement ; validations et tests Android encore incomplets (roles, mode libre, reset, clipboard Part/Kit/Voice, accessibilite, tactile et audio). Suivi : [backlog 003](docs/backlog/003_feat_enveloppes_01.md).
-- [ ] [Simplifier la navigation de Resonance](docs/004_ux_resonance.md)
+- [x] Resonance — feature validee par Mick le 1 novembre 2026 : navigation simplifiee, section avant Voices, clipboard, libelles lisibles et affichage frequence/amplitude pendant le dessin. Compilation Kotlin et ParameterRoutingTest OK ; tests utilisateur OK. Le commit natif reste effectue en fin de geste.
 - [ ] [Completer les champs globaux et Voice manquants](docs/005_feat_parite_champs_addsynth.md)
 - [ ] [Completer OscilGen pour Voice et Modulator](docs/006_feat_oscilgen_complet.md)
 - [ ] [Valider audio, clipboard et aller-retour XIZ](docs/007_qa_audio_xiz_addsynth.md)
@@ -19,7 +19,6 @@ Chaque agent doit mettre a jour TODO.md et TASKS.md, retirer les liens vers son 
 - ADsynth Oscillator Editor incomplete ?
 - Parts : all on same screen (selected on is unfolded)
 - Parts: 3 dot menu is weird ; why save to ? remove nav to kit X
-- ad synth resonance : parameters  tab nav useless
 
 - Main
   - bouton edit save sur main à droite de stereo (et retirer save des top app bar)
