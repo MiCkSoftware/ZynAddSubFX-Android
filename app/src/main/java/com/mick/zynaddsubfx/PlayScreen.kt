@@ -28,6 +28,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -57,6 +60,32 @@ data class PlayUiState(
     val selectedPartIndex: Int,
     val loadedPartIndices: Set<Int> = emptySet(),
 )
+
+@Composable
+private fun PlayChoiceKnob(
+    label: String,
+    title: String,
+    value: Int,
+    range: IntRange,
+    context: Any? = null,
+    labelFor: (Int) -> String = { it.toString() },
+    knobLabel: (Int) -> String = labelFor,
+    onSelect: (Int) -> Unit,
+) {
+    var open by remember(context) { mutableStateOf(false) }
+    Box {
+        DenseControlCard(label, Color(0xFF1C474B), onLongClick = { open = true },
+            longClickLabel = "Choose $title") {
+            TinyKnob("", value.toFloat(), range.first.toFloat(), range.last.toFloat(),
+                valueText = { knobLabel(it.roundToInt()) },
+                onValueChange = { onSelect(it.roundToInt().coerceIn(range)) })
+        }
+        EnumChoiceMenu(open, title, range, value, labelFor, { open = false }) {
+            onSelect(it)
+            open = false
+        }
+    }
+}
 
 @Composable
 fun PlayScreen(
@@ -179,8 +208,8 @@ fun PlayScreen(
                 Spacer(Modifier.height(8.dp))
                 EditorSectionHeader("Part controls")
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                    Box(Modifier.weight(1f)) { DenseKnobCard("Channel", ((selectedPart?.receiveChannel ?: 0) + 1).toFloat(), 1f, 16f,
-                        { onSetSelectedPartChannel(it.toInt().coerceIn(1, 16)) }) }
+                    Box(Modifier.weight(1f)) { PlayChoiceKnob("Channel", "Receive channel", (selectedPart?.receiveChannel ?: 0) + 1,
+                        1..16, uiState.selectedPartIndex, onSelect = onSetSelectedPartChannel) }
                     Box(Modifier.weight(1f)) { DenseKnobCard("Volume", (selectedPart?.volume ?: 96).toFloat(), 0f, 127f,
                         { onSetSelectedPartVolume(it.toInt().coerceIn(0, 127)) }) }
                     Box(Modifier.weight(1f)) { DenseKnobCard("Panning", (selectedPart?.panning ?: 64).toFloat(), 0f, 127f,
@@ -208,16 +237,16 @@ fun PlayScreen(
                     Box(Modifier.weight(1f)) { DenseKnobCard("Master", uiState.masterVolume * 127f, 0f, 127f,
                         { onMasterVolumeChange((it / 127f).coerceIn(0f, 1f)) }) }
                     Box(Modifier.weight(1f)) {
-                        DenseControlCard("Channel", Color(0xFF1C474B)) {
-                            TinyKnob("", (uiState.keyboardChannel + 1).toFloat(), 0f, 16f,
-                                valueText = { if (it.roundToInt() == 0) "A${(selectedPart?.receiveChannel ?: 0) + 1}" else it.roundToInt().toString() },
-                                onValueChange = { onKeyboardChannelChange(it.roundToInt().coerceIn(0, 16) - 1) })
-                        }
+                        PlayChoiceKnob("Channel", "Keyboard channel", uiState.keyboardChannel + 1, 0..16,
+                            uiState.selectedPartIndex,
+                            labelFor = { if (it == 0) "Auto (channel ${(selectedPart?.receiveChannel ?: 0) + 1})" else it.toString() },
+                            knobLabel = { if (it == 0) "A${(selectedPart?.receiveChannel ?: 0) + 1}" else it.toString() },
+                            onSelect = { onKeyboardChannelChange(it - 1) })
                     }
                     Box(Modifier.weight(1f)) { DenseKnobCard("Velocity", uiState.keyboardVelocity.toFloat(), 1f, 127f,
                         { onKeyboardVelocityChange(it.roundToInt().coerceIn(1, 127)) }) }
-                    Box(Modifier.weight(1f)) { DenseKnobCard("Octave", uiState.keyboardOctaveShift.toFloat(), -2f, 2f,
-                        { onKeyboardOctaveShiftChange(it.roundToInt().coerceIn(-2, 2)) }) }
+                    Box(Modifier.weight(1f)) { PlayChoiceKnob("Octave", "Octave", uiState.keyboardOctaveShift,
+                        -2..2, onSelect = onKeyboardOctaveShiftChange) }
                 }
                 Row(
                     modifier = Modifier.fillMaxWidth(),

@@ -2298,9 +2298,33 @@ internal fun DenseParameterControl(
                 )
                 }
         }
-    DropdownMenu(
+    EnumChoiceMenu(
         expanded = enumOpen && enabled,
-        onDismissRequest = { enumOpen = false },
+        title = descriptor.label,
+        indices = remember(descriptor.options, descriptor.minimum, descriptor.maximum) {
+            descriptor.options.indices.filter { it.toDouble() in descriptor.minimum..descriptor.maximum }
+        },
+        selectedIndex = parameter.value.roundToInt(),
+        label = { descriptor.options[it] },
+        onDismiss = { enumOpen = false },
+        onSelect = { onWrite(parameter, it.toDouble()); enumOpen = false },
+    )
+    }
+}
+
+@Composable
+internal fun EnumChoiceMenu(
+    expanded: Boolean,
+    title: String,
+    indices: Iterable<Int>,
+    selectedIndex: Int,
+    label: (Int) -> String,
+    onDismiss: () -> Unit,
+    onSelect: (Int) -> Unit,
+) {
+    DropdownMenu(
+        expanded = expanded,
+        onDismissRequest = onDismiss,
         modifier = Modifier.widthIn(min = 160.dp, max = 300.dp).heightIn(max = 400.dp)
             .background(Color(0xFF242220))
             .border(1.dp, Color(0xFF5A5651), RoundedCornerShape(9.dp))
@@ -2308,24 +2332,20 @@ internal fun DenseParameterControl(
         shape = RoundedCornerShape(9.dp),
         containerColor = Color(0xFF242220),
     ) {
-                Text(descriptor.label, color = Color(0xFFE7E2DA), fontSize = 18.sp,
+                Text(title, color = Color(0xFFE7E2DA), fontSize = 18.sp,
                     fontFamily = FontFamily(Font(R.font.vt323regular)),
                     modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp))
                 androidx.compose.material3.HorizontalDivider(color = Color(0xFF514D48))
-                descriptor.options.forEachIndexed { index, option ->
-                    if (index.toDouble() in descriptor.minimum..descriptor.maximum) {
-                        val selected = index == parameter.value.roundToInt()
-                        Text(option, color = if (selected) Color(0xFFFF9A16) else Color(0xFFE7E2DA),
+                indices.forEach { index ->
+                        val selected = index == selectedIndex
+                        Text(label(index), color = if (selected) Color(0xFFFF9A16) else Color(0xFFE7E2DA),
                             fontFamily = FontFamily(Font(R.font.vt323regular)), fontSize = 18.sp,
                             modifier = Modifier.fillMaxWidth()
                                 .selectable(selected = selected, role = Role.RadioButton) {
-                                    onWrite(parameter, index.toDouble())
-                                    enumOpen = false
+                                    onSelect(index)
                                 }.semantics { stateDescription = if (selected) "Selected" else "Not selected" }
                                 .padding(horizontal = 8.dp, vertical = 5.dp))
-                    }
                 }
-    }
     }
 }
 
