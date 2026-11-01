@@ -20,6 +20,29 @@ class CommonModulesInstrumentedTest {
     val composeRule = createComposeRule()
 
     @Test
+    fun sessionRestoresMultiplePartsIncludingDisabledInstrument() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val engine = SynthEngine(context)
+        assertTrue(NativeSynthBridge.nativeInit(48_000, 256))
+        assertTrue(engine.renameInstrument(0, "First part"))
+        assertTrue(engine.renameInstrument(1, "Second part"))
+        assertTrue(engine.setPartEnabled(1, false))
+        val session = java.io.File(context.cacheDir, "session-test.xmz")
+        try {
+            assertTrue(NativeSynthBridge.nativeSaveSession(session.absolutePath))
+            assertTrue(engine.renameInstrument(0, "Changed first"))
+            assertTrue(engine.renameInstrument(1, "Changed second"))
+            assertTrue(NativeSynthBridge.nativeLoadPresetFile(session.absolutePath, 0))
+            val parts = engine.inspectParts().associateBy { it.partIndex }
+            assertEquals("First part", parts.getValue(0).name)
+            assertEquals("Second part", parts.getValue(1).name)
+            assertFalse(parts.getValue(1).enabled)
+        } finally {
+            session.delete()
+        }
+    }
+
+    @Test
     fun exportRevisionDoesNotClearLaterInstrumentEdits() {
         val engine = SynthEngine(InstrumentationRegistry.getInstrumentation().targetContext)
         assertTrue(NativeSynthBridge.nativeInit(48_000, 256))

@@ -129,6 +129,8 @@ class MainActivity : ComponentActivity() {
                 sampleRate = deviceSampleRate,
                 framesPerBurst = deviceFramesPerBurst
             )
+            val session = File(filesDir, "session.xmz")
+            val restored = initialized && session.isFile && NativeSynthBridge.nativeLoadPresetFile(session.absolutePath, 0)
             val lastRate = NativeSynthBridge.nativeGetLastSampleRate()
             val lastBurst = NativeSynthBridge.nativeGetLastFramesPerBurst()
             val renderBackend = NativeSynthBridge.nativeGetRenderBackendName()
@@ -139,6 +141,7 @@ class MainActivity : ComponentActivity() {
                 zynProbe = zynProbe,
                 renderBackend = renderBackend,
                 initOk = initialized,
+                sessionRestored = restored,
                 sampleRate = lastRate,
                 framesPerBurst = lastBurst,
                 error = null
@@ -173,6 +176,12 @@ class MainActivity : ComponentActivity() {
         super.onStop()
         runCatching { NativeSynthBridge.nativeSetTestToneEnabled(false) }
         runCatching { NativeSynthBridge.nativeStopAudio() }
+        runCatching {
+            val temporary = File(filesDir, "session.tmp.xmz")
+            if (NativeSynthBridge.nativeSaveSession(temporary.absolutePath)) {
+                if (!temporary.renameTo(File(filesDir, "session.xmz"))) Log.e(APP_LOG_TAG, "Could not replace session backup")
+            } else Log.e(APP_LOG_TAG, "Could not save session")
+        }.onFailure { Log.e(APP_LOG_TAG, "Could not save session", it) }
     }
 }
 
@@ -224,7 +233,12 @@ fun ZynAddSubFXApp(nativeStatus: NativeSmokeStatus = NativeSmokeStatus.preview()
     var mixerInspector by remember { mutableStateOf(SynthEngine.MixerInspector(emptyList(), emptyList())) }
     var inspectorRefreshToken by rememberSaveable { mutableStateOf(0) }
     var selectedPlayPartIndex by rememberSaveable { mutableStateOf(0) }
-    val presetPathsByPart = remember { mutableStateMapOf<Int, String>() }
+    val presetPathsByPart = remember {
+        mutableStateMapOf<Int, String>().apply {
+            val saved = context.getSharedPreferences("part_presets", Context.MODE_PRIVATE)
+            (0 until 16).forEach { index -> saved.getString("part_$index", null)?.let { put(index, it) } }
+        }
+    }
     val statusText = remember(nativeStatus) { nativeStatus.toDisplayString() }
     val zynProbeText = remember(nativeStatus) { nativeStatus.zynProbeDisplayString() }
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -421,6 +435,11 @@ fun ZynAddSubFXApp(nativeStatus: NativeSmokeStatus = NativeSmokeStatus.preview()
                         engine.markInstrumentSaved(targetPart)
                     }
                 }
+                if (result.ok) {
+                    context.getSharedPreferences("part_presets", Context.MODE_PRIVATE).edit().clear().apply {
+                        presetPathsByPart.forEach { (index, path) -> putString("part_$index", path) }
+                    }.apply()
+                }
                 inspectorRefreshToken += 1
                 currentPresetPath = preset.assetPath
                 persistLastSelectedPresetPath(context, preset.assetPath)
@@ -473,6 +492,10 @@ fun ZynAddSubFXApp(nativeStatus: NativeSmokeStatus = NativeSmokeStatus.preview()
         if (!nativeStatus.loaded || !nativeStatus.initOk || startupPresetRestoreAttempted ||
             presetCatalogLoading || presetLoading) return@LaunchedEffect
         startupPresetRestoreAttempted = true
+        if (nativeStatus.sessionRestored) {
+            inspectorRefreshToken += 1
+            return@LaunchedEffect
+        }
         val savedPath = currentPresetPath ?: return@LaunchedEffect
         val preset = packagedPresets.firstOrNull { it.assetPath == savedPath } ?: run {
             actionStatus = "Saved preset not found in catalog"
@@ -626,6 +649,12 @@ fun ZynAddSubFXApp(nativeStatus: NativeSmokeStatus = NativeSmokeStatus.preview()
                     modifier = Modifier.padding(innerPadding)
                 )
             } else {
+                val selectedPath = presetPathsByPart[selectedPlayPartIndex]
+                val selectedPreset = packagedPresets.firstOrNull { it.assetPath == selectedPath }
+                val bankPresets = remember(packagedPresets, selectedPreset) {
+                    selectedPreset?.let { preset -> packagedPresets.filter { it.section == preset.section }.sortedBy { it.displayName.lowercase() } }.orEmpty()
+                }
+                val bankIndex = bankPresets.indexOfFirst { it.assetPath == selectedPath }
                 PlayScreen(
                     uiState = PlayUiState(
                         audioRunning = audioRunning,
@@ -644,6 +673,10 @@ fun ZynAddSubFXApp(nativeStatus: NativeSmokeStatus = NativeSmokeStatus.preview()
                         loadedPartIndices = presetPathsByPart.keys.toSet(),
                     ),
                     onOpenBanks = { currentDestination = AppDestinations.BANKS },
+                    onPreviousPreset = { if (bankIndex > 0) handleLoadPreset(bankPresets[bankIndex - 1]) },
+                    onNextPreset = { if (bankIndex >= 0 && bankIndex < bankPresets.lastIndex) handleLoadPreset(bankPresets[bankIndex + 1]) },
+                    canPreviousPreset = !presetLoading && bankIndex > 0,
+                    canNextPreset = !presetLoading && bankIndex >= 0 && bankIndex < bankPresets.lastIndex,
                     onPressKeyboardNote = { note ->
                         val effectiveNote = (note + keyboardOctaveShift * 12).coerceIn(0, 127)
                         if (currentPresetPath != null && firstNoteCapturedLoadToken != currentPresetLoadToken) {
@@ -1724,7 +1757,8 @@ data class NativeSmokeStatus(
     val initOk: Boolean,
     val sampleRate: Int?,
     val framesPerBurst: Int?,
-    val error: String?
+    val error: String?,
+    val sessionRestored: Boolean = false,
 ) {
     fun toDisplayString(): String {
         if (error == "Initializing audio engine") return error

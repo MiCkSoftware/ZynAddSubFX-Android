@@ -248,6 +248,21 @@ Java_com_mick_zynaddsubfx_NativeSynthBridge_nativeLoadMasterXml(
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
+Java_com_mick_zynaddsubfx_NativeSynthBridge_nativeSaveSession(JNIEnv *env, jobject, jstring path) {
+    if (!path) return JNI_FALSE;
+    const char *raw = env->GetStringUTFChars(path, nullptr);
+    if (!raw) return JNI_FALSE;
+    const std::string value(raw);
+    env->ReleaseStringUTFChars(path, raw);
+    std::lock_guard<std::mutex> lock(gAudioMutex);
+    const bool wasRunning = gAudioRunning;
+    if (wasRunning) stopAudioLocked();
+    const bool ok = gEngine.saveSession(value);
+    if (wasRunning) (void) startAudioLocked();
+    return ok ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
 Java_com_mick_zynaddsubfx_NativeSynthBridge_nativeLoadPresetFile(
         JNIEnv *env,
         jobject /* thiz */,

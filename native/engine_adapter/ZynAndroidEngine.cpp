@@ -308,6 +308,15 @@ bool ZynAndroidEngine::loadMasterXml(const std::string &path) {
     return rc == 0;
 }
 
+bool ZynAndroidEngine::saveSession(const std::string &path) {
+    if (!zynReady_.load() || !master_ || path.empty()) return false;
+    const bool previous = master_->SaveFullXml;
+    master_->SaveFullXml = true;
+    const bool ok = master_->saveXML(path.c_str()) == 0;
+    master_->SaveFullXml = previous;
+    return ok;
+}
+
 bool ZynAndroidEngine::loadPresetFile(const std::string &path, int partIndex) {
     presetLoadCount_.fetch_add(1);
     if (!zynReady_.load() || !master_ || path.empty() || partIndex < 0 || partIndex >= NUM_MIDI_PARTS) {

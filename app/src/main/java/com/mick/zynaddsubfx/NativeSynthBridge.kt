@@ -16,6 +16,7 @@ object NativeSynthBridge {
     external fun nativeNoteOn(channel: Int, note: Int, velocity: Int)
     external fun nativeNoteOff(channel: Int, note: Int)
     external fun nativePanic()
+    external fun nativeSaveSession(path: String): Boolean
     external fun nativeLoadMasterXml(path: String): Boolean
     external fun nativeLoadPresetFile(path: String, partIndex: Int): Boolean
     external fun nativeSetMasterVolumeNormalized(normalized: Float)

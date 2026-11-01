@@ -18,6 +18,11 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -26,6 +31,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -53,6 +61,10 @@ data class PlayUiState(
 fun PlayScreen(
     uiState: PlayUiState,
     onOpenBanks: () -> Unit,
+    onPreviousPreset: () -> Unit,
+    onNextPreset: () -> Unit,
+    canPreviousPreset: Boolean,
+    canNextPreset: Boolean,
     onPressKeyboardNote: (Int) -> Unit,
     onReleaseKeyboardNote: (Int) -> Unit,
     onAllNotesOff: () -> Unit,
@@ -80,32 +92,42 @@ fun PlayScreen(
             .verticalScroll(rememberScrollState())
             .padding(vertical = 10.dp, horizontal=2.dp)
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+        Surface(
+            modifier = Modifier.weight(1f),
+            shape = RoundedCornerShape(22.dp),
+            color = Color(0xFF111A1B),
+            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFF815E)),
         ) {
-            Surface(
-                modifier = Modifier.weight(1f),
-                shape = RoundedCornerShape(10.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF1F7681))
+            Row(
+                modifier = Modifier.fillMaxWidth().height(40.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    text = presetDisplayName,
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-                    color = Color(0xFF66F0E9),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier
-                        .clickable { onOpenBanks() }
-                        .padding(horizontal = 10.dp, vertical = 8.dp)
-                )
+                Surface(
+                    modifier = Modifier.width(38.dp).height(40.dp).alpha(if (canPreviousPreset) 1f else .35f)
+                        .semantics { contentDescription = "Previous instrument" }
+                        .clickable(enabled = canPreviousPreset, onClick = onPreviousPreset),
+                    shape = RoundedCornerShape(topStart = 22.dp, bottomStart = 22.dp), color = Color(0xFFFF815E),
+                ) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = null, tint = Color(0xFF301B16), modifier = Modifier.padding(4.dp)) }
+                Row(
+                    modifier = Modifier.weight(1f).clickable(onClick = onOpenBanks).padding(horizontal = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Icon(Icons.Default.FolderOpen, contentDescription = "Open instrument library", tint = Color(0xFFFFAD91), modifier = Modifier.size(25.dp))
+                    Text(presetDisplayName, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                        color = Color(0xFFFFAD91), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                PresetStarRating(rating = uiState.currentPresetRating.coerceIn(0, 5), onSetRating = onSetCurrentPresetRating)
+                Spacer(Modifier.width(5.dp))
+                Surface(
+                    modifier = Modifier.width(38.dp).height(40.dp).alpha(if (canNextPreset) 1f else .35f)
+                        .semantics { contentDescription = "Next instrument" }
+                        .clickable(enabled = canNextPreset, onClick = onNextPreset),
+                    shape = RoundedCornerShape(topEnd = 22.dp, bottomEnd = 22.dp), color = Color(0xFFFF815E),
+                ) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = Color(0xFF301B16), modifier = Modifier.padding(4.dp)) }
             }
-            PresetStarRating(
-                rating = uiState.currentPresetRating.coerceIn(0, 5),
-                onSetRating = onSetCurrentPresetRating
-            )
+        }
         }
         Spacer(modifier = Modifier.height(10.dp))
         Surface(

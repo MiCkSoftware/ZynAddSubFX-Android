@@ -32,6 +32,7 @@ public:
     std::string renderBackendName() const;
     bool loadMasterXml(const std::string &path);
     bool loadPresetFile(const std::string &path, int partIndex);
+    bool saveSession(const std::string &path);
     void setMasterVolumeNormalized(float normalized);
     float masterVolumeNormalized() const;
     float recentOutputPeak() const;
