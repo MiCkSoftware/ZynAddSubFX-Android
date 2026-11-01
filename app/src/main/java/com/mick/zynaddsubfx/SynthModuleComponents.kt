@@ -229,7 +229,7 @@ private fun CommonParameterGrid(
 }
 
 @Composable
-internal fun SectionBanner(title: String, gradient: Boolean = true, actions: @Composable () -> Unit = {}) {
+internal fun SectionBanner(title: String, gradient: Boolean = true, textColor: Color = Color(0xFFFFC857), actions: @Composable () -> Unit = {}) {
     Row(
         Modifier.fillMaxWidth().then(if (gradient) Modifier.background(
             Brush.horizontalGradient(listOf(Color(0xFF24545A), Color.Transparent)),
@@ -238,7 +238,7 @@ internal fun SectionBanner(title: String, gradient: Boolean = true, actions: @Co
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(5.dp),
     ) {
-        Text(title.uppercase(), color = Color(0xFF66F0E9),
+        Text(title.uppercase(), color = textColor,
             style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
         Spacer(Modifier.weight(1f).height(1.dp).background(Color(0xFF234A53)))
         actions()
@@ -255,8 +255,9 @@ internal fun CompactModuleActions(
     onWrite: ((SynthEngine.ParameterValue, Double) -> Unit)? = null,
     clipboardEnabled: Boolean = true,
     sectionHeading: Boolean = false,
+    textColor: Color = Color(0xFFFFC857),
 ) {
-    SectionBanner(title, gradient = sectionHeading) {
+    SectionBanner(title, gradient = sectionHeading, textColor = textColor) {
         if (enabledParameter != null && onWrite != null) {
             LedButton(
                 label = "$title enabled",
@@ -366,7 +367,9 @@ fun EnvelopeUI(
                 EnvelopeRole.MODULATOR_AMPLITUDE -> "modAmpEnvelopeEnabled"
                 EnvelopeRole.MODULATOR_FREQUENCY -> "modFreqEnvelopeEnabled"
             } }
-        CompactModuleActions(model.title, onCopy, onPaste, canPaste, enable, onWrite)
+        CompactModuleActions(model.title, onCopy, onPaste, canPaste, enable, onWrite,
+            textColor = model.parameters.firstOrNull { it.descriptor.path.startsWith("${model.prefix}/") }
+                ?.let { Color.hsv(addLabelHue(it.descriptor), .45f, .95f) } ?: Color(0xFFFFC857))
         if (enable == null || enable.value >= .5) {
         EnvelopeCurve(model, preview, Modifier.fillMaxWidth().height(92.dp).clickable(onClickLabel = "Edit ${model.title}", onClick = onOpenEditor))
         val previewFields = when (model.address.envelopeRole) {
@@ -401,7 +404,9 @@ fun LFOUI(
                 LfoRole.FREQUENCY -> "freqLfoEnabled"
                 LfoRole.FILTER -> "filterLfoEnabled"
             } }
-        CompactModuleActions(model.title, onCopy, onPaste, canPaste, enable, onWrite)
+        CompactModuleActions(model.title, onCopy, onPaste, canPaste, enable, onWrite,
+            textColor = model.parameters.firstOrNull { it.descriptor.path.startsWith("${model.prefix}/") }
+                ?.let { Color.hsv(addLabelHue(it.descriptor), .45f, .95f) } ?: Color(0xFFFFC857))
         if (enable == null || enable.value >= .5) {
         ModulePreview(preview, Modifier.fillMaxWidth().height(72.dp)
             .clickable(onClickLabel = "Edit ${model.title}", onClick = onOpenEditor), accent = Color(0xFFC08BFF))

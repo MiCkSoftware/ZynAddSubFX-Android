@@ -72,7 +72,7 @@ const val LedSlotWidth = 53
 @Composable
 fun EditorSectionHeader(title: String) {
     Row(Modifier.fillMaxWidth().padding(horizontal = 3.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(title.uppercase(), color = Color(0xFF66F0E9), style = MaterialTheme.typography.labelSmall,
+        Text(title.uppercase(), color = Color(0xFFFFC857), style = MaterialTheme.typography.labelSmall,
             modifier = Modifier.padding(vertical = 2.dp))
         Spacer(Modifier.width(7.dp))
         Surface(modifier = Modifier.weight(1f), color = Color(0xFF234A53),

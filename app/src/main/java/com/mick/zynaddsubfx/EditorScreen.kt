@@ -154,7 +154,7 @@ fun PresetEditorScreen(
                                 value = name,
                                 onValueChange = { name = it; nameError = false },
                                 singleLine = true,
-                                textStyle = MaterialTheme.typography.titleMedium.copy(color = Color(0xFF8EF5EE)),
+                                textStyle = MaterialTheme.typography.titleMedium.copy(color = Color(0xFFFFC857)),
                                 cursorBrush = SolidColor(Color(0xFF8EF5EE)),
                                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                                 keyboardActions = KeyboardActions(onDone = { finishRename() }),
@@ -164,7 +164,7 @@ fun PresetEditorScreen(
                                 }.semantics { contentDescription = "Instrument name" },
                             )
                         } else {
-                            Text(selectedPart?.name?.takeIf { it.isNotBlank() } ?: "Instrument", color = Color(0xFF8EF5EE), style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f).clickable(enabled = selectedPart != null) {
+                            Text(selectedPart?.name?.takeIf { it.isNotBlank() } ?: "Instrument", color = Color(0xFFFFC857), style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f).clickable(enabled = selectedPart != null) {
                                 name = selectedPart?.name.orEmpty(); nameError = false; hadNameFocus = false; renaming = true
                             }.semantics { contentDescription = "Rename instrument" })
                         }

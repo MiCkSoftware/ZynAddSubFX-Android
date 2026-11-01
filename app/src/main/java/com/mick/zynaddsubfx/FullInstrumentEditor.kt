@@ -212,7 +212,7 @@ private fun SynthEditorScaffold(
                     }
                     Text(
                         title,
-                        color = Color(0xFF8EF5EE),
+                        color = Color(0xFFFFC857),
                         style = MaterialTheme.typography.titleMedium,
                         modifier = Modifier.weight(1f),
                     )
@@ -2377,15 +2377,15 @@ private fun ControlPopup(expanded: Boolean, title: String, onDismiss: () -> Unit
     }
 }
 
-private fun addLabelHue(descriptor: SynthEngine.ParameterDescriptor): Float = when {
+internal fun addLabelHue(descriptor: SynthEngine.ParameterDescriptor): Float = when {
     descriptor.path == "add/randomGrouping" -> 285f
     descriptor.path.startsWith("part/portamento") -> 32f
-    descriptor.group.endsWith("/ Amplitude envelope") -> 205f
-    descriptor.group.endsWith("/ Frequency envelope") -> 165f
-    descriptor.group.endsWith("/ Envelope") && descriptor.group.contains("/ Filter") -> 325f
-    descriptor.group.endsWith("/ LFO") && descriptor.group.contains("/ Amplitude") -> 270f
-    descriptor.group.endsWith("/ LFO") && descriptor.group.contains("/ Frequency") -> 235f
-    descriptor.group.endsWith("/ LFO") && descriptor.group.contains("/ Filter") -> 290f
+    descriptor.family == SynthEngine.ParameterFamily.ENVELOPE ||
+        descriptor.group.contains("envelope", ignoreCase = true) ||
+        descriptor.path.contains("Envelope") -> 188f
+    descriptor.family == SynthEngine.ParameterFamily.LFO ||
+        descriptor.group.contains("LFO", ignoreCase = true) ||
+        descriptor.path.contains("Lfo") -> 270f
     descriptor.group.endsWith("/ Modulation") -> 286f
     descriptor.group.endsWith("/ Voice Oscillator") -> 32f
     descriptor.group.endsWith("/ Filter") -> 48f
@@ -2393,12 +2393,6 @@ private fun addLabelHue(descriptor: SynthEngine.ParameterDescriptor): Float = wh
     descriptor.group.endsWith("/ Amplitude") -> 205f
     descriptor.group.endsWith("/ Voice") -> 188f
     descriptor.path.startsWith("add/punch") -> 24f
-    descriptor.path.startsWith("add/ampEnvelope") -> 205f
-    descriptor.path.startsWith("add/ampLfo") -> 270f
-    descriptor.path.startsWith("add/freqEnvelope") -> 165f
-    descriptor.path.startsWith("add/freqLfo") -> 235f
-    descriptor.path.startsWith("add/filterEnvelope") -> 325f
-    descriptor.path.startsWith("add/filterLfo") -> 290f
     descriptor.path.startsWith("add/filter/") ||
         descriptor.path.startsWith("add/filterVelocity") -> 48f
     descriptor.path in setOf("add/detune", "add/coarse", "add/octave", "add/detuneType") -> 140f
