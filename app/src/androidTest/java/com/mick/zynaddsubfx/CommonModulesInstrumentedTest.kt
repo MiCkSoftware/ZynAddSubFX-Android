@@ -3,6 +3,7 @@ package com.mick.zynaddsubfx
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.mick.zynaddsubfx.ui.theme.ZynAddSubFXTheme
@@ -133,8 +134,7 @@ class CommonModulesInstrumentedTest {
             }
         }
         composeRule.onNodeWithText("AMPLITUDE ENVELOPE").assertIsDisplayed()
-        composeRule.onNodeWithText("Copy").assertIsDisplayed()
-        composeRule.onNodeWithText("Paste").assertIsDisplayed()
-        composeRule.onNodeWithText("Edit").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Copy Amplitude envelope").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Paste Amplitude envelope").assertIsDisplayed()
     }
 }

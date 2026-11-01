@@ -134,7 +134,7 @@ A la fin de chaque implementation, mettre a jour TASKS.md et TODO.md, retirer le
 - [ ] QA complementaire liste Voice : paysage/petite largeur/grande police, lecteur d'ecran, stress des gestes, sources partagees et audio approfondi. UX courante validee par Mick ; compilation native deux ABI, 24 tests JVM et 14 verifications JNI OK.
 - [x] Knobs a faible plage : deplacement plafonne a 32 dp par pas, tests de densite et sensibilite ; controles Voice reunis et edition interne desactivee en partage externe. Validation UX courante par Mick le 31 octobre 2026 ; QA etendue dans les points transverses.
 - [ ] [Liste de choix sur appui long des knobs enum](docs/008_feat_enum_long_press.md) : feature separee, drag direct conserve.
-- [ ] Harmonisation ON/C/P, Polarity et clipboard Amplitude de voix implementes localement ; QA Android, audio et scopes Part/Kit/Voice restante (voir docs/backlog/003_feat_enveloppes_01.md).
+- [ ] Harmonisation ON/C/P, Polarity et clipboard Amplitude de voix implementes localement ; validations et tests Android encore incomplets (roles, mode libre, reset, clipboard Part/Kit/Voice, accessibilite, tactile et audio). Suivi : [backlog 003](docs/backlog/003_feat_enveloppes_01.md).
 - [ ] [Simplifier la navigation de Resonance](docs/004_ux_resonance.md)
 - [ ] [Completer les champs globaux et Voice manquants](docs/005_feat_parite_champs_addsynth.md)
 - [ ] [Completer OscilGen pour Voice et Modulator](docs/006_feat_oscilgen_complet.md)
@@ -172,7 +172,7 @@ Les fonctions Envelope libre, Formant et clipboard ci-dessous sont presentes dan
 | ADnoteUI - Modulator Oscillator | Preview + ecran | `Main.Part.Part[1..16].Add.Voice[1..8]` | `/Modulation/OscillatorPreview` -> `.ModulatorOscillator` | **Implemente** | OscilGen avance |
 | OscilGenUI / OscilEditor | Controleur d'ecran | Ecrans Oscillator | `/Parameters`, `/Harmonics`, `/Phases` | **Partiel** | Preview natif present ; completer traitements avances ; chemin de geste harmonique allege, fluidite tactile/audio a valider |
 | ResonanceUI | Preview + ecran | `Main.Part.Part[1..16].Add` | `/ResonancePreview` -> `.Resonance` | **Implemente** | QA valeurs et gestes |
-| EnvelopeUI / EnvelopeFreeEdit | Controleur | Variable | `/Amplitude|Frequency|Filter|Modulation/Envelope` | **Partiel** | Mode libre et edition graphique presents ; harmoniser activations et valider les roles |
+| EnvelopeUI / EnvelopeFreeEdit | Controleur | Variable | `/Amplitude|Frequency|Filter|Modulation/Envelope` | **Partiel** | Mode libre et activations harmonisees ; verifier roles, restauration, clipboard et rendu sur appareil |
 | LFOUI | Controleur | Variable | `/Amplitude|Frequency|Filter/LFO` | **Partiel** | Parite fine des instances et labels |
 | FilterUI | Section reutilisable | Variable | `/Filter` | **Partiel** | Formant avance present ; valider parite des instances et audio |
 | SUBnoteUI | Ecran moteur | `Main.Part.Part[1..16]` | `.Sub` | **Partiel** | Reprendre apres ADsynth/Voice |
