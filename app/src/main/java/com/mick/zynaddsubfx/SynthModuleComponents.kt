@@ -282,62 +282,117 @@ private fun EnvelopeCurve(
     onSelectPoint: ((Int) -> Unit)? = null,
     onWritePoint: ((SynthEngine.ParameterValue, Double, Boolean) -> Unit)? = null,
     onCommit: () -> Unit = {},
+    valueOf: (SynthEngine.ParameterValue) -> Double = { it.value },
 ) {
     val points = model.points
-    val positions = envelopePositions(points)
+    val standardFrequency = !model.freeMode && points.size == 3 &&
+        (model.address.envelopeRole == EnvelopeRole.FREQUENCY ||
+            model.address.envelopeRole == EnvelopeRole.MODULATOR_FREQUENCY)
+    val attackValue = if (standardFrequency) model.parameter("attackValue") else null
+    val attackTime = if (standardFrequency) model.parameter("attackTime") else null
+    val releaseValue = if (standardFrequency) model.parameter("releaseValue") else null
+    val releaseTime = if (standardFrequency) model.parameter("releaseTime") else null
     val currentPoints by rememberUpdatedState(points)
-    val currentPositions by rememberUpdatedState(positions)
+    val currentValueOf by rememberUpdatedState(valueOf)
+    val currentSelect by rememberUpdatedState(onSelectPoint)
+    val currentWrite by rememberUpdatedState(onWritePoint)
     val currentOnCommit by rememberUpdatedState(onCommit)
     val interactive = model.freeMode && onSelectPoint != null && onWritePoint != null
     val touchModifier = if (interactive) modifier
-        .pointerInput(model.prefix, model.freeMode) {
+        .pointerInput(model.prefix) {
             detectTapGestures { position ->
-                val targetX = position.x / size.width
-                onSelectPoint?.invoke(currentPoints.minByOrNull { abs((currentPositions.getOrNull(it.index) ?: 0f) - targetX) }?.index ?: 0)
+                val positions = envelopePositions(currentPoints) { currentValueOf(it.time) }
+                val index = positions.indices.minByOrNull { abs(positions[it] - position.x / size.width) }
+                index?.let { currentSelect?.invoke(it) }
             }
         }
-        .pointerInput(model.prefix, model.freeMode) {
+        .pointerInput(model.prefix) {
             var timeDrag = 0f
             var valueDrag = 0f
-            var draggedPoint = 0
-            var dragPoints = currentPoints
-            detectDragGestures(
-                onDragStart = { position ->
-                    val targetX = position.x / size.width
-                    dragPoints = currentPoints
-                    draggedPoint = dragPoints.minByOrNull { abs((currentPositions.getOrNull(it.index) ?: 0f) - targetX) }?.index ?: 0
-                    onSelectPoint?.invoke(draggedPoint)
-                    timeDrag = 0f
-                    valueDrag = 0f
-                },
-                onDragEnd = { currentOnCommit() },
-            ) { change, drag ->
-                change.consume()
-                dragPoints.getOrNull(draggedPoint)?.let { point ->
-                    valueDrag += drag.y
-                    onWritePoint?.invoke(point.value, point.value.value - valueDrag / size.height *
-                        (point.value.descriptor.maximum - point.value.descriptor.minimum), false)
-                    if (draggedPoint > 0) {
-                        timeDrag += drag.x
-                        onWritePoint?.invoke(point.time, point.time.value + timeDrag / size.width * 127.0, false)
-                    }
+            var point: EnvelopePoint? = null
+            var startValue = 0.0
+            var startTime = 0.0
+            val finish = {
+                if (point != null) {
+                    point = null
+                    currentOnCommit()
                 }
             }
-        } else modifier
-    Box(touchModifier) {
-        ModulePreview(preview, Modifier.fillMaxSize(), sustainFraction = model.sustainPoint?.let { positions.getOrNull(it) })
-        if (model.freeMode) Canvas(Modifier.fillMaxSize()) {
-            points.forEach { point ->
-                val range = (point.value.descriptor.maximum - point.value.descriptor.minimum).coerceAtLeast(1.0)
-                drawCircle(
-                    if (point.index == selectedPoint) Color.Cyan else Color.White,
-                    radius = if (point.index == selectedPoint) 9f else 5f,
-                    center = Offset(
-                        size.width * (positions.getOrNull(point.index) ?: 0f),
-                        size.height * (1f - ((point.value.value - point.value.descriptor.minimum) / range).toFloat()),
-                    ),
-                )
+            try {
+                detectDragGestures(
+                    onDragStart = { position ->
+                        val dragPoints = currentPoints
+                        val positions = envelopePositions(dragPoints) { currentValueOf(it.time) }
+                        val index = positions.indices.minByOrNull { abs(positions[it] - position.x / size.width) }
+                        point = index?.let(dragPoints::get)
+                        point?.let {
+                            currentSelect?.invoke(it.index)
+                            startValue = currentValueOf(it.value)
+                            startTime = currentValueOf(it.time)
+                        }
+                        timeDrag = 0f
+                        valueDrag = 0f
+                    },
+                    onDragEnd = finish,
+                    onDragCancel = finish,
+                ) { change, drag ->
+                    change.consume()
+                    point?.let {
+                        valueDrag += drag.y
+                        val range = it.value.descriptor.maximum - it.value.descriptor.minimum
+                        currentWrite?.invoke(it.value, startValue - valueDrag / size.height * range, false)
+                        if (it.index > 0) {
+                            timeDrag += drag.x
+                            currentWrite?.invoke(it.time, startTime + timeDrag / size.width * 127.0, false)
+                        }
+                    }
+                }
+            } finally {
+                finish()
             }
+        } else modifier
+    val drawLiveCurve = (model.freeMode || standardFrequency) && points.size > 1
+    Box(touchModifier) {
+        ModulePreview(
+            if (drawLiveCurve) PreviewSeries.Empty else preview,
+            Modifier.fillMaxSize(),
+            sustainFraction = if (drawLiveCurve) null else
+                model.sustainPoint?.let { envelopePositions(points).getOrNull(it) },
+        )
+        if (drawLiveCurve) Canvas(Modifier.fillMaxSize()) {
+            // Read only this envelope's transient values in the draw phase.
+            val positions = envelopePositions(points) { point ->
+                val parameter = when (point.index) {
+                    1 -> attackTime
+                    2 -> releaseTime
+                    else -> null
+                } ?: point.time
+                valueOf(parameter)
+            }
+            model.sustainPoint?.let { positions.getOrNull(it) }?.let { fraction ->
+                val x = size.width * fraction
+                drawLine(Color(0xFFE8CA58), Offset(x, 0f), Offset(x, size.height), 2f)
+            }
+            val path = Path()
+            points.forEachIndexed { index, point ->
+                val parameter = when (point.index) {
+                    0 -> attackValue
+                    2 -> releaseValue
+                    else -> null
+                } ?: point.value
+                val range = (parameter.descriptor.maximum - parameter.descriptor.minimum).coerceAtLeast(1.0)
+                val fraction = ((valueOf(parameter) - parameter.descriptor.minimum) / range).toFloat()
+                val position = Offset(size.width * positions[index], size.height * (.95f - .9f * fraction))
+                if (index == 0) path.moveTo(position.x, position.y) else path.lineTo(position.x, position.y)
+                if (model.freeMode) {
+                    drawCircle(
+                        if (point.index == selectedPoint) Color.Cyan else Color.White,
+                        radius = if (point.index == selectedPoint) 9f else 5f,
+                        center = position,
+                    )
+                }
+            }
+            drawPath(path, Color(0xFF66F0E9), style = Stroke(2.5f, cap = StrokeCap.Round))
         }
     }
 }
@@ -358,6 +413,7 @@ fun EnvelopeUI(
     modifier: Modifier = Modifier,
     onDrag: (SynthEngine.ParameterValue, Double) -> Unit = onWrite,
     onCommit: () -> Unit = {},
+    valueOf: (SynthEngine.ParameterValue) -> Double = { it.value },
 ) {
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         val enable = model.parameters.firstOrNull { it.descriptor.path == "add/voice/${model.address.index}/" + when (model.address.envelopeRole) {
@@ -371,7 +427,7 @@ fun EnvelopeUI(
             textColor = model.parameters.firstOrNull { it.descriptor.path.startsWith("${model.prefix}/") }
                 ?.let { Color.hsv(addLabelHue(it.descriptor), .45f, .95f) } ?: Color(0xFFFFC857))
         if (enable == null || enable.value >= .5) {
-        EnvelopeCurve(model, preview, Modifier.fillMaxWidth().height(92.dp).clickable(onClickLabel = "Edit ${model.title}", onClick = onOpenEditor))
+        EnvelopeCurve(model, preview, Modifier.fillMaxWidth().height(92.dp).clickable(onClickLabel = "Edit ${model.title}", onClick = onOpenEditor), valueOf = valueOf)
         val previewFields = when (model.address.envelopeRole) {
             EnvelopeRole.AMPLITUDE, EnvelopeRole.MODULATOR_AMPLITUDE ->
                 arrayOf("attackTime", "decayTime", "sustain", "releaseTime")
@@ -492,7 +548,7 @@ fun CommonSynthModules(
         if (filterEnabled) {
             envelopeRoles.forEach { role ->
                 val address = ModuleAddress.Envelope(voiceIndex, role)
-                EnvelopeModel.from(values, address)?.let { envelope ->
+                remember(values, address) { EnvelopeModel.from(values, address) }?.let { envelope ->
                     val preview = remember(model.state.revision, address) { model.preview(address) }
                     EnvelopeUI(
                         model = envelope,
@@ -504,6 +560,7 @@ fun CommonSynthModules(
                         canPaste = model.canPasteModule(address),
                         onDrag = model::dragParameter,
                         onCommit = model::finishParameterDrag,
+                        valueOf = model::parameterValue,
                     )
                 }
             }
@@ -614,6 +671,7 @@ fun FreeEnvelopeEditor(
     onCommit: () -> Unit,
     onAction: (String) -> Unit,
     modifier: Modifier = Modifier,
+    valueOf: (SynthEngine.ParameterValue) -> Double = { it.value },
 ) {
     var selectedPoint by remember(model.prefix) { mutableIntStateOf(1) }
     val points = model.points
@@ -626,6 +684,7 @@ fun FreeEnvelopeEditor(
         EnvelopeCurve(
             model, preview, Modifier.fillMaxWidth().height(210.dp), activePoint,
             onSelectPoint = { selectedPoint = it }, onWritePoint = onWrite, onCommit = onCommit,
+            valueOf = valueOf,
         )
         CommonParameterGrid(model.parameters.filterNot { parameter ->
             parameter in primary || parameter.descriptor.path.contains("/point/") ||

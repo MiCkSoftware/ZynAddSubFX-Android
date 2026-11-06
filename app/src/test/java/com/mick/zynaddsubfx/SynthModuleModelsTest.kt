@@ -45,6 +45,10 @@ class SynthModuleModelsTest {
         assertEquals(0f, positions.first(), 0.0001f)
         assertEquals(1f, positions.last(), 0.0001f)
         assertTrue("The longer second segment must move the middle point left", positions[1] < .5f)
+
+        val duringDrag = envelopePositions(model.points) { if (it.index == 1) 40.0 else it.time.value }
+        assertEquals(.5f, duringDrag[1], .0001f)
+        assertEquals(20.0, model.points[1].time.value, 0.0)
     }
 
     @Test

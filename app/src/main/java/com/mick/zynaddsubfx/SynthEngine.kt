@@ -13,6 +13,8 @@ class SynthEngine(private val context: Context) : InstrumentEditorEngine {
     private val instrumentRevisions = mutableStateMapOf<Int, Long>()
     private val savedInstrumentRevisions = mutableStateMapOf<Int, Long>()
 
+    fun instrumentEditRevision(): Long = instrumentRevisions.values.sum()
+
     fun instrumentRevision(partIndex: Int): Long = instrumentRevisions[partIndex] ?: 0L
     fun instrumentDirty(partIndex: Int): Boolean = instrumentRevision(partIndex) != (savedInstrumentRevisions[partIndex] ?: 0L)
     fun markInstrumentSaved(partIndex: Int, revision: Long = instrumentRevision(partIndex)) {

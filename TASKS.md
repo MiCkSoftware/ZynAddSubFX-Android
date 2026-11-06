@@ -137,7 +137,7 @@ A la fin de chaque implementation, mettre a jour TASKS.md et TODO.md, retirer le
 - [ ] Harmonisation ON/C/P, Polarity et clipboard Amplitude de voix implementes localement ; validations et tests Android encore incomplets (roles, mode libre, reset, clipboard Part/Kit/Voice, accessibilite, tactile et audio). Suivi : [backlog 003](docs/backlog/003_feat_enveloppes_01.md).
 - [x] Resonance — feature validee par Mick le 1 novembre 2026 : navigation simplifiee, section avant Voices, clipboard, libelles lisibles et affichage frequence/amplitude pendant le dessin. Compilation Kotlin et ParameterRoutingTest OK ; tests utilisateur OK. Le commit natif reste effectue en fin de geste.
 - [ ] [Champs ADD/Voice](docs/backlog/005_feat_parite_champs_addsynth.md) : fade-in, bend, offset et phase randomness exposes localement ; lecture/ecriture JNI et aller-retour XIZ testes sur emulateur (voir rapport QA ADD) ; QA tactile/audio restante.
-- [ ] [Completer OscilGen pour Voice et Modulator](docs/006_feat_oscilgen_complet.md)
+- [x] OscilGen avancé pour Voice et Modulator — validé par Mick le 6 novembre 2026. 24 tests JVM et 17 tests instrumentés passent. [Bilan OscilGen](docs/qa_addsynth_audio_xiz.md#clôture-oscilgen-006).
 - [x] QA ADD transversale — cloture validee par Mick le 1 novembre 2026 : 24 tests JVM et 15 tests instrumentes OK sur emulateur Android 15 ; export des modules desactives et rechargement des presets partiels corriges. [Rapport et matrice](docs/qa_addsynth_audio_xiz.md).
 - [ ] Validation finale ADD : ecoute comparative, routages audibles, notes fantomes, gestes et navigation systeme sur appareil, clipboard et champs avances complementaires. [Checklist detaillee](docs/qa_addsynth_audio_xiz.md#validation-finale-restante).
 
@@ -169,9 +169,9 @@ Les fonctions Envelope libre, Formant et clipboard ci-dessous sont presentes dan
 | ADnoteUI - Voice Parameters | Ecran | `Main.Part.Part[1..16].Add` | `.Voice[1..8]` | **Partiel** | Copy/paste present ; completer champs caches et valider audio/persistance |
 | Voice Filter | Section | `Main.Part.Part[1..16].Add.Voice[1..8]` | `/Filter` | **Implemente** | Formant present ; valider valeurs et rendu audible |
 | Voice Modulator | Section | `Main.Part.Part[1..16].Add.Voice[1..8]` | `/Modulation` | **Implemente** | QA audio approfondie des modes et routages |
-| ADnoteUI - Voice Oscillator | Preview + ecran | `Main.Part.Part[1..16].Add.Voice[1..8]` | `/OscillatorPreview` -> `.Oscillator` | **Partiel** | OscilGen avance |
-| ADnoteUI - Modulator Oscillator | Preview + ecran | `Main.Part.Part[1..16].Add.Voice[1..8]` | `/Modulation/OscillatorPreview` -> `.ModulatorOscillator` | **Implemente** | OscilGen avance |
-| OscilGenUI / OscilEditor | Controleur d'ecran | Ecrans Oscillator | `/Parameters`, `/Harmonics`, `/Phases` | **Partiel** | Preview natif present ; completer traitements avances ; chemin de geste harmonique allege, fluidite tactile/audio a valider |
+| ADnoteUI - Voice Oscillator | Preview + ecran | `Main.Part.Part[1..16].Add.Voice[1..8]` | `/OscillatorPreview` -> `.Oscillator` | **Implemente** | Validé par Mick le 6 novembre 2026 |
+| ADnoteUI - Modulator Oscillator | Preview + ecran | `Main.Part.Part[1..16].Add.Voice[1..8]` | `/Modulation/OscillatorPreview` -> `.ModulatorOscillator` | **Implemente** | Validé par Mick le 6 novembre 2026 |
+| OscilGenUI / OscilEditor | Controleur d'ecran | Ecrans Oscillator | `/Parameters`, `/Harmonics`, `/Phases` | **Implemente** | Paramètres avancés, quatre vues natives et actions harmoniques. Validé par Mick le 6 novembre 2026 |
 | ResonanceUI | Preview + ecran | `Main.Part.Part[1..16].Add` | `/ResonancePreview` -> `.Resonance` | **Implemente** | Tests utilisateur valides le 1 novembre 2026 |
 | EnvelopeUI / EnvelopeFreeEdit | Controleur | Variable | `/Amplitude|Frequency|Filter|Modulation/Envelope` | **Partiel** | Mode libre et activations harmonisees ; verifier roles, restauration, clipboard et rendu sur appareil |
 | LFOUI | Controleur | Variable | `/Amplitude|Frequency|Filter/LFO` | **Partiel** | Parite fine des instances et labels |

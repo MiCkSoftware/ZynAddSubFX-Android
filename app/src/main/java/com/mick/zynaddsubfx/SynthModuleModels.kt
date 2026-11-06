@@ -19,6 +19,12 @@ sealed interface ModuleAddress {
         override val role = if (modulator) 1 else 0
     }
 
+    data class OscillatorPreview(val oscillator: Oscillator, val view: OscillatorPreviewView) : ModuleAddress {
+        override val kind = 8
+        override val index = oscillator.index
+        override val role = view.code * 2 + oscillator.role
+    }
+
     data class Envelope(override val index: Int = -1, val envelopeRole: EnvelopeRole) : ModuleAddress {
         override val kind = 2
         override val role = envelopeRole.code
@@ -51,6 +57,12 @@ sealed interface ModuleAddress {
     }
 }
 
+enum class OscillatorPreviewView(val code: Int, val label: String) {
+    BASE_WAVE(0, "Base wave"),
+    OUTPUT_SPECTRUM(1, "Output spectrum"),
+    BASE_SPECTRUM(2, "Base spectrum"),
+}
+
 enum class EnvelopeRole(val code: Int, val title: String) {
     AMPLITUDE(0, "Amplitude envelope"),
     FREQUENCY(1, "Frequency envelope"),
@@ -77,11 +89,16 @@ data class EnvelopePoint(
     val value: SynthEngine.ParameterValue,
 )
 
-internal fun envelopePositions(points: List<EnvelopePoint>): List<Float> {
+internal fun envelopePositions(
+    points: List<EnvelopePoint>,
+    timeOf: (EnvelopePoint) -> Double = { it.time.value },
+): List<Float> {
     if (points.isEmpty()) return emptyList()
-    // EnvelopeFreeEdit uses logarithmic segment time and includes one unit per segment.
-    val durations = points.drop(1).map { ((2.0.pow(it.time.value / 127.0 * 12.0) - 1.0) * 10.0 + 1.0).toFloat() }
-    val total = durations.sum().coerceAtLeast(1f)
+    // Match the minimum segment duration used by the native envelope preview.
+    val durations = points.drop(1).map {
+        ((2.0.pow(timeOf(it) / 127.0 * 12.0) - 1.0) / 100.0).toFloat().coerceAtLeast(.0001f)
+    }
+    val total = durations.sum().coerceAtLeast(.0001f)
     var elapsed = 0f
     return listOf(0f) + durations.map { duration ->
         elapsed += duration

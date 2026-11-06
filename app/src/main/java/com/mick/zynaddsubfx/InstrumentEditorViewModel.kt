@@ -228,7 +228,7 @@ class InstrumentEditorViewModel(private val engine: InstrumentEditorEngine) : Vi
                 operation = SynthEngine.OperationState.Idle,
             )
         } else {
-            state = state.copy(operation = SynthEngine.OperationState.Failed("Could not update resonance"))
+            state = state.copy(operation = SynthEngine.OperationState.Failed("Could not apply edit"))
         }
     }
 

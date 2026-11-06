@@ -181,7 +181,7 @@ private fun parentDestination(destination: InstrumentEditorDestination): Instrum
 private val voiceEditorSections =
     listOf("Voice", "Oscillator", "Frequency", "Amplitude", "Filter", "Modulation", "Unison")
 private val oscillatorEditorSections =
-    listOf("Preview", "Output", "Shape & filter", "Harmonics")
+    listOf("Preview", "Output", "Base", "Shape & filter", "Modulation", "Spectrum", "Harmonics")
 
 @Composable
 private fun SynthEditorScaffold(
@@ -336,7 +336,9 @@ fun FullInstrumentEditor(
             navigationLabel = "‹ Voice ${state.selectedVoice + 1}",
             onNavigateUp = navigateBack,
             tabs = oscillatorEditorSections,
-            selectedTab = activeAnchor(
+            selectedTab = if (oscillatorScroll.value > 0 && oscillatorScroll.value == oscillatorScroll.maxValue) {
+                oscillatorEditorSections.last()
+            } else activeAnchor(
                 oscillatorScroll.value +
                     if (oscillatorScroll.value > 0) oscillatorPreviewOcclusion else 0,
                 oscillatorEditorSections,
@@ -410,10 +412,9 @@ fun FullInstrumentEditor(
         return@CompositionLocalProvider
     }
     if (currentDestination is InstrumentEditorDestination.Envelope) {
-        val envelope = EnvelopeModel.from(
-            state.snapshot?.values.orEmpty(),
-            currentDestination.address,
-        )
+        val envelope = remember(state.snapshot, currentDestination.address) {
+            EnvelopeModel.from(state.snapshot?.values.orEmpty(), currentDestination.address)
+        }
         val preview = remember(state.revision, currentDestination.address) {
             model.preview(currentDestination.address, 192)
         }
@@ -440,8 +441,9 @@ fun FullInstrumentEditor(
                     model = envelope,
                     preview = preview,
                     onWrite = model::write,
-                    onCommit = model::commitEdits,
+                    onCommit = model::finishParameterDrag,
                     onAction = model::performPath,
+                    valueOf = model::parameterValue,
                     modifier = contentModifier,
                 )
             }
@@ -1337,8 +1339,33 @@ private fun AddOscillatorEditorScreen(
     }?.value?.toInt() ?: 0
     val oscillatorEditable = modulator || externalCarrier == 0
     val oscillatorAddress = ModuleAddress.Oscillator(target.ownerVoice, modulator)
-    val exactPreview = remember(model.state.revision, oscillatorAddress) {
-        model.preview(oscillatorAddress, 256)
+    val previewOscillator = oscillatorAddress.copy(
+        index = if (oscillatorEditable) target.ownerVoice else externalCarrier - 1,
+    )
+    var previewView by remember(target) { mutableStateOf<OscillatorPreviewView?>(null) }
+    val previewAddress = previewView?.let { ModuleAddress.OscillatorPreview(previewOscillator, it) }
+        ?: previewOscillator
+    val exactPreview = remember(model.state.revision, previewAddress) {
+        model.preview(previewAddress, if (previewView != null && previewView != OscillatorPreviewView.BASE_WAVE) 128 else 256)
+    }
+    val actionPrefix = "add/voice/${target.ownerVoice}/${if (modulator) "modOsc" else "osc"}/action"
+    var pendingAction by remember(target) { mutableStateOf<Pair<String, String>?>(null) }
+    if (oscillatorEditable) pendingAction?.let { (label, action) ->
+        AlertDialog(
+            onDismissRequest = { pendingAction = null },
+            title = { Text(label) },
+            text = {
+                Text(if (action == "clearHarmonics") "Reset every harmonic to the default magnitude and phase."
+                else "Convert the current output to sine harmonics and reset the oscillator's other controls.")
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    pendingAction = null
+                    model.writePath("$actionPrefix/$action", 1.0)
+                }) { Text(label) }
+            },
+            dismissButton = { TextButton(onClick = { pendingAction = null }) { Text("Cancel") } },
+        )
     }
     val group = "ADD / Voice ${target.ownerVoice + 1} / " +
         if (modulator) "Modulator oscillator" else "Oscillator"
@@ -1353,13 +1380,19 @@ private fun AddOscillatorEditorScreen(
     var selectedHarmonic by remember(target) { mutableStateOf(0) }
     val magnitude = magnitudes.getOrNull(selectedHarmonic)
     val phase = phases.getOrNull(selectedHarmonic)
-    val field: (SynthEngine.ParameterValue) -> String = {
-        it.descriptor.path.substringAfterLast('/')
+    val byField = remember(controls) { controls.associateBy { it.descriptor.path.substringAfterLast('/') } }
+    val sections = remember(byField, voiceOscillatorControls) {
+        listOf(
+            "Output" to listOf("magnitudeType", "randomness", "ampRandomType", "ampRandomPower"),
+            "Base" to listOf("baseFunction", "baseShape", "baseModType", "baseMod1", "baseMod2", "baseMod3"),
+            "Shape & filter" to listOf("waveshapeType", "waveshape", "filterType", "filter1", "filter2", "filterBeforeShape"),
+            "Modulation" to listOf("modulationType", "modulation1", "modulation2", "modulation3"),
+            "Spectrum" to listOf("spectrumType", "spectrumAmount", "adaptiveMode", "adaptivePower", "adaptiveBaseFreq", "adaptiveAmount"),
+        ).map { (title, fields) ->
+            title to ((if (title == "Output") voiceOscillatorControls else emptyList()) + fields.mapNotNull(byField::get))
+        }
     }
-    val outputControls = controls.filter { field(it) in setOf("magnitudeType", "randomness") }
-    val baseControls = controls.filter { field(it) in setOf("baseFunction", "baseShape") }
-    val shapingControls = controls.filter { field(it) == "waveshape" }
-    val filterControls = controls.filter { field(it) in setOf("filterType", "filter1", "filter2") }
+    fun controlValue(field: String) = byField[field]?.value?.toInt() ?: 0
     val positionSection: (String) -> Modifier = { section ->
         Modifier.onGloballyPositioned {
             onSectionPosition(section, it.positionInParent().y.roundToInt())
@@ -1369,8 +1402,10 @@ private fun AddOscillatorEditorScreen(
     CollapsingPreviewLayout(
         scrollState = scrollState,
         modifier = modifier,
-        preview = { previewModifier -> OscillatorPreviewPanel(exactPreview, previewModifier) },
-    ) { scrollBottomPadding ->
+        preview = { previewModifier ->
+            OscillatorPreviewPanel(exactPreview, previewView, { previewView = it }, previewModifier)
+        },
+    ) {
             if (!oscillatorEditable) Text(
                 "Internal oscillator inactive · using Voice $externalCarrier",
                 color = Color(0xFFFFB74D),
@@ -1387,16 +1422,13 @@ private fun AddOscillatorEditorScreen(
                 )
             }
             ZynVoiceSection(
-                "Base + output preview",
+                "Oscillator preview",
                 modifier = positionSection("Preview").padding(horizontal = 7.dp),
             ) {
                 Spacer(Modifier.fillMaxWidth().height(210.dp))
             }
 
-            listOf(
-                "Output" to (voiceOscillatorControls + outputControls + baseControls),
-                "Shape & filter" to (shapingControls + filterControls),
-            ).forEach { (title, parameters) ->
+            sections.forEach { (title, parameters) ->
                 if (parameters.isNotEmpty()) {
                     ZynVoiceSection(
                         title,
@@ -1410,13 +1442,76 @@ private fun AddOscillatorEditorScreen(
                             onLongPress = model::reset,
                             onReset = model::reset,
                             verticalLabels = true,
-                            enabled = { oscillatorEditable || it in voiceOscillatorControls },
+                            enabled = { parameter ->
+                                parameter in voiceOscillatorControls || oscillatorEditable && when (
+                                    parameter.descriptor.path.substringAfterLast('/')
+                                ) {
+                                    "baseShape" -> controlValue("baseFunction") in 1..16
+                                    "baseModType" -> controlValue("baseFunction") != 0
+                                    "baseMod1", "baseMod2", "baseMod3" ->
+                                        controlValue("baseFunction") != 0 && controlValue("baseModType") != 0
+                                    "waveshape" -> controlValue("waveshapeType") != 0
+                                    "filter1", "filter2" -> controlValue("filterType") != 0
+                                    "filterBeforeShape" -> controlValue("filterType") != 0 && controlValue("waveshapeType") != 0
+                                    "modulation1", "modulation2", "modulation3" -> controlValue("modulationType") != 0
+                                    "spectrumAmount" -> controlValue("spectrumType") != 0
+                                    "adaptivePower", "adaptiveBaseFreq" -> controlValue("adaptiveMode") != 0
+                                    "adaptiveAmount" -> controlValue("adaptiveMode") > 1
+                                    "ampRandomPower" -> controlValue("ampRandomType") != 0
+                                    else -> true
+                                }
+                            },
                         )
                     }
                 }
             }
 
             ZynVoiceSection("Harmonics", modifier = positionSection("Harmonics")) {
+                val labelColor = Color.hsv(188f, saturation = .30f, value = .22f)
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 7.dp),
+                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                        listOf("harmonicShift", "harmonicShiftFirst").forEach { field ->
+                            Box(Modifier.weight(1f)) {
+                                byField[field]?.let { parameter ->
+                                    DenseParameterControl(
+                                        parameter = parameter,
+                                        onWrite = model::write,
+                                        onDrag = model::dragParameter,
+                                        onCommit = model::finishParameterDrag,
+                                        onLongPress = model::reset,
+                                        onReset = model::reset,
+                                        verticalLabel = true,
+                                        enabled = oscillatorEditable,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    DenseControlCard(
+                        label = "Oscillator",
+                        labelColor = labelColor,
+                        modifier = Modifier.weight(1f),
+                        enabled = oscillatorEditable,
+                    ) {
+                        Column(
+                            Modifier.fillMaxWidth().padding(horizontal = 3.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            LedButton("Use output as base", lit = false, action = true, compact = true,
+                                displayLabel = "Use as base", enabled = oscillatorEditable,
+                                modifier = Modifier.fillMaxWidth(),
+                                onClick = { model.writePath("$actionPrefix/useAsBase", 1.0) })
+                            LedButton("Convert to sine", lit = false, action = true, compact = true,
+                                enabled = oscillatorEditable, modifier = Modifier.fillMaxWidth(),
+                                onClick = { pendingAction = "Convert to sine" to "convertToSine" })
+                        }
+                    }
+                }
+
                 if (magnitude != null && phase != null) {
                     Row(
                         Modifier.fillMaxWidth().padding(horizontal = 7.dp),
@@ -1424,6 +1519,7 @@ private fun AddOscillatorEditorScreen(
                     ) {
                         HarmonicKnobCard(
                             label = "Harmonic #",
+                            labelColor = labelColor,
                             value = { (selectedHarmonic + 1).toFloat() },
                             minimum = 1f,
                             maximum = magnitudes.size.coerceAtLeast(1).toFloat(),
@@ -1435,6 +1531,7 @@ private fun AddOscillatorEditorScreen(
                         )
                         HarmonicKnobCard(
                             label = "Magnitude",
+                            labelColor = labelColor,
                             identity = magnitude.descriptor.path,
                             enabled = oscillatorEditable,
                             value = { model.parameterValue(magnitude).toFloat() },
@@ -1446,6 +1543,7 @@ private fun AddOscillatorEditorScreen(
                         )
                         HarmonicKnobCard(
                             label = "Phase",
+                            labelColor = labelColor,
                             identity = phase.descriptor.path,
                             enabled = oscillatorEditable,
                             value = { model.parameterValue(phase).toFloat() },
@@ -1455,6 +1553,52 @@ private fun AddOscillatorEditorScreen(
                             onCommit = model::finishParameterDrag,
                             modifier = Modifier.weight(1f),
                         )
+                        val canResetOne = oscillatorEditable &&
+                            (model.parameterValue(magnitude) != magnitude.descriptor.defaultValue ||
+                                model.parameterValue(phase) != phase.descriptor.defaultValue)
+                        val hasEditedHarmonics = remember(magnitudes, phases) {
+                            magnitudes.any { it.value != it.descriptor.defaultValue } ||
+                                phases.any { it.value != it.descriptor.defaultValue }
+                        }
+                        val canResetAll = oscillatorEditable && (hasEditedHarmonics || canResetOne)
+                        DenseControlCard(
+                            label = "Reset",
+                            labelColor = Color.hsv(32f, saturation = .30f, value = .22f),
+                            modifier = Modifier.weight(1f),
+                            enabled = canResetAll,
+                        ) {
+                            Column(
+                                Modifier.fillMaxWidth(),
+                                verticalArrangement = Arrangement.spacedBy(4.dp),
+                            ) {
+                                LedButton(
+                                    label = "Reset harmonic ${selectedHarmonic + 1}",
+                                    lit = canResetOne,
+                                    hue = 32f,
+                                    displayLabel = "ONE",
+                                    enabled = canResetOne,
+                                    action = canResetOne,
+                                    compact = true,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    onClick = {
+                                        model.dragParameter(magnitude, magnitude.descriptor.defaultValue)
+                                        model.dragParameter(phase, phase.descriptor.defaultValue)
+                                        model.finishParameterDrag()
+                                    },
+                                )
+                                LedButton(
+                                    label = "Reset all harmonics",
+                                    lit = canResetAll,
+                                    hue = 32f,
+                                    displayLabel = "ALL",
+                                    enabled = canResetAll,
+                                    action = canResetAll,
+                                    compact = true,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    onClick = { pendingAction = "Clear harmonics" to "clearHarmonics" },
+                                )
+                            }
+                        }
                     }
                 }
                 Text(
@@ -1475,18 +1619,7 @@ private fun AddOscillatorEditorScreen(
                     },
                     modifier = Modifier.fillMaxWidth().height(150.dp),
                 )
-                if (magnitude != null && phase != null) {
-                    OutlinedButton(
-                        enabled = oscillatorEditable,
-                        onClick = {
-                            model.reset(magnitude)
-                            model.reset(phase)
-                        },
-                        modifier = Modifier.padding(horizontal = 7.dp),
-                    ) { Text("Reset harmonic ${selectedHarmonic + 1}") }
-                }
             }
-            Spacer(Modifier.height(scrollBottomPadding))
     }
 
 }
@@ -1494,6 +1627,7 @@ private fun AddOscillatorEditorScreen(
 @Composable
 private fun HarmonicKnobCard(
     label: String,
+    labelColor: Color,
     value: () -> Float,
     minimum: Float,
     maximum: Float,
@@ -1503,29 +1637,18 @@ private fun HarmonicKnobCard(
     enabled: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
-    Surface(
-        modifier = modifier.alpha(if (enabled) 1f else .45f),
-        color = Color(0xFF202020),
-        shape = RoundedCornerShape(7.dp),
-        border = BorderStroke(1.dp, Color(0xFF274B54)),
-    ) {
-        Column(
-            Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 6.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            key(identity) {
-                TinyKnob(
-                    label = "",
-                    value = value(),
-                    enabled = enabled,
-                    min = minimum,
-                    max = maximum,
-                    sensitivity = KnobSensitivity.Adjust,
-                    onValueChange = onValueChange,
-                    onValueChangeFinished = onCommit,
-                )
-            }
-            Text(label, style = MaterialTheme.typography.labelSmall, maxLines = 1)
+    DenseControlCard(label = label, labelColor = labelColor, modifier = modifier, enabled = enabled) {
+        key(identity) {
+            TinyKnob(
+                label = "",
+                value = value(),
+                enabled = enabled,
+                min = minimum,
+                max = maximum,
+                sensitivity = KnobSensitivity.Adjust,
+                onValueChange = onValueChange,
+                onValueChangeFinished = onCommit,
+            )
         }
     }
 }
@@ -1533,21 +1656,45 @@ private fun HarmonicKnobCard(
 @Composable
 private fun OscillatorPreviewPanel(
     preview: PreviewSeries,
+    view: OscillatorPreviewView?,
+    onViewSelected: (OscillatorPreviewView?) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val accent = Color(0xFFFF4D57)
     Surface(
         modifier = modifier,
         color = Color.Black,
         border = BorderStroke(1.dp, Color(0xFF2E6973)),
         shape = RoundedCornerShape(8.dp),
     ) {
-        Box(Modifier.fillMaxSize()) {
-            ModulePreview(preview, Modifier.fillMaxSize(), accent = Color(0xFFFF4D57))
+        Column {
             Row(
-                modifier = Modifier.align(Alignment.TopEnd).padding(7.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                Text("Native output", color = Color(0xFFFF4D57), style = MaterialTheme.typography.labelSmall)
+                (listOf(null) + OscillatorPreviewView.entries).forEach { choice ->
+                    Text(
+                        choice?.label ?: "Output wave",
+                        color = if (choice == view) accent else MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.labelMedium,
+                        modifier = Modifier.selectable(choice == view, role = Role.Tab) { onViewSelected(choice) }
+                            .padding(horizontal = 6.dp, vertical = 9.dp),
+                    )
+                }
+            }
+            val graph = Modifier.fillMaxWidth().weight(1f)
+            if (view != null && view != OscillatorPreviewView.BASE_WAVE) {
+                Canvas(graph.background(Color(0xFF09191D))) {
+                    val width = size.width / preview.values.size.coerceAtLeast(1)
+                    preview.values.forEachIndexed { index, value ->
+                        val x = (index + .5f) * width
+                        drawLine(accent, androidx.compose.ui.geometry.Offset(x, size.height),
+                            androidx.compose.ui.geometry.Offset(x, size.height * (1f - .95f * value)),
+                            strokeWidth = width * .72f)
+                    }
+                }
+            } else {
+                ModulePreview(preview, graph, accent = accent)
             }
         }
     }
@@ -2265,7 +2412,11 @@ internal fun DenseParameterControl(
                         value = parameter.value.toFloat(),
                         min = descriptor.minimum.toFloat(),
                         max = descriptor.maximum.toFloat(),
-                        valueText = { descriptor.options.getOrNull(it.roundToInt()) ?: it.roundToInt().toString() },
+                        valueText = {
+                            val index = it.roundToInt()
+                            if (index == 127 && descriptor.path.endsWith("/baseFunction")) "Custom"
+                            else descriptor.options.getOrNull(index) ?: index.toString()
+                        },
                         compactValueLabel = true,
                         sensitivity = KnobSensitivity.Adjust,
                         enabled = enabled,

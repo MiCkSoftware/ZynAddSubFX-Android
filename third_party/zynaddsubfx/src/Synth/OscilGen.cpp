@@ -23,6 +23,7 @@
 #include <cstdio>
 #include <cstddef>
 #include <complex>
+#include <vector>
 
 #include <unistd.h>
 
@@ -535,13 +536,8 @@ void OscilGen::convert2sine()
     OscilGenBuffers& bfrs = myBuffers();
     float  mag[MAX_AD_HARMONICS], phase[MAX_AD_HARMONICS];
 
-    {
-        FFTwrapper *fft = new FFTwrapper(synth.oscilsize);
-        FFTsampleBuffer oscil = fft->allocSampleBuf();
-        get(oscil.data, -1.0f);
-        fft->smps2freqs_noconst_input(oscil, bfrs.scratchFreqs);
-        delete (fft);
-    }
+    get(bfrs.tmpsmps.data, -1.0f);
+    fft->smps2freqs_noconst_input(bfrs.tmpsmps, bfrs.scratchFreqs);
 
     normalize(bfrs.scratchFreqs.data, synth.oscilsize);
 
@@ -1426,12 +1422,14 @@ void OscilGen::add2XML(XMLwrapper& xml)
     xml.endbranch();
 
     if(Pcurrentbasefunc == 127) {
-        normalize(bfrs.basefuncFFTfreqs.data, synth.oscilsize);
+        const auto *base = bfrs.basefuncFFTfreqs.data;
+        std::vector<fft_t> serializedBase(base, base + synth.oscilsize / 2);
+        normalize(serializedBase.data(), synth.oscilsize);
 
         xml.beginbranch("BASE_FUNCTION");
         for(int i = 1; i < synth.oscilsize / 2; ++i) {
-            float xc = (float)bfrs.basefuncFFTfreqs[i].real();
-            float xs = (float)bfrs.basefuncFFTfreqs[i].imag();
+            float xc = (float)serializedBase[i].real();
+            float xs = (float)serializedBase[i].imag();
             if((fabsf(xs) > 1e-6f) || (fabsf(xc) > 1e-6f)) {
                 xml.beginbranch("BF_HARMONIC", i);
                 xml.addparreal("cos", xc);

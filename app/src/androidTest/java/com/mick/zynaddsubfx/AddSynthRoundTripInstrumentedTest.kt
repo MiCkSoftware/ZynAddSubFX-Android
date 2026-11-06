@@ -103,6 +103,147 @@ class AddSynthRoundTripInstrumentedTest {
     }
 
     @Test
+    fun advancedOscillatorControlsSurviveClipboardAndXizForBothRoles() {
+        val engine = SynthEngine(context)
+        assertTrue(NativeSynthBridge.nativeInit(48_000, 256))
+        val preset = "presets/banks/Companion/0078-Brassy.xiz"
+        assertTrue(engine.loadPackagedPreset(preset, 0))
+        assertTrue(engine.loadPackagedPreset(preset, 1))
+        val advanced = mapOf(
+            "baseFunction" to 16.0, "baseModType" to 4.0,
+            "baseMod1" to 71.0, "baseMod2" to 47.0, "baseMod3" to 39.0,
+            "waveshapeType" to 17.0, "waveshape" to 81.0, "filterType" to 14.0,
+            "filterBeforeShape" to 1.0, "modulationType" to 3.0,
+            "modulation1" to 48.0, "modulation2" to 33.0, "modulation3" to 21.0,
+            "spectrumType" to 2.0, "spectrumAmount" to 57.0,
+            "harmonicShift" to -3.0, "harmonicShiftFirst" to 1.0,
+            "adaptiveMode" to 8.0, "adaptivePower" to 200.0,
+            "adaptiveBaseFreq" to 255.0, "adaptiveAmount" to 100.0,
+            "ampRandomType" to 2.0, "ampRandomPower" to 29.0,
+            "harmonic/3/magnitude" to 87.0, "harmonic/3/phase" to 53.0,
+        )
+        val file = File(context.cacheDir, "qa-advanced-oscillators.xiz")
+        try {
+            for (modulator in listOf(false, true)) {
+                val role = if (modulator) "modOsc" else "osc"
+                val prefix = "add/voice/0/$role/"
+                val address = ModuleAddress.Oscillator(0, modulator)
+                val otherPrefix = "add/voice/0/${if (modulator) "osc" else "modOsc"}/"
+                val otherBefore = values(engine, 0, prefix = otherPrefix)
+                for ((field, value) in advanced) {
+                    val path = prefix + field
+                    assertTrue(path, engine.writeParameter(0, 0, SynthEngine.ParameterWrite(path, value)))
+                }
+                val source = values(engine, 0, prefix = prefix)
+                assertValues(role, advanced, source.filterKeys(advanced::containsKey))
+                assertValues("Other role", otherBefore, values(engine, 0, prefix = otherPrefix))
+
+                assertTrue(engine.copyModule(0, 0, address))
+                assertTrue(engine.pasteModule(1, 0, address))
+                assertValues("Clipboard $role", source, values(engine, 1, prefix = prefix))
+                assertTrue(engine.exportInstrument(0, file))
+                assertTrue(NativeSynthBridge.nativeLoadPresetFile(file.absolutePath, 1))
+                assertValues("XIZ $role", source, values(engine, 1, prefix = prefix))
+
+                val shift = engine.parameterSnapshot(0, 0).values
+                    .first { it.descriptor.path == prefix + "harmonicShift" }.descriptor
+                assertTrue(engine.writeParameter(0, 0, SynthEngine.ParameterWrite(shift.path, shift.defaultValue)))
+                assertEquals(0.0, values(engine, 0, prefix = prefix).getValue("harmonicShift"), 0.0)
+            }
+        } finally {
+            file.delete()
+        }
+    }
+
+    @Test
+    fun oscillatorActionsAndNativePreviewsTargetTheSelectedGenerator() {
+        val engine = SynthEngine(context)
+        assertTrue(NativeSynthBridge.nativeInit(48_000, 256))
+        assertTrue(engine.loadPackagedPreset("presets/banks/Companion/0078-Brassy.xiz", 0))
+        val file = File(context.cacheDir, "qa-custom-oscillator-base.xiz")
+        try {
+            for (modulator in listOf(false, true)) {
+                val role = if (modulator) "modOsc" else "osc"
+                val prefix = "add/voice/0/$role/"
+                val address = ModuleAddress.Oscillator(0, modulator)
+                fun write(field: String, value: Double) {
+                    assertTrue(field, engine.writeParameter(0, 0, SynthEngine.ParameterWrite(prefix + field, value)))
+                }
+                fun preview(target: ModuleAddress = address) = engine.preview(0, 0, target, 128).values
+                    .also { result ->
+                        assertEquals(128, result.size)
+                        assertTrue(result.all { it.isFinite() && it in -1f..1f })
+                        assertTrue(result.any { kotlin.math.abs(it) > .1f })
+                    }
+
+                val external = "external" + if (modulator) "ModOscillator" else "Oscillator"
+                val sourcePath = "add/voice/1/$external"
+                assertTrue(engine.writeParameter(0, 0, SynthEngine.ParameterWrite(sourcePath, 7.0)))
+                assertEquals("Only earlier voices can be referenced", 1.0, values(engine, 0).getValue("voice/1/$external"), 0.0)
+                val consumerBefore = values(engine, 0, prefix = "add/voice/1/$role/")
+                write("action/convertToSine", 1.0)
+                write("action/clearHarmonics", 1.0)
+                val sine = preview()
+                write("baseFunction", 3.0)
+                write("baseShape", 82.0)
+                write("harmonic/2/magnitude", 107.0)
+                write("harmonic/2/phase", 49.0)
+                assertNotEquals(sine, preview())
+                write("waveshape", 103.0)
+                val dry = preview()
+                write("waveshapeType", 17.0)
+                assertNotEquals(dry, preview())
+                write("filterType", 1.0)
+                write("filter1", 95.0)
+                val shapeFirst = preview()
+                write("filterBeforeShape", 1.0)
+                assertNotEquals(shapeFirst, preview())
+                OscillatorPreviewView.entries.forEach { preview(ModuleAddress.OscillatorPreview(address, it)) }
+
+                write("action/useAsBase", 1.0)
+                val custom = values(engine, 0, prefix = prefix)
+                assertEquals(127.0, custom.getValue("baseFunction"), 0.0)
+                val baseView = ModuleAddress.OscillatorPreview(address, OscillatorPreviewView.BASE_WAVE)
+                val customWave = preview(baseView)
+                fun assertCustomWave(label: String) {
+                    val roundTrip = engine.preview(1, 0, baseView, 128).values
+                    assertEquals(customWave.size, roundTrip.size)
+                    // XIZ normalizes the spectrum and omits coefficients below 1e-6.
+                    customWave.zip(roundTrip).forEachIndexed { index, (expected, actual) ->
+                        assertEquals("$label sample $index", expected, actual, .00001f)
+                    }
+                }
+                assertTrue(engine.copyModule(0, 0, address))
+                assertTrue(engine.pasteModule(1, 0, address))
+                assertValues("Custom clipboard $role", custom, values(engine, 1, prefix = prefix))
+                assertCustomWave("Clipboard $role")
+                assertEquals(customWave, preview(baseView))
+                assertTrue(engine.exportInstrument(0, file))
+                assertTrue(NativeSynthBridge.nativeLoadPresetFile(file.absolutePath, 1))
+                assertValues("Custom XIZ $role", custom, values(engine, 1, prefix = prefix))
+                assertCustomWave("XIZ $role")
+                assertEquals(customWave, preview(baseView))
+
+                write("action/clearHarmonics", 1.0)
+                val cleared = values(engine, 0, prefix = prefix)
+                assertEquals(107.0, custom.getValue("harmonic/2/magnitude"), 0.0)
+                assertEquals(64.0, cleared.getValue("harmonic/2/magnitude"), 0.0)
+                assertEquals(64.0, cleared.getValue("harmonic/2/phase"), 0.0)
+                assertEquals(127.0, cleared.getValue("harmonic/0/magnitude"), 0.0)
+                assertEquals(127.0, cleared.getValue("baseFunction"), 0.0)
+                write("action/convertToSine", 1.0)
+                val converted = values(engine, 0, prefix = prefix)
+                assertEquals(0.0, converted.getValue("baseFunction"), 0.0)
+                assertEquals(0.0, converted.getValue("waveshapeType"), 0.0)
+                assertValues("Shared consumer generator untouched", consumerBefore,
+                    values(engine, 0, prefix = "add/voice/1/$role/"))
+            }
+        } finally {
+            file.delete()
+        }
+    }
+
+    @Test
     fun repeatedSparsePresetLoadDoesNotInheritEarlierAddEdits() {
         val engine = SynthEngine(context)
         assertTrue(NativeSynthBridge.nativeInit(48_000, 256))

@@ -60,3 +60,21 @@ Les erreurs initiales de chemins `oscillator/` et `modOscillator/` dans le nouve
 - `defaultsinstrument()` remet notamment ADD et les kits a zero ; cette passe ne valide pas l'absence d'heritage de tous les parametres SUB/PAD du kit 0.
 
 La fiche 007 est close et son prompt retire du backlog. Les points ci-dessus restent ouverts pour la validation finale ; leur report ne vaut pas validation audio ou tactile.
+
+
+## Clôture OscilGen 006
+
+Mick a validé les éditeurs Voice et Modulator le 6 novembre 2026. Les deux rôles partagent
+les paramètres avancés, les aperçus natifs de base et de sortie (onde et spectre) et les
+actions sur les harmoniques. **ONE** réinitialise le rang sélectionné et **ALL** réinitialise
+la grille après confirmation. **Use as base** conserve les réglages en place. L’option
+desktop **Auto clear** reste hors périmètre.
+
+Les 24 tests JVM et 17 tests instrumentés passent sur Android 13 ARM64. Les cas OscilGen
+couvrent les deux rôles, l’isolation de la voix qui partage une source, l’ordre filtre/waveshaping,
+les aperçus, les actions, le clipboard et l’aller-retour XIZ d’une base personnalisée.
+
+La reprise d’une part sans nom a aussi été vérifiée après arrêt forcé. La sérialisation et
+l’écriture de la session s’exécutent sur un thread de fond. Un essai sur émulateur a confirmé
+qu’une deuxième modification pendant l’écriture est conservée. La capture native reste
+synchrone et a pris 92 à 99 ms avec l’audio actif dans cet essai.

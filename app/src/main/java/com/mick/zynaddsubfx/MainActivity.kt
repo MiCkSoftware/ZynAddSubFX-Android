@@ -9,6 +9,7 @@ import java.util.Locale
 import org.json.JSONArray
 import org.json.JSONObject
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -68,6 +69,7 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -83,12 +85,15 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewScreenSizes
 import com.mick.zynaddsubfx.ui.theme.ZynAddSubFXTheme
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import android.os.SystemClock
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.repeatOnLifecycle
 import kotlin.math.roundToInt
 
 private const val APP_LOG_TAG = "ZynAddSubFX"
@@ -101,7 +106,12 @@ private const val FIRST_NOTE_POLL_MS = 20L
 private const val FIRST_NOTE_AUTO_TIMEOUT_MS = 2500L
 private const val HEAVY_FIRST_NOTE_MS_THRESHOLD = 250L
 
+private val sessionIo = Dispatchers.IO.limitedParallelism(1)
+
 class MainActivity : ComponentActivity() {
+    private var sessionReady = false
+    private val checkpointSession: suspend () -> Boolean = ::saveSession
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val nativeStatus = mutableStateOf(NativeSmokeStatus(
@@ -109,14 +119,16 @@ class MainActivity : ComponentActivity() {
             initOk = false, sampleRate = null, framesPerBurst = null,
             error = "Initializing audio engine",
         ))
-        enableEdgeToEdge()
+        enableEdgeToEdge(statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT))
         setContent {
             ZynAddSubFXTheme {
-                ZynAddSubFXApp(nativeStatus = nativeStatus.value)
+                ZynAddSubFXApp(nativeStatus = nativeStatus.value, onSaveDraft = checkpointSession)
             }
         }
         lifecycleScope.launch {
-            nativeStatus.value = withContext(Dispatchers.Default) { smokeTestNativeBridge() }
+            val status = withContext(sessionIo) { smokeTestNativeBridge() }
+            sessionReady = status.initOk
+            nativeStatus.value = status
         }
     }
 
@@ -176,18 +188,35 @@ class MainActivity : ComponentActivity() {
         super.onStop()
         runCatching { NativeSynthBridge.nativeSetTestToneEnabled(false) }
         runCatching { NativeSynthBridge.nativeStopAudio() }
-        runCatching {
-            val temporary = File(filesDir, "session.tmp.xmz")
-            if (NativeSynthBridge.nativeSaveSession(temporary.absolutePath)) {
-                if (!temporary.renameTo(File(filesDir, "session.xmz"))) Log.e(APP_LOG_TAG, "Could not replace session backup")
-            } else Log.e(APP_LOG_TAG, "Could not save session")
-        }.onFailure { Log.e(APP_LOG_TAG, "Could not save session", it) }
+        lifecycleScope.launch { saveSession() }
+    }
+
+    private suspend fun saveSession(): Boolean {
+        if (!sessionReady) return false
+        val destination = File(filesDir, "session.xmz")
+        val temporary = File(filesDir, "session.tmp.xmz")
+        val capture = runCatching { NativeSynthBridge.nativeCaptureSession() }
+            .onFailure { Log.e(APP_LOG_TAG, "Could not capture session", it) }
+            .getOrDefault(0L)
+        if (capture == 0L) return false
+
+        // A cancelled debounce or activity must still hand the snapshot to the single writer.
+        return withContext(sessionIo + NonCancellable) {
+            runCatching {
+                NativeSynthBridge.nativeWriteSession(capture, temporary.absolutePath) &&
+                    temporary.renameTo(destination)
+            }.onFailure { Log.e(APP_LOG_TAG, "Could not save session", it) }
+                .getOrDefault(false).also { if (!it) Log.e(APP_LOG_TAG, "Could not replace session backup") }
+        }
     }
 }
 
 @PreviewScreenSizes
 @Composable
-fun ZynAddSubFXApp(nativeStatus: NativeSmokeStatus = NativeSmokeStatus.preview()) {
+fun ZynAddSubFXApp(
+    nativeStatus: NativeSmokeStatus = NativeSmokeStatus.preview(),
+    onSaveDraft: (suspend () -> Boolean)? = null,
+) {
     val context = LocalContext.current
     val engine = remember(context) { SynthEngine(context) }
     val scope = rememberCoroutineScope()
@@ -508,6 +537,23 @@ fun ZynAddSubFXApp(nativeStatus: NativeSmokeStatus = NativeSmokeStatus.preview()
         handleLoadPreset(preset, false)
     }
 
+    LaunchedEffect(engine, lifecycleOwner, nativeStatus.initOk, onSaveDraft) {
+        if (!nativeStatus.initOk || onSaveDraft == null) return@LaunchedEffect
+        var savedRevision = 0L
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            snapshotFlow {
+                if (presetLoading || audioRestarting || heldNotes.isNotEmpty()) null
+                else engine.instrumentEditRevision()
+            }.collectLatest { revision ->
+                if (revision != null && revision != savedRevision) {
+                    // Coalesce writes from a gesture and avoid restarting audio under held notes.
+                    delay(1_500)
+                    if (onSaveDraft()) savedRevision = revision
+                }
+            }
+        }
+    }
+
     DisposableEffect(lifecycleOwner, audioRunning, toneEnabled) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
@@ -612,6 +658,7 @@ fun ZynAddSubFXApp(nativeStatus: NativeSmokeStatus = NativeSmokeStatus.preview()
                     if (ok) inspectorRefreshToken += 1
                 },
                 onPartChanged = { inspectorRefreshToken += 1 },
+                onBackToMain = { currentDestination = AppDestinations.HOME },
                 onImportInstrument = { uri, partIndex, onResult ->
                     if (presetLoading) onResult(false) else {
                         presetLoading = true

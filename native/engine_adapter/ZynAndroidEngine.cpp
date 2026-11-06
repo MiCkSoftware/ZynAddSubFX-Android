@@ -7,6 +7,7 @@
 #include <cctype>
 #include <chrono>
 #include <string_view>
+#include <variant>
 #ifdef __ANDROID__
 #include <android/log.h>
 #endif
@@ -37,6 +38,55 @@ constexpr auto kInstrumentApplyTimeout = std::chrono::milliseconds(1200);
 #ifdef __ANDROID__
 constexpr const char *kEngineLogTag = "zynbridge";
 #endif
+
+// Both oscillator roles use the same descriptors and write bounds.
+constexpr struct OscillatorControl {
+    const char *field;
+    const char *label;
+    std::variant<unsigned char zyn::OscilGen::*, int zyn::OscilGen::*, bool zyn::OscilGen::*> member;
+    int minimum;
+    int maximum;
+    int defaultValue;
+    const char *options = nullptr;
+} kOscillatorControls[] = {
+    {"magnitudeType", "Magnitude scale", &zyn::OscilGen::Phmagtype, 0, 4, 0,
+        "Linear,-40 dB,-60 dB,-80 dB,-100 dB"},
+    {"baseFunction", "Base function", &zyn::OscilGen::Pcurrentbasefunc, 0, 16, 0,
+        "Sine,Triangle,Pulse,Saw,Power,Gauss,Diode,AbsSine,PulseSine,StretchSine,Chirp,AbsStretchSine,Chebyshev,Sqr,Spike,Circle,PowerSinus"},
+    {"baseShape", "Base shape", &zyn::OscilGen::Pbasefuncpar, 0, 127, 64},
+    {"baseModType", "Base modulation", &zyn::OscilGen::Pbasefuncmodulation, 0, 4, 0,
+        "Off,Reverse,Sine,Power,Chop"},
+    {"baseMod1", "Base mod 1", &zyn::OscilGen::Pbasefuncmodulationpar1, 0, 127, 64},
+    {"baseMod2", "Base mod 2", &zyn::OscilGen::Pbasefuncmodulationpar2, 0, 127, 64},
+    {"baseMod3", "Base mod 3", &zyn::OscilGen::Pbasefuncmodulationpar3, 0, 127, 32},
+    {"waveshapeType", "Waveshaping", &zyn::OscilGen::Pwaveshapingfunction, 0, 17, 0,
+        "Off,Arctan,Asymmetric,Power,Sine,Quantize,Zigzag,Limiter,Upper limit,Lower limit,Inverse limit,Clip,Asym 2,Power 2,Sigmoid,Tanh,Cubic,Square"},
+    {"waveshape", "Shape amount", &zyn::OscilGen::Pwaveshaping, 0, 127, 64},
+    {"filterType", "Filter", &zyn::OscilGen::Pfiltertype, 0, 14, 0,
+        "Off,LP1,HP1a,HP1b,BP1,BS1,LP2,HP2,BP2,BS2,Cos,Sin,Low shelf,S,LP spike"},
+    {"filter1", "Filter parameter 1", &zyn::OscilGen::Pfilterpar1, 0, 127, 64},
+    {"filter2", "Filter parameter 2", &zyn::OscilGen::Pfilterpar2, 0, 127, 64},
+    {"filterBeforeShape", "Filter first", &zyn::OscilGen::Pfilterbeforews, 0, 1, 0},
+    {"modulationType", "Wave modulation", &zyn::OscilGen::Pmodulation, 0, 3, 0,
+        "Off,Reverse,Sine,Power"},
+    {"modulation1", "Wave mod 1", &zyn::OscilGen::Pmodulationpar1, 0, 127, 64},
+    {"modulation2", "Wave mod 2", &zyn::OscilGen::Pmodulationpar2, 0, 127, 64},
+    {"modulation3", "Wave mod 3", &zyn::OscilGen::Pmodulationpar3, 0, 127, 32},
+    {"spectrumType", "Spectrum adjust", &zyn::OscilGen::Psatype, 0, 3, 0,
+        "Off,Power,Threshold down,Threshold up"},
+    {"spectrumAmount", "Spectrum amount", &zyn::OscilGen::Psapar, 0, 127, 64},
+    {"harmonicShift", "Harmonic shift", &zyn::OscilGen::Pharmonicshift, -64, 64, 0},
+    {"harmonicShiftFirst", "Shift first", &zyn::OscilGen::Pharmonicshiftfirst, 0, 1, 0},
+    {"adaptiveMode", "Adaptive harmonics", &zyn::OscilGen::Padaptiveharmonics, 0, 8, 0,
+        "Off,On,Square,2× Sub,2× Add,3× Sub,3× Add,4× Sub,4× Add"},
+    {"adaptivePower", "Adaptive power", &zyn::OscilGen::Padaptiveharmonicspower, 0, 200, 100},
+    {"adaptiveBaseFreq", "Adaptive base freq", &zyn::OscilGen::Padaptiveharmonicsbasefreq, 0, 255, 128},
+    {"adaptiveAmount", "Adaptive postprocess", &zyn::OscilGen::Padaptiveharmonicspar, 0, 100, 50},
+    {"randomness", "Phase randomness", &zyn::OscilGen::Prand, 0, 127, 64},
+    {"ampRandomType", "Amplitude randomness", &zyn::OscilGen::Pamprandtype, 0, 2, 0,
+        "Off,Power,Sine"},
+    {"ampRandomPower", "Randomness power", &zyn::OscilGen::Pamprandpower, 0, 127, 64},
+};
 
 struct ParameterMetadata {
     const char *module = "unknown";
@@ -308,13 +358,16 @@ bool ZynAndroidEngine::loadMasterXml(const std::string &path) {
     return rc == 0;
 }
 
-bool ZynAndroidEngine::saveSession(const std::string &path) {
-    if (!zynReady_.load() || !master_ || path.empty()) return false;
-    const bool previous = master_->SaveFullXml;
-    master_->SaveFullXml = true;
-    const bool ok = master_->saveXML(path.c_str()) == 0;
-    master_->SaveFullXml = previous;
-    return ok;
+std::unique_ptr<zyn::XMLwrapper> ZynAndroidEngine::captureSession(int &compression) const {
+    if (!zynReady_.load() || !master_) return {};
+    auto xml = std::make_unique<zyn::XMLwrapper>();
+    xml->SaveFullXml = true;
+    xml->minimal = false;
+    xml->beginbranch("MASTER");
+    master_->add2XML(*xml);
+    xml->endbranch();
+    compression = master_->gzip_compression;
+    return xml;
 }
 
 bool ZynAndroidEngine::loadPresetFile(const std::string &path, int partIndex) {
@@ -970,17 +1023,14 @@ std::string ZynAndroidEngine::parameterSnapshot(int partIndex, int kitIndex) con
                     formantValue((prefix + "filter").c_str(), (filterGroup + " / Formant").c_str(), filter);
             }
             auto addOscillator = [&](const zyn::OscilGen &o, const std::string &oscPrefix, const std::string &oscGroup) {
-                add((oscPrefix + "magnitudeType").c_str(), "Magnitude scale", oscGroup.c_str(), "enum", o.Phmagtype, 0, 4, 0,
-                    "Linear,-40 dB,-60 dB,-80 dB,-100 dB");
-                add((oscPrefix + "baseFunction").c_str(), "Base function", oscGroup.c_str(), "enum", o.Pcurrentbasefunc, 0, 15, 0,
-                    "Sine,Triangle,Pulse,Saw,Power,Gauss,Diode,AbsSine,PulseSine,StretchSine,Chirp,AbsStretchSine,Chebyshev,Sqr,Spike,Circle");
-                add((oscPrefix + "baseShape").c_str(), "Base shape", oscGroup.c_str(), "int", o.Pbasefuncpar, 0, 127, 64);
-                add((oscPrefix + "waveshape").c_str(), "Waveshaping", oscGroup.c_str(), "int", o.Pwaveshaping, 0, 127, 64);
-                add((oscPrefix + "filterType").c_str(), "Filter", oscGroup.c_str(), "enum", o.Pfiltertype, 0, 13, 0,
-                    "Off,LP1,LP2,HP1,HP2,BP1,BP2,Cos,Sin,LowShelf,S,Comb,Spike,LP3");
-                add((oscPrefix + "filter1").c_str(), "Filter parameter 1", oscGroup.c_str(), "int", o.Pfilterpar1, 0, 127, 64);
-                add((oscPrefix + "filter2").c_str(), "Filter parameter 2", oscGroup.c_str(), "int", o.Pfilterpar2, 0, 127, 64);
-                add((oscPrefix + "randomness").c_str(), "Phase randomness", oscGroup.c_str(), "int", o.Prand, 0, 127, 64);
+                for (const auto &control : kOscillatorControls) {
+                    const int value = std::visit([&](auto member) -> int { return o.*member; }, control.member);
+                    const char *type = control.options ? "enum" :
+                        std::holds_alternative<bool zyn::OscilGen::*>(control.member) ? "bool" : "int";
+                    add((oscPrefix + control.field).c_str(), control.label, oscGroup.c_str(), type,
+                        value, control.minimum, control.maximum, control.defaultValue,
+                        control.options ? control.options : "");
+                }
                 for (int h = 0; h < MAX_AD_HARMONICS; ++h) {
                     add((oscPrefix + "harmonic/" + std::to_string(h) + "/magnitude").c_str(),
                         ("Harmonic " + std::to_string(h + 1)).c_str(), (oscGroup + " harmonics").c_str(),
@@ -1368,15 +1418,21 @@ bool ZynAndroidEngine::setParameter(int partIndex, int kitIndex, const std::stri
                      (field.rfind("modOsc/", 0) == 0 && v.FmGn)) {
                 auto &o = field.rfind("modOsc/", 0) == 0 ? *v.FmGn : *v.OscilGn;
                 const auto oscField = field.rfind("modOsc/", 0) == 0 ? field.substr(7) : field.substr(4);
-                if (oscField == "magnitudeType") o.Phmagtype = i(0, 4);
-                else if (oscField == "baseFunction") o.Pcurrentbasefunc = i(0, 15);
-                else if (oscField == "baseShape") o.Pbasefuncpar = i(0, 127);
-                else if (oscField == "waveshape") o.Pwaveshaping = i(0, 127);
-                else if (oscField == "filterType") o.Pfiltertype = i(0, 13);
-                else if (oscField == "filter1") o.Pfilterpar1 = i(0, 127);
-                else if (oscField == "filter2") o.Pfilterpar2 = i(0, 127);
-                else if (oscField == "randomness") o.Prand = i(0, 127);
-                else if (oscField.rfind("harmonic/", 0) == 0) {
+                const auto control = std::find_if(std::begin(kOscillatorControls), std::end(kOscillatorControls),
+                    [&](const auto &candidate) { return oscField == candidate.field; });
+                if (control != std::end(kOscillatorControls)) {
+                    std::visit([&](auto member) { o.*member = i(control->minimum, control->maximum); }, control->member);
+                } else if (oscField == "action/useAsBase") {
+                    o.useasbase();
+                    return true;
+                } else if (oscField == "action/convertToSine") {
+                    o.convert2sine();
+                    return true;
+                } else if (oscField == "action/clearHarmonics") {
+                    std::fill(std::begin(o.Phmag), std::end(o.Phmag), 64);
+                    std::fill(std::begin(o.Phphase), std::end(o.Phphase), 64);
+                    o.Phmag[0] = 127;
+                } else if (oscField.rfind("harmonic/", 0) == 0) {
                     const auto harmonic = oscField.substr(9);
                     const auto harmonicSlash = harmonic.find('/');
                     if (harmonicSlash == std::string::npos) return false;
@@ -1600,16 +1656,33 @@ std::string ZynAndroidEngine::modulePreview(
     const int count = std::clamp(resolution, 16, 512);
     std::vector<float> points(count, 0.0f);
     auto &global = kit.adpars->GlobalPar;
-    if (kind == 1) {
-        if (index < 0 || index >= NUM_VOICES || !synth_) return {};
-        auto *oscillator = role == 1 ? kit.adpars->VoicePar[index].FmGn : kit.adpars->VoicePar[index].OscilGn;
+    if (kind == 1 || kind == 8) {
+        // Kind 8 is preview-only. The low role bit selects carrier/modulator.
+        if (index < 0 || index >= NUM_VOICES || !synth_ || role < 0 ||
+            (kind == 1 ? role > 1 : role > 5)) return {};
+        auto &voice = kit.adpars->VoicePar[index];
+        auto *oscillator = (role & 1) ? voice.FmGn : voice.OscilGn;
         if (!oscillator) return {};
-        std::vector<float> samples(synth_->oscilsize, 0.0f);
-        const int offset = oscillator->get(samples.data(), -1.0f, 0);
-        float peak = 0.000001f;
-        for (float sample : samples) peak = std::max(peak, std::fabs(sample));
-        for (int n = 0; n < count; ++n)
-            points[n] = samples[(offset + n * samples.size() / count) % samples.size()] / peak;
+        const int view = kind == 1 ? -1 : role / 2;
+        if (view <= 0) {
+            std::vector<float> samples(synth_->oscilsize, 0.0f);
+            int offset = 0;
+            if (view == 0)
+                oscillator->getcurrentbasefunction(master_->fft->allocSampleBuf(samples.data()));
+            else
+                offset = oscillator->get(samples.data(), -1.0f, 0);
+            float peak = 0.000001f;
+            for (float sample : samples) peak = std::max(peak, std::fabs(sample));
+            for (int n = 0; n < count; ++n)
+                points[n] = samples[(offset + n * samples.size() / count) % samples.size()] / peak;
+        } else {
+            const int bins = std::min(count + 1, synth_->oscilsize / 2);
+            std::vector<float> spectrum(bins, 0.0f);
+            oscillator->getspectrum(bins, spectrum.data(), view == 2 ? 1 : 0);
+            const float peak = std::max(0.000001f, *std::max_element(spectrum.begin() + 1, spectrum.end()));
+            for (int n = 1; n < bins; ++n)
+                points[n - 1] = std::max(0.0f, spectrum[n]) / peak;
+        }
     } else if (kind == 2) {
         zyn::EnvelopeParams *envelope = nullptr;
         if (index < 0) envelope = role == 0 ? global.AmpEnvelope : role == 1 ? global.FreqEnvelope : global.FilterEnvelope;

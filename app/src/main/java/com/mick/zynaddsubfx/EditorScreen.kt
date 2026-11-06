@@ -83,6 +83,7 @@ fun PresetEditorScreen(
     onSetPartPadEnabled: (Int, Boolean) -> Unit,
     onSoloPart: (Int) -> Unit,
     onPartChanged: () -> Unit,
+    onBackToMain: () -> Unit,
     onAllNotesOffPart: (Int) -> Unit,
     onImportInstrument: (android.net.Uri, Int, (Boolean) -> Unit) -> Unit,
     modifier: Modifier = Modifier,
@@ -157,6 +158,7 @@ fun PresetEditorScreen(
                 Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp)) {
                     Text("Part ${uiState.selectedPartIndex + 1}", color = Color(0xFF7AB8BA), style = MaterialTheme.typography.labelSmall)
                     Row(verticalAlignment = Alignment.CenterVertically) {
+                        TextButton(onClick = onBackToMain) { Text("‹ Main") }
                         if (renaming) {
                             BasicTextField(
                                 value = name,

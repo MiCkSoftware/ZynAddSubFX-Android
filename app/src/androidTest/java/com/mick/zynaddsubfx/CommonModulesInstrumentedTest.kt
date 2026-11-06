@@ -20,23 +20,39 @@ class CommonModulesInstrumentedTest {
     val composeRule = createComposeRule()
 
     @Test
-    fun sessionRestoresMultiplePartsIncludingDisabledInstrument() {
+    fun sessionRestoresUnnamedDisabledPartWithVoiceEditsAfterEngineRestart() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val engine = SynthEngine(context)
         assertTrue(NativeSynthBridge.nativeInit(48_000, 256))
         assertTrue(engine.renameInstrument(0, "First part"))
-        assertTrue(engine.renameInstrument(1, "Second part"))
         assertTrue(engine.setPartEnabled(1, false))
+        val edits = mapOf(
+            "add/voice/1/enabled" to 1.0,
+            "add/voice/1/osc/harmonic/2/magnitude" to 93.0,
+            "add/voice/2/modOsc/waveshapeType" to 5.0,
+        )
+        for ((path, value) in edits) {
+            assertTrue(path, engine.writeParameter(1, 0, SynthEngine.ParameterWrite(path, value)))
+        }
+        assertTrue(engine.inspectParts().first { it.partIndex == 1 }.name.isBlank())
         val session = java.io.File(context.cacheDir, "session-test.xmz")
         try {
-            assertTrue(NativeSynthBridge.nativeSaveSession(session.absolutePath))
-            assertTrue(engine.renameInstrument(0, "Changed first"))
-            assertTrue(engine.renameInstrument(1, "Changed second"))
+            val capture = NativeSynthBridge.nativeCaptureSession()
+            assertTrue(capture != 0L)
+            assertTrue(NativeSynthBridge.nativeInit(48_000, 256))
+            // Writing must use the captured data, even after replacing the live engine.
+            val writer = java.util.concurrent.FutureTask {
+                NativeSynthBridge.nativeWriteSession(capture, session.absolutePath)
+            }
+            Thread(writer).start()
+            assertTrue(writer.get(10, java.util.concurrent.TimeUnit.SECONDS))
             assertTrue(NativeSynthBridge.nativeLoadPresetFile(session.absolutePath, 0))
             val parts = engine.inspectParts().associateBy { it.partIndex }
             assertEquals("First part", parts.getValue(0).name)
-            assertEquals("Second part", parts.getValue(1).name)
+            assertTrue(parts.getValue(1).name.isBlank())
             assertFalse(parts.getValue(1).enabled)
+            val restored = engine.parameterSnapshot(1, 0).values.associate { it.descriptor.path to it.value }
+            for ((path, value) in edits) assertEquals(path, value, restored.getValue(path), 0.0)
         } finally {
             session.delete()
         }

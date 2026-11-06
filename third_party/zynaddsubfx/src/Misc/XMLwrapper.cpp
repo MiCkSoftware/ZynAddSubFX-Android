@@ -29,7 +29,6 @@ using namespace std;
 
 namespace zyn {
 
-int  xml_k   = 0;
 bool verbose = false;
 
 #if MXML_MAJOR_VERSION <= 3
@@ -238,8 +237,6 @@ int XMLwrapper::saveXMLfile(const string &filename, int compression) const
 
 char *XMLwrapper::getXMLdata() const
 {
-    xml_k = 0;
-
 #if MXML_MAJOR_VERSION <= 3
     char *xmldata = mxmlSaveAllocString(tree, XMLwrapper_whitespace_callback);
 #else
