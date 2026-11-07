@@ -39,10 +39,18 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.setProgress
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.semantics
@@ -56,6 +64,8 @@ import com.mick.zynaddsubfx.ui.theme.LedDefaultHue
 import com.mick.zynaddsubfx.ui.theme.LedFxHue
 import com.mick.zynaddsubfx.ui.theme.LedStereoHue
 import com.mick.zynaddsubfx.ui.theme.ledColors
+import kotlin.math.cos
+import kotlin.math.sin
 import kotlin.math.roundToInt
 
 enum class KnobSensitivity {
@@ -94,7 +104,8 @@ fun DenseKnobCard(
     onValueChangeFinished: () -> Unit = {},
 ) {
     DenseControlCard(label, labelColor, modifier) {
-        TinyKnob("", value, min, max, onValueChangeFinished = onValueChangeFinished,
+        TinyKnob("", value, min, max, accessibilityLabel = label,
+            onValueChangeFinished = onValueChangeFinished,
             onValueChange = onValueChange)
     }
 }
@@ -111,6 +122,8 @@ fun TinyKnob(
     compactValueLabel: Boolean = false,
     onValueChangeFinished: () -> Unit = {},
     enabled: Boolean = true,
+    accessibilityLabel: String = label,
+    accent: Color = Color(0xFF33C8C8),
     onValueChange: (Float) -> Unit,
 ) {
     val screenHeightPx = with(androidx.compose.ui.platform.LocalDensity.current) {
@@ -144,7 +157,22 @@ fun TinyKnob(
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Box(
             modifier = Modifier
-                .size(43.dp)
+                // The face stays compact; the surrounding target uses available space up to 48 dp.
+                // Fixed grid weights and column breakpoints remain unchanged.
+                .size(48.dp)
+                .semantics(mergeDescendants = true) {
+                    contentDescription = accessibilityLabel
+                    stateDescription = displayText
+                    progressBarRangeInfo = ProgressBarRangeInfo(value.coerceIn(min, max), min..max)
+                    if (!enabled) disabled()
+                    else setProgress { requested ->
+                        if (!requested.isFinite()) false else {
+                            currentOnValueChange(requested.coerceIn(min, max))
+                            currentOnValueChangeFinished()
+                            true
+                        }
+                    }
+                }
                 .pointerInput(min, max, effectiveDragRangePx, requestedDragRangePx, sensitivity, enabled) {
                     if (!enabled) return@pointerInput
                     try {
@@ -181,21 +209,7 @@ fun TinyKnob(
                     }
                 }
         ) {
-            Canvas(modifier = Modifier.fillMaxSize()) {
-                val stroke = 4.dp.toPx()
-                drawCircle(
-                    color = Color(0x5533C8C8),
-                    radius = size.minDimension / 2 - stroke,
-                    style = androidx.compose.ui.graphics.drawscope.Stroke(stroke)
-                )
-                drawArc(
-                    color = Color(0xFF33C8C8),
-                    startAngle = 140f,
-                    sweepAngle = 260f * displayNormalized,
-                    useCenter = false,
-                    style = androidx.compose.ui.graphics.drawscope.Stroke(stroke)
-                )
-            }
+            KnobFace(displayNormalized, accent, Modifier.size(43.dp).align(Alignment.Center))
             Text(
                 text = displayText,
                 modifier = Modifier.align(Alignment.Center).then(
@@ -217,6 +231,54 @@ fun TinyKnob(
             )
         }
         if (label.isNotBlank()) Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+private fun KnobFace(normalized: Float, accent: Color, modifier: Modifier) {
+    // Reuse brushes across drag frames; only the arc and marker position change.
+    val rim = remember(accent) {
+        Brush.verticalGradient(listOf(accent.copy(alpha = .16f), accent.copy(alpha = .04f)))
+    }
+    val face = remember {
+        Brush.verticalGradient(listOf(Color(0xFF243438), Color(0xFF10191C), Color(0xFF0C1315)))
+    }
+    val track = remember(accent) {
+        Brush.verticalGradient(listOf(accent.copy(alpha = .34f), accent.copy(alpha = .18f)))
+    }
+    val active = remember(accent) {
+        Brush.verticalGradient(listOf(
+            androidx.compose.ui.graphics.lerp(accent, Color.White, .22f),
+            accent,
+            androidx.compose.ui.graphics.lerp(accent, Color.Black, .20f),
+        ))
+    }
+    Canvas(modifier) {
+        val diameter = size.minDimension
+        val stroke = diameter * .085f
+        val radius = diameter / 2f - stroke * 1.15f
+        val arcSize = Size(radius * 2f, radius * 2f)
+        val arcOrigin = center - Offset(radius, radius)
+        drawCircle(rim, radius = diameter / 2f)
+        drawCircle(face, radius = radius - stroke * .35f)
+        drawCircle(accent.copy(alpha = .20f), radius = radius - stroke * .62f,
+            style = Stroke(stroke * .24f))
+        drawArc(track, 140f, 260f, false,
+            topLeft = arcOrigin, size = arcSize, style = Stroke(stroke))
+        val sweep = 260f * normalized.coerceIn(0f, 1f)
+        drawArc(active, 140f, sweep, false,
+            topLeft = arcOrigin, size = arcSize, style = Stroke(stroke))
+        val angle = Math.toRadians((140f + sweep).toDouble())
+        val markerCenter = center + Offset(
+            (cos(angle) * (radius + stroke * .45f)).toFloat(),
+            (sin(angle) * (radius + stroke * .45f)).toFloat(),
+        )
+        rotate(140f + sweep + 90f, markerCenter) {
+            drawRoundRect(accent,
+                topLeft = markerCenter - Offset(stroke * .24f, stroke * .65f),
+                size = Size(stroke * .48f, stroke * 1.30f),
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(stroke * .18f))
+        }
     }
 }
 
@@ -596,21 +658,7 @@ fun TinyKnobDisplay(
 
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Box(modifier = Modifier.size(50.dp)) {
-            Canvas(modifier = Modifier.fillMaxSize()) {
-                val stroke = 4.dp.toPx()
-                drawCircle(
-                    color = Color(0x5533C8C8),
-                    radius = size.minDimension / 2 - stroke,
-                    style = androidx.compose.ui.graphics.drawscope.Stroke(stroke)
-                )
-                drawArc(
-                    color = Color(0xFF33C8C8),
-                    startAngle = 140f,
-                    sweepAngle = 260f * normalized,
-                    useCenter = false,
-                    style = androidx.compose.ui.graphics.drawscope.Stroke(stroke)
-                )
-            }
+            KnobFace(normalized, Color(0xFF33C8C8), Modifier.fillMaxSize())
             Text(
                 text = value.toInt().toString(),
                 modifier = Modifier.align(Alignment.Center),

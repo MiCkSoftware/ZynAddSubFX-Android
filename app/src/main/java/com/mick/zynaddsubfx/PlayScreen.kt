@@ -77,6 +77,7 @@ private fun PlayChoiceKnob(
         DenseControlCard(label, Color(0xFF1C474B), onLongClick = { open = true },
             longClickLabel = "Choose $title") {
             TinyKnob("", value.toFloat(), range.first.toFloat(), range.last.toFloat(),
+                accessibilityLabel = title,
                 valueText = { knobLabel(it.roundToInt()) },
                 onValueChange = { onSelect(it.roundToInt().coerceIn(range)) })
         }

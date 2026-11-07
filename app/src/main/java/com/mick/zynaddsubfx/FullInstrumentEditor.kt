@@ -78,6 +78,7 @@ import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.draw.alpha
@@ -866,9 +867,9 @@ private fun VoiceMatrixRow(
                 }
             }
             VoiceMatrixKnob("Vol", voice.volume, active, model::dragParameter,
-                model::finishParameterDrag, Modifier.weight(1f))
+                model::finishParameterDrag, Modifier.weight(1f), description = "Voice ${voice.voice + 1} volume")
             VoiceMatrixKnob("Pan", voice.panning, active, model::dragParameter,
-                model::finishParameterDrag, Modifier.weight(1f))
+                model::finishParameterDrag, Modifier.weight(1f), description = "Voice ${voice.voice + 1} panning")
             VoiceMatrixKnob(
                 "Detune", voice.detune, active && pitched, model::dragParameter,
                 model::finishParameterDrag, Modifier.weight(1f), description = "Voice ${voice.voice + 1} fine detune in cents",
@@ -902,7 +903,7 @@ private fun VoiceMatrixKnob(
     valueText: ((Float) -> String)? = null,
 ) {
     Column(
-        modifier.alpha(if (enabled) 1f else .45f).semantics { contentDescription = description },
+        modifier.alpha(if (enabled) 1f else .45f),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
@@ -910,6 +911,7 @@ private fun VoiceMatrixKnob(
         if (parameter != null) {
             TinyKnob(
                 label = "", value = parameter.value.toFloat(),
+                accessibilityLabel = description,
                 min = parameter.descriptor.minimum.toFloat(), max = parameter.descriptor.maximum.toFloat(),
                 enabled = enabled,
                 valueText = valueText ?: {
@@ -1641,6 +1643,7 @@ private fun HarmonicKnobCard(
         key(identity) {
             TinyKnob(
                 label = "",
+                accessibilityLabel = label,
                 value = value(),
                 enabled = enabled,
                 min = minimum,
@@ -2296,7 +2299,10 @@ internal fun DenseControlCard(
         shape = RoundedCornerShape(7.dp),
         border = BorderStroke(1.dp, Color(0xFF274B54)),
     ) {
-        Box(Modifier.fillMaxWidth().height(if (verticalLabel) 78.dp else 86.dp)) {
+        Box(Modifier.fillMaxWidth().height(if (verticalLabel) 78.dp else 86.dp)
+            .background(remember {
+                Brush.verticalGradient(listOf(Color(0xFF1D3033), Color(0xFF152124), Color(0xFF10191B)))
+            })) {
             Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
                 if (verticalLabel) {
                     Surface(
@@ -2304,7 +2310,14 @@ internal fun DenseControlCard(
                         color = labelColor,
                         shape = RoundedCornerShape(topStart = 7.dp, bottomStart = 7.dp),
                     ) {
-                        Box(contentAlignment = Alignment.Center) {
+                        Box(
+                            modifier = Modifier.background(remember {
+                                Brush.verticalGradient(listOf(
+                                    Color.White.copy(alpha = .07f), Color.Transparent, Color.Black.copy(alpha = .18f),
+                                ))
+                            }),
+                            contentAlignment = Alignment.Center,
+                        ) {
                             Text(
                                 label,
                                 modifier = Modifier.rotate(-90f).requiredWidth(72.dp),
@@ -2391,6 +2404,8 @@ internal fun DenseParameterControl(
         when {
                 descriptor.path.endsWith("/volumeMinus") -> TinyKnob(
                     label = "", value = parameter.value.toFloat(), min = 0f, max = 1f,
+                    accessibilityLabel = "Polarity",
+                    accent = Color.hsv(labelHue, .65f, .90f),
                     valueText = { if (it < .5f) "+" else "−" }, enabled = enabled,
                     onValueChange = { onDrag(parameter, it.roundToInt().toDouble()) },
                     onValueChangeFinished = onCommit,
@@ -2409,6 +2424,8 @@ internal fun DenseParameterControl(
                 descriptor.type == SynthEngine.ParameterType.ENUM -> if (verticalLabel) {
                     TinyKnob(
                         label = "",
+                        accessibilityLabel = descriptor.label,
+                        accent = Color.hsv(labelHue, .65f, .90f),
                         value = parameter.value.toFloat(),
                         min = descriptor.minimum.toFloat(),
                         max = descriptor.maximum.toFloat(),
@@ -2435,6 +2452,9 @@ internal fun DenseParameterControl(
                 }
                 else -> TinyKnob(
                     label = "",
+                    accessibilityLabel = descriptor.label,
+                    accent = Color.hsv(labelHue, .65f, .90f),
+                    enabled = enabled,
                     value = parameter.value.toFloat(),
                     min = descriptor.minimum.toFloat(),
                     max = descriptor.maximum.toFloat(),

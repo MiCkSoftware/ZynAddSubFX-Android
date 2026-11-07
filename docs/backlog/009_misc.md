@@ -1,4 +1,2 @@
 o on knob header tap add more details description in popup (harmonyx style)
-o improve knob style from binaural
-o need audio restart
-o load part into part
+- [x] Style des knobs inspire de Binaural : fond sombre, piste ouverte, repere mobile, accents par famille, degrades discrets sur cadrans/cartes/bandeaux ; labels accessibles et reglage TalkBack ajoutes. Cibles de 48 dp selon la largeur disponible, nombre de colonnes conserve. Compilation Kotlin OK ; validation visuelle/tactile/TalkBack sur appareil restante (7 novembre 2026).

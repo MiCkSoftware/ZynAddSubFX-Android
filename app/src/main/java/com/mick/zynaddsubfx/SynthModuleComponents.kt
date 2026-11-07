@@ -770,6 +770,7 @@ fun FormantFilterEditor(
                 DenseControlCard("Vowel", Color(0xFF4A3D1E)) {
                     TinyKnob(
                         label = "", value = (selectedVowel + 1).toFloat(),
+                        accessibilityLabel = "Selected vowel",
                         min = 1f, max = FORMANT_VOWEL_SLOTS.toFloat(),
                         valueText = { "${it.roundToInt()}/$FORMANT_VOWEL_SLOTS" },
                         dragRangePx = 220f,
@@ -783,6 +784,7 @@ fun FormantFilterEditor(
                 DenseControlCard("Formant", Color(0xFF4A3D1E)) {
                     TinyKnob(
                         label = "", value = (selectedFormant + 1).toFloat(),
+                        accessibilityLabel = "Selected formant",
                         min = 1f, max = formant.count.toFloat(),
                         valueText = { "${it.roundToInt()}/${formant.count}" },
                         dragRangePx = 220f,
