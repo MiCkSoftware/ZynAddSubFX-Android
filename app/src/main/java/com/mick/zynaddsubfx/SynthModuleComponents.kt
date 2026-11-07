@@ -778,17 +778,20 @@ fun FreeEnvelopeEditor(
         CommonParameterGrid(primary, onWrite = { parameter, value -> onWrite(parameter, value, true) },
             onDrag = { parameter, value -> onWrite(parameter, value, false) }, onCommit = onCommit)
         if (model.freeMode && points.isNotEmpty()) {
-            Text("Point ${activePoint + 1} of ${points.size}")
+            SectionBanner("Point ${activePoint + 1} of ${points.size}")
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                LuminousActionButton("Previous", { selectedPoint = (selectedPoint - 1).coerceAtLeast(0) }, Modifier.weight(1f))
-                LuminousActionButton("Next", { selectedPoint = (selectedPoint + 1).coerceAtMost(points.lastIndex) }, Modifier.weight(1f))
-                LuminousActionButton("Add", {
+                LedButton("Previous point", false, { selectedPoint = (activePoint - 1).coerceAtLeast(0) },
+                    Modifier.weight(1f), action = true, displayLabel = "Previous", compact = true, enabled = activePoint > 0)
+                LedButton("Next point", false, { selectedPoint = (activePoint + 1).coerceAtMost(points.lastIndex) },
+                    Modifier.weight(1f), action = true, displayLabel = "Next", compact = true, enabled = activePoint < points.lastIndex)
+                LedButton("Add point", false, {
                     onAction("${model.prefix}/insert/${activePoint.coerceAtMost(points.lastIndex - 1)}")
-                }, Modifier.weight(1f), enabled = points.size < 40)
-                LuminousActionButton("Delete", {
+                }, Modifier.weight(1f), action = true, displayLabel = "Add", compact = true, enabled = points.size < 40)
+                LedButton("Delete point", false, {
                     onAction("${model.prefix}/delete/$activePoint")
                     selectedPoint = (selectedPoint - 1).coerceAtLeast(0)
-                }, Modifier.weight(1f), enabled = activePoint in 1 until points.lastIndex && points.size > 3)
+                }, Modifier.weight(1f), action = true, hue = 2f, displayLabel = "Delete", compact = true,
+                    enabled = activePoint in 1 until points.lastIndex && points.size > 3)
             }
             CommonParameterGrid(
                 parameters = listOfNotNull(
@@ -800,9 +803,9 @@ fun FreeEnvelopeEditor(
                 onDrag = { parameter, value -> onWrite(parameter, value, false) },
                 onCommit = onCommit,
             )
-            LuminousActionButton("Sustain at selected point", {
+            LedButton("Sustain at selected point", model.sustainPoint == activePoint, {
                 model.parameter("sustainPoint")?.let { onWrite(it, activePoint.toDouble(), true) }
-            }, Modifier.fillMaxWidth())
+            }, Modifier.fillMaxWidth(), hue = 125f, action = true, displayLabel = "Sustain at selected point")
         }
     }
 }

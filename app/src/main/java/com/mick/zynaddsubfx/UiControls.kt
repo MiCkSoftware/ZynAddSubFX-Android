@@ -695,6 +695,7 @@ fun LedButton(
             .alpha(if (enabled) 1f else .42f)
             .semantics {
                 contentDescription = label
+                if (!enabled) disabled()
                 if (!action) stateDescription = if (lit) "On" else "Off"
             }
             .then(if (onLongClick != null) Modifier.combinedClickable(enabled = enabled, onClick = onClick, onLongClick = onLongClick, onLongClickLabel = "Choose $label")

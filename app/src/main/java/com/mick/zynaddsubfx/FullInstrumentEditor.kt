@@ -2237,6 +2237,7 @@ internal fun DenseParameterGrid(
     trailingControl: (@Composable () -> Unit)? = null,
     enumContext: Any? = null,
     onReset: ((SynthEngine.ParameterValue) -> Unit)? = null,
+    trailingControlSpan: Int = 1,
 ) {
     BoxWithConstraints {
         val columns = when {
@@ -2246,23 +2247,35 @@ internal fun DenseParameterGrid(
             maxWidth >= 420.dp -> 4
             else -> 3
         }
+        val columnWidth = (maxWidth - 5.dp * (columns - 1)) / columns
+        val span = trailingControlSpan.coerceIn(1, columns)
+        val remainder = parameters.size % columns
+        val trailingStart = parameters.size + if (remainder + span > columns) columns - remainder else 0
+        val slotCount = if (trailingControl != null) trailingStart + span else parameters.size
         Column(
             modifier = Modifier.fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(5.dp),
         ) {
-            (0 until parameters.size + if (trailingControl != null) 1 else 0).toList().chunked(columns).forEach { rowIndices ->
+            (0 until slotCount).toList().chunked(columns).forEach { rowIndices ->
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(5.dp),
                 ) {
                     rowIndices.forEach { index ->
-                        Box(Modifier.weight(1f)) {
-                            if (index < parameters.size) {
-                                val parameter = parameters[index]
-                                DenseParameterControl(parameter, onWrite, onLongPress, verticalLabels,
-                                    valueText, enabled(parameter), onDrag, onCommit, enumContext, onReset)
-                            } else {
-                                trailingControl?.invoke()
+                        if (index <= trailingStart) {
+                            // Include the internal gutter in a spanning card so its edges
+                            // align with the same column boundaries as the other rows.
+                            val cellModifier = if (index == trailingStart && trailingControl != null) {
+                                Modifier.width(columnWidth * span + 5.dp * (span - 1))
+                            } else Modifier.weight(1f)
+                            Box(cellModifier) {
+                                if (index < parameters.size) {
+                                    val parameter = parameters[index]
+                                    DenseParameterControl(parameter, onWrite, onLongPress, verticalLabels,
+                                        valueText, enabled(parameter), onDrag, onCommit, enumContext, onReset)
+                                } else if (index == trailingStart) {
+                                    trailingControl?.invoke()
+                                }
                             }
                         }
                     }

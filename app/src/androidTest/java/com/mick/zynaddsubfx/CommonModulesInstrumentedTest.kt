@@ -139,6 +139,65 @@ class CommonModulesInstrumentedTest {
     }
 
     @Test
+    fun leavingFreeModeRestoresSimpleEnvelopePointsAndPreview() {
+        val engine = SynthEngine(InstrumentationRegistry.getInstrumentation().targetContext)
+        assertTrue(NativeSynthBridge.nativeInit(48_000, 256))
+        val cases = listOf(
+            "add/ampEnvelope" to ModuleAddress.Envelope(envelopeRole = EnvelopeRole.AMPLITUDE),
+            "add/freqEnvelope" to ModuleAddress.Envelope(envelopeRole = EnvelopeRole.FREQUENCY),
+            "add/filterEnvelope" to ModuleAddress.Envelope(envelopeRole = EnvelopeRole.FILTER),
+            "add/voice/0/modFreqEnvelope" to ModuleAddress.Envelope(0, EnvelopeRole.MODULATOR_FREQUENCY),
+        )
+        for ((prefix, address) in cases) {
+            fun write(field: String, value: Double) = assertTrue("$prefix/$field",
+                engine.writeParameter(0, 0, SynthEngine.ParameterWrite("$prefix/$field", value)))
+            write("freeMode", 0.0)
+            val before = engine.parameterSnapshot(0, 0).values.filter {
+                it.descriptor.path.startsWith("$prefix/point/") ||
+                    it.descriptor.path in listOf("$prefix/pointCount", "$prefix/sustainPoint")
+            }.associate { it.descriptor.path to it.value }
+            val beforePreview = engine.preview(0, 0, address, 64)
+            write("freeMode", 1.0)
+            write("insert/0", 1.0)
+            write("point/1/value", 5.0)
+            write("point/1/time", 110.0)
+            write("freeMode", 0.0)
+            val after = engine.parameterSnapshot(0, 0).values.filter {
+                it.descriptor.path in before.keys
+            }.associate { it.descriptor.path to it.value }
+            assertEquals(prefix, before, after)
+            assertEquals(prefix, beforePreview, engine.preview(0, 0, address, 64))
+        }
+    }
+
+    @Test
+    fun sustainChoicesFollowPointCountAndKeepAnExplicitOffChoice() {
+        val engine = SynthEngine(InstrumentationRegistry.getInstrumentation().targetContext)
+        assertTrue(NativeSynthBridge.nativeInit(48_000, 256))
+        val prefix = "add/freqEnvelope"
+        fun write(field: String, value: Double) = assertTrue(engine.writeParameter(0, 0,
+            SynthEngine.ParameterWrite("$prefix/$field", value)))
+        fun sustain() = engine.parameterSnapshot(0, 0).values.first { it.descriptor.path == "$prefix/sustainPoint" }
+        write("freeMode", 0.0)
+        write("freeMode", 1.0)
+        assertEquals(listOf("Point 1", "Point 2", "Point 3", "Off"), sustain().descriptor.options)
+        assertEquals(3.0, sustain().descriptor.maximum, 0.0)
+        write("sustainPoint", 2.0)
+        assertEquals(2.0, sustain().value, 0.0)
+        write("sustainPoint", 3.0)
+        assertEquals("Off", sustain().descriptor.options[sustain().value.toInt()])
+        write("insert/0", 1.0)
+        assertEquals(4.0, sustain().descriptor.maximum, 0.0)
+        assertEquals(4.0, sustain().value, 0.0)
+        write("sustainPoint", 3.0)
+        write("delete/1", 1.0)
+        assertEquals(3.0, sustain().descriptor.maximum, 0.0)
+        assertEquals(2.0, sustain().value, 0.0)
+        write("sustainPoint", 127.0)
+        assertEquals("Off", sustain().descriptor.options[sustain().value.toInt()])
+    }
+
+    @Test
     fun modulatorEnvelopeParametersRoundTripThroughNativePaths() {
         val engine = SynthEngine(InstrumentationRegistry.getInstrumentation().targetContext)
         assertTrue(NativeSynthBridge.nativeInit(48_000, 256))

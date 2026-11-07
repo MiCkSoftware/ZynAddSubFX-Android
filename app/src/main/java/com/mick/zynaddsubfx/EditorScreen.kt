@@ -455,25 +455,28 @@ private fun PartEditorCard(
             enumContext = part.partIndex,
             onLongPress = {},
             onCommit = onPartChanged,
+            trailingControlSpan = 2,
+            trailingControl = {
+                DenseControlCard("Last note", Color(0xFF1C474B)) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        listOf("MIN" to "part/minKey", "RESET" to "reset", "MAX" to "part/maxKey").forEach { (label, path) ->
+                            LedButton(label, false, {
+                                val writes = if (path == "reset") listOf("part/minKey" to 0.0, "part/maxKey" to 127.0)
+                                    else heldNote?.let { note ->
+                                        val min = structural("part/minKey", "0").toIntOrNull() ?: 0
+                                        val max = structural("part/maxKey", "127").toIntOrNull() ?: 127
+                                        listOf(path to (if (path == "part/minKey") minOf(note, max) else maxOf(note, min)).toDouble())
+                                    } ?: emptyList()
+                                if (writes.isNotEmpty() && writes.all { (key, value) ->
+                                        engine.writeParameter(part.partIndex, 0, SynthEngine.ParameterWrite(key, value))
+                                    }) { structure = engine.parameterSnapshot(part.partIndex, 0); onPartChanged() }
+                            }, Modifier.weight(1f), action = true, displayLabel = label, compact = true)
+                        }
+                    }
+                }
+            },
         )
-        Row(Modifier.fillMaxWidth().padding(top = 6.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("Last note →", color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.labelSmall)
-            listOf("MIN" to "part/minKey", "RESET" to "reset", "MAX" to "part/maxKey").forEach { (label, path) ->
-                LedButton(label, false, {
-                    val writes = if (path == "reset") listOf("part/minKey" to 0.0, "part/maxKey" to 127.0)
-                        else heldNote?.let { note ->
-                            val min = structural("part/minKey", "0").toIntOrNull() ?: 0
-                            val max = structural("part/maxKey", "127").toIntOrNull() ?: 127
-                            listOf(path to (if (path == "part/minKey") minOf(note, max) else maxOf(note, min)).toDouble())
-                        } ?: emptyList()
-                    if (writes.isNotEmpty() && writes.all { (key, value) ->
-                            engine.writeParameter(part.partIndex, 0, SynthEngine.ParameterWrite(key, value))
-                        }) { structure = engine.parameterSnapshot(part.partIndex, 0); onPartChanged() }
-                }, Modifier.width(LedSlotWidth.dp), action = true, displayLabel = label)
-            }
-        }
         Spacer(Modifier.height(12.dp))
         SectionBanner("Instrument kits")
         Spacer(Modifier.height(4.dp))
@@ -507,6 +510,7 @@ private fun PartEditorCard(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                             Text("$label ${index + 1}-1", color = Color(0xFFA7F4F0),
+                                style = MaterialTheme.typography.labelLarge,
                                 modifier = Modifier.weight(1f).clickable(enabled = active) { onOpenModule(module, index) })
                             if (active) {
                                 val stereoPath = "${module.lowercase(Locale.US)}/stereo"

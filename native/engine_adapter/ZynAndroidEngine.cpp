@@ -700,7 +700,14 @@ std::string ZynAndroidEngine::parameterSnapshot(int partIndex, int kitIndex) con
         add((std::string(prefix) + "/linear").c_str(), "Linear envelope", group, "bool", env.Plinearenvelope, 0, 1, 0);
         add((std::string(prefix) + "/pointCount").c_str(), "Envelope points", group, "int", env.Penvpoints, 3,
             MAX_ENVELOPE_POINTS, 4);
-        add((std::string(prefix) + "/sustainPoint").c_str(), "Sustain point", group, "int", env.Penvsustain, 0, 127, 127);
+        std::string sustainOptions;
+        for (int point = 0; point < env.Penvpoints; ++point)
+            sustainOptions += "Point " + std::to_string(point + 1) + ",";
+        sustainOptions += "Off";
+        // Expose a contiguous choice range while keeping 127 as the engine's disabled sentinel.
+        add((std::string(prefix) + "/sustainPoint").c_str(), "Sustain point", group, "enum",
+            env.Penvsustain < env.Penvpoints ? env.Penvsustain : env.Penvpoints,
+            0, env.Penvpoints, env.Penvpoints, sustainOptions.c_str());
         for (int point = 0; point < env.Penvpoints && point < MAX_ENVELOPE_POINTS; ++point) {
             const auto pointPrefix = std::string(prefix) + "/point/" + std::to_string(point);
             add((pointPrefix + "/time").c_str(), ("Point " + std::to_string(point + 1) + " time").c_str(),
@@ -1102,11 +1109,10 @@ bool ZynAndroidEngine::setParameter(int partIndex, int kitIndex, const std::stri
         else if (field == "loop") env.Prepeating = b();
         else if (field == "forceRelease") env.Pforcedrelease = b();
         else if (field == "freeMode") {
-            if (b() && !env.Pfreemode) {
-                env.converttofree();
-                env.Pfreemode = true;
-            }
-            else env.Pfreemode = b();
+            // The point array is also used by previews. Restore the simple envelope
+            // when leaving free mode, as well as when entering it from simple mode.
+            if (!b() || !env.Pfreemode) env.converttofree();
+            env.Pfreemode = b();
         }
         else if (field == "linear") env.Plinearenvelope = b();
         else if (field == "sustainPoint") {
