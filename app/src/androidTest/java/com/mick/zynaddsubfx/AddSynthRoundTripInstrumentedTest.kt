@@ -244,6 +244,71 @@ class AddSynthRoundTripInstrumentedTest {
     }
 
     @Test
+    fun globalFilterCategoriesAndCombControlsSurviveXizReload() {
+        val engine = SynthEngine(context)
+        assertTrue(NativeSynthBridge.nativeInit(48_000, 256))
+        assertTrue(engine.loadPackagedPreset("presets/banks/Companion/0078-Brassy.xiz", 0))
+        val voiceBefore = values(engine, 0, prefix = "add/voice/0/")
+        val options = listOf(
+            listOf("LPF1", "HPF1", "LPF2", "HPF2", "BPF1", "Notch1", "Peak1", "Low shelf", "High shelf"),
+            emptyList(),
+            listOf("Low pass", "High pass", "Band pass", "Notch"),
+            listOf("Low pass", "Band pass", "High pass"),
+            listOf("Feedback", "Feedforward", "Both", "Negative feedback", "Negative feedforward", "Negative both"),
+        )
+        fun write(field: String, value: Double) {
+            assertTrue(field, engine.writeParameter(0, 0, SynthEngine.ParameterWrite("add/filter/$field", value)))
+        }
+        for ((category, expected) in options.withIndex()) {
+            write("category", category.toDouble())
+            val snapshot = engine.parameterSnapshot(0, 0).values.associateBy { it.descriptor.path }
+            assertEquals(category.toDouble(), snapshot.getValue("add/filter/category").value, 0.0)
+            assertEquals(category == 4, "add/filter/combHpf" in snapshot)
+            assertEquals(category == 4, "add/filter/combLpf" in snapshot)
+            if (expected.isEmpty()) {
+                assertFalse("Formant has dedicated controls", "add/filter/type" in snapshot)
+                assertTrue("add/filter/formant/count" in snapshot)
+            } else {
+                val type = snapshot.getValue("add/filter/type").descriptor
+                assertEquals(expected, type.options)
+                assertEquals((expected.size - 1).toDouble(), type.maximum, 0.0)
+                for (index in expected.indices) {
+                    write("type", index.toDouble())
+                    assertEquals(index.toDouble(), values(engine, 0, prefix = "add/filter/").getValue("type"), 0.0)
+                }
+                write("type", 127.0)
+                assertEquals(type.maximum, values(engine, 0, prefix = "add/filter/").getValue("type"), 0.0)
+                write("type", -1.0)
+                assertEquals(0.0, values(engine, 0, prefix = "add/filter/").getValue("type"), 0.0)
+            }
+        }
+        write("combHpf", -1.0)
+        write("combLpf", 128.0)
+        assertEquals(0.0, values(engine, 0, prefix = "add/filter/").getValue("combHpf"), 0.0)
+        assertEquals(127.0, values(engine, 0, prefix = "add/filter/").getValue("combLpf"), 0.0)
+        write("combHpf", 37.0)
+        write("combLpf", 91.0)
+        write("type", 5.0)
+        write("category", 0.0)
+        write("category", 4.0)
+        val source = values(engine, 0, prefix = "add/filter/")
+        assertEquals(37.0, source.getValue("combHpf"), 0.0)
+        assertEquals(91.0, source.getValue("combLpf"), 0.0)
+        assertEquals(voiceBefore, values(engine, 0, prefix = "add/voice/0/"))
+        val file = File(context.cacheDir, "qa-global-comb-filter.xiz")
+        try {
+            assertTrue(engine.copyModule(0, 0, ModuleAddress.Filter()))
+            assertTrue(engine.pasteModule(1, 0, ModuleAddress.Filter()))
+            assertValues("Comb clipboard", source, values(engine, 1, prefix = "add/filter/"))
+            assertTrue(engine.exportInstrument(0, file))
+            assertTrue(NativeSynthBridge.nativeLoadPresetFile(file.absolutePath, 1))
+            assertValues("Comb XIZ", source, values(engine, 1, prefix = "add/filter/"))
+        } finally {
+            file.delete()
+        }
+    }
+
+    @Test
     fun repeatedSparsePresetLoadDoesNotInheritEarlierAddEdits() {
         val engine = SynthEngine(context)
         assertTrue(NativeSynthBridge.nativeInit(48_000, 256))

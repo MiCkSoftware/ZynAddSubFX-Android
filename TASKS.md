@@ -120,28 +120,39 @@ Exemples :
 - preview du modulateur : `Main.Part.Part[1..16].Add.Voice[1..8]/Modulation/OscillatorPreview` ;
 - editeur ouvert au tap : `Main.Part.Part[1..16].Add.Voice[1..8].ModulatorOscillator`.
 
-### Prompts prioritaires Part / AddSynth
+### Bilan Part / ADsynth — 7 novembre 2026
 
-Analyse du code recontrolee le 27 octobre 2026. Ordre conseille : isolation audio, fluidite, corrections UI/parite, puis validation transversale.
-Les prompts contiennent les constats, symboles d'entree, limites et criteres de validation pour eviter de refaire l'investigation.
-A la fin de chaque implementation, mettre a jour TASKS.md et TODO.md, retirer les references au prompt termine puis supprimer son fichier. Garder les preuves utiles dans une documentation durable.
+ADsynth est termine fonctionnellement dans le perimetre Android retenu. Les validations audio/appareil etendues sont differees par decision de Mick jusqu'a SUBsynth, PADsynth et FX complets ; elles ne sont pas declarees reussies et ne bloquent pas leur backlog d'implementation.
 
-- [x] Mute entre parts et kits : mute du premier kit respecte en mode non-kit ; test audible rapporte OK par Mick. Test natif `testNonKitMute` ajoute mais non execute.
-- [x] Vue Part / instrument : kits parents et nombre de kits, moteurs ADD/SUB/PAD, mute par kit, stereo par moteur, portamento regroupe et boutons LED. Compilation Kotlin OK ; verification visuelle et tactile sur appareil restante.
-- [x] Gestes continus AddSynth — cloture validee par Mick le 31 octobre 2026 : knobs de voix et harmoniques sur ecritures live + etat transitoire reduit, reconciliation unique en fin/annulation ; compilation Kotlin et 13 tests JVM OK. [Resultats et limites](docs/perf_gestes_addsynth.md).
-- [ ] QA complementaire transversale des gestes : stress/annulation, autres appareils, parite audible approfondie et profilage du cout natif `OscilGen::prepare()`. La validation UX courante par Mick cloture la feature ; ces verifications etendues restent distinctes.
-- [x] Liste Voice — cloture validee par Mick le 31 octobre 2026 : courbe/bascule, Res, Vol, Pan, Detune, Vibrato, geometrie commune, raccourcis natifs conserves, LFO corrige et detune en cents natifs ; detail Voice complete pour activation/Resonance. [Resultats et QA restante](docs/voice_list.md).
-- [ ] QA complementaire liste Voice : paysage/petite largeur/grande police, lecteur d'ecran, stress des gestes, sources partagees et audio approfondi. UX courante validee par Mick ; compilation native deux ABI, 24 tests JVM et 14 verifications JNI OK.
-- [x] Knobs a faible plage : deplacement plafonne a 32 dp par pas, tests de densite et sensibilite ; controles Voice reunis et edition interne desactivee en partage externe. Validation UX courante par Mick le 31 octobre 2026 ; QA etendue dans les points transverses.
-- [ ] [Liste de choix sur appui long des knobs enum](docs/backlog/008_feat_enum_long_press.md) : implementation locale, drag conserve ; QA tactile, audio et accessibilite restante.
-- [ ] Harmonisation ON/C/P, Polarity et clipboard Amplitude de voix implementes localement ; validations et tests Android encore incomplets (roles, mode libre, reset, clipboard Part/Kit/Voice, accessibilite, tactile et audio). Suivi : [backlog 003](docs/backlog/003_feat_enveloppes_01.md).
-- [x] Resonance — feature validee par Mick le 1 novembre 2026 : navigation simplifiee, section avant Voices, clipboard, libelles lisibles et affichage frequence/amplitude pendant le dessin. Compilation Kotlin et ParameterRoutingTest OK ; tests utilisateur OK. Le commit natif reste effectue en fin de geste.
-- [ ] [Champs ADD/Voice](docs/backlog/005_feat_parite_champs_addsynth.md) : fade-in, bend, offset et phase randomness exposes localement ; lecture/ecriture JNI et aller-retour XIZ testes sur emulateur (voir rapport QA ADD) ; QA tactile/audio restante.
-- [x] OscilGen avancé pour Voice et Modulator — validé par Mick le 6 novembre 2026. 24 tests JVM et 17 tests instrumentés passent. [Bilan OscilGen](docs/qa_addsynth_audio_xiz.md#clôture-oscilgen-006).
-- [x] QA ADD transversale — cloture validee par Mick le 1 novembre 2026 : 24 tests JVM et 15 tests instrumentes OK sur emulateur Android 15 ; export des modules desactives et rechargement des presets partiels corriges. [Rapport et matrice](docs/qa_addsynth_audio_xiz.md).
-- [ ] Validation finale ADD : ecoute comparative, routages audibles, notes fantomes, gestes et navigation systeme sur appareil, clipboard et champs avances complementaires. [Checklist detaillee](docs/qa_addsynth_audio_xiz.md#validation-finale-restante).
+- [x] Mute parts/kits : correction du premier kit en mode non-kit, test audible rapporte OK par Mick ; test natif `testNonKitMute` ajoute, execution non documentee.
+- [x] Vue Part/instrument : kits parents, moteurs ADD/SUB/PAD independants, mute, stereo par moteur et portamento regroupes. Verification etendue incluse dans la campagne finale.
+- [x] Gestes continus et liste Voice : validations utilisateur du 31 octobre ; ecritures live, etat transitoire reduit et reconciliation en fin/annulation. Traces : [gestes](docs/backlog/archive/perf_gestes_addsynth.md), [Voice](docs/backlog/archive/voice_list.md).
+- [x] En-tetes ON/C/P, Polarity, clipboard Amplitude de voix, masquage des modules OFF et knobs enum implementes. Archives historiques : [modules](docs/backlog/archive/003_feat_enveloppes_01.md), [choix enum](docs/backlog/archive/008_feat_enum_long_press.md). Leurs anciennes mentions de QA ouverte sont reportees a la validation finale.
+- [x] Resonance : navigation, dessin et clipboard, validation utilisateur du 1 novembre ; commit natif en fin de geste.
+- [x] Champs ADD/Voice : fade-in, bend, offset et phase randomness branches ; lecture/ecriture JNI et XIZ couverts dans le rapport ADD. [Trace historique](docs/backlog/archive/005_feat_parite_champs_addsynth.md).
+- [x] OscilGen Voice/Modulator : parametres avances, vues natives, actions harmoniques, clipboard et XIZ ; valide par Mick le 6 novembre. Auto clear desktop volontairement hors perimetre. [Bilan](docs/qa_addsynth_audio_xiz.md#clôture-oscilgen-006).
+- [x] Filtre global ADD : types et bornes par categorie, controles Comb HPF/LPF, lecture/ecriture XML presents dans les modifications locales du 7 novembre. Test `globalFilterCategoriesAndCombControlsSurviveXizReload` ajoute ; execution de cette nouvelle regression non documentee dans le rapport disponible.
+- [x] QA automatisee ADD historique : 24 tests JVM et 17 tests instrumentes dans le dernier bilan OscilGen ; compilation Kotlin et 24 tests JVM reverifies le 7 novembre. [Rapport et limites](docs/qa_addsynth_audio_xiz.md).
+- [ ] Validation finale commune ADD/SUB/PAD/FX : ecoute, routages, gestes, accessibilite, appareil et stress, apres achevement fonctionnel SUB+PAD+FX. Voir lot 021 ci-dessous et [checklist ADD conservee](docs/qa_addsynth_audio_xiz.md#validation-finale-restante).
 
-Les fonctions Envelope libre, Formant et clipboard ci-dessous sont presentes dans le code ; leur presence ne vaut pas validation audio ou tactile complete. La QA rapide M5 deja cochee concerne uniquement son perimetre historique.
+### Backlog prioritaire SUBsynth / PADsynth / FX
+
+Contexte, dependances et criteres detailles : [index du backlog](docs/backlog/README.md). Les tests locaux restent propres a chaque lot ; seule la campagne finale globale est differee. Les numeros ordonnent le travail sans exiger une nouvelle analyse generale.
+
+- [ ] [010 — Etendre les modules communs a SUB et PAD](docs/backlog/010_feat_modules_communs_sub_pad.md)
+- [ ] [011 — Completer les parametres SUBsynth](docs/backlog/011_feat_subsynth_parametres.md)
+- [ ] [012 — Terminer les harmoniques et overtones SUB](docs/backlog/012_feat_subsynth_harmoniques.md)
+- [ ] [013 — Completer les parametres de jeu PADsynth](docs/backlog/013_feat_padsynth_parametres.md)
+- [ ] [014 — Porter profil, spectre, oscillateur et resonance PAD](docs/backlog/014_feat_padsynth_spectre_profil.md)
+- [ ] [015 — Terminer qualite et regeneration des samples PAD](docs/backlog/015_feat_padsynth_generation.md)
+- [ ] [016 — Brancher les slots FX et leur contrat natif](docs/backlog/016_feat_fx_contrat_slots.md)
+- [ ] [017 — Porter les effets Reverb, Echo, Chorus, Phaser, Alienwah et Distortion](docs/backlog/017_feat_fx_parametres.md)
+- [ ] [018 — Porter EQ, Dynamic Filter, Sympathetic et Reverse](docs/backlog/018_feat_fx_avances.md)
+- [ ] [019 — Terminer les routages FX Part et Master](docs/backlog/019_feat_fx_routages_master_part.md)
+- [ ] [020 — Valider les contrats et la persistance SUB, PAD et FX](docs/backlog/020_test_persistance_sub_pad_fx.md)
+- [ ] [021 — Executer la validation finale audio/appareil ADD, SUB, PAD et FX](docs/backlog/021_qa_finale_audio_appareil.md)
+
+Chaque lot termine met a jour TASKS.md, TODO.md et l'index, conserve les preuves utiles, retire les references vers son prompt puis supprime ce fichier. Les archives ADD sont des traces, pas de nouveaux chantiers a relancer.
 
 ### Navigation principale et performance
 
@@ -164,47 +175,48 @@ Les fonctions Envelope libre, Formant et clipboard ci-dessous sont presentes dan
 | Surface native | Nature Android | Ecran parent Android | Chemin Android | Etat | Suite logique |
 |---|---|---|---|---|---|
 | PartUI / Instrument Kit | Ecran | `Main.Part` | `.Part[1..16]` | **Partiel** | Stabiliser Kit et activations ADD/SUB/PAD |
-| ADnoteUI - Global Parameters | Sections | `Main.Part.Part[1..16].Add` | `/Amplitude`, `/Frequency`, `/Filter` | **Partiel** | Verifier whitelist, couleurs et parite |
-| ADnoteUI - Voice list | Section / navigation | `Main.Part.Part[1..16].Add` | `/VoiceList` | **Implemente** | Rangees une ligne + mini-courbe de bascule implementees ; QA visuelle/tactile/audio restante |
-| ADnoteUI - Voice Parameters | Ecran | `Main.Part.Part[1..16].Add` | `.Voice[1..8]` | **Partiel** | Copy/paste present ; completer champs caches et valider audio/persistance |
+| ADnoteUI - Global Parameters | Sections | `Main.Part.Part[1..16].Add` | `/Amplitude`, `/Frequency`, `/Filter` | **Implemente** | Champs et modules branches ; validation finale commune differee |
+| ADnoteUI - Voice list | Section / navigation | `Main.Part.Part[1..16].Add` | `/VoiceList` | **Implemente** | Feature validee ; QA etendue dans la campagne finale commune |
+| ADnoteUI - Voice Parameters | Ecran | `Main.Part.Part[1..16].Add` | `.Voice[1..8]` | **Implemente** | Champs et clipboard branches ; validation finale commune differee |
 | Voice Filter | Section | `Main.Part.Part[1..16].Add.Voice[1..8]` | `/Filter` | **Implemente** | Formant present ; valider valeurs et rendu audible |
 | Voice Modulator | Section | `Main.Part.Part[1..16].Add.Voice[1..8]` | `/Modulation` | **Implemente** | QA audio approfondie des modes et routages |
 | ADnoteUI - Voice Oscillator | Preview + ecran | `Main.Part.Part[1..16].Add.Voice[1..8]` | `/OscillatorPreview` -> `.Oscillator` | **Implemente** | Validé par Mick le 6 novembre 2026 |
 | ADnoteUI - Modulator Oscillator | Preview + ecran | `Main.Part.Part[1..16].Add.Voice[1..8]` | `/Modulation/OscillatorPreview` -> `.ModulatorOscillator` | **Implemente** | Validé par Mick le 6 novembre 2026 |
 | OscilGenUI / OscilEditor | Controleur d'ecran | Ecrans Oscillator | `/Parameters`, `/Harmonics`, `/Phases` | **Implemente** | Paramètres avancés, quatre vues natives et actions harmoniques. Validé par Mick le 6 novembre 2026 |
 | ResonanceUI | Preview + ecran | `Main.Part.Part[1..16].Add` | `/ResonancePreview` -> `.Resonance` | **Implemente** | Tests utilisateur valides le 1 novembre 2026 |
-| EnvelopeUI / EnvelopeFreeEdit | Controleur | Variable | `/Amplitude|Frequency|Filter|Modulation/Envelope` | **Partiel** | Mode libre et activations harmonisees ; verifier roles, restauration, clipboard et rendu sur appareil |
-| LFOUI | Controleur | Variable | `/Amplitude|Frequency|Filter/LFO` | **Partiel** | Parite fine des instances et labels |
-| FilterUI | Section reutilisable | Variable | `/Filter` | **Partiel** | Formant avance present ; valider parite des instances et audio |
-| SUBnoteUI | Ecran moteur | `Main.Part.Part[1..16]` | `.Sub` | **Partiel** | Reprendre apres ADsynth/Voice |
-| PADnoteUI | Ecran moteur | `Main.Part.Part[1..16]` | `.Pad` | **Partiel** | Completer Profile/Spectrum/Quality |
+| EnvelopeUI / EnvelopeFreeEdit | Controleur | Variable | `/Amplitude|Frequency|Filter|Modulation/Envelope` | **Implemente** | ADD complet ; extension SUB/PAD suivie par 010, validation finale commune differee |
+| LFOUI | Controleur | Variable | `/Amplitude|Frequency|Filter/LFO` | **Implemente** | ADD branche ; extension PAD suivie par 010/013, pas de LFO SUB natif |
+| FilterUI | Section reutilisable | Variable | `/Filter` | **Implemente** | ADD et Formant branches ; extension SUB/PAD/FX suivie dans le backlog |
+| SUBnoteUI | Ecran moteur | `Main.Part.Part[1..16]` | `.Sub` | **Partiel** | Lots 010 a 012 : parametres, modules et harmoniques/overtones |
+| PADnoteUI | Ecran moteur | `Main.Part.Part[1..16]` | `.Pad` | **Partiel** | Lots 010, 013 a 015 : modules, structure, qualite et generation |
 
 ### Effets et outils graphiques
 
 | Surface native | Nature Android | Ecran parent Android | Chemin Android | Etat | Suite logique |
 |---|---|---|---|---|---|
-| EffUI - Reverb | Section FX | `Main.Part.Part[1..16].Fx` | `/Fx[1..3]/Reverb` | **Partiel** | Parametres effectifs et presets |
-| EffUI - Echo | Section FX | `Main.Part.Part[1..16].Fx` | `/Fx[1..3]/Echo` | **Partiel** | Parametres effectifs et presets |
-| EffUI - Chorus/Flange | Section FX | `Main.Part.Part[1..16].Fx` | `/Fx[1..3]/Chorus` | **Partiel** | Parametres effectifs et presets |
-| EffUI - Phaser | Section FX | `Main.Part.Part[1..16].Fx` | `/Fx[1..3]/Phaser` | **Partiel** | Parametres effectifs et presets |
-| EffUI - Alienwah | Section FX | `Main.Part.Part[1..16].Fx` | `/Fx[1..3]/Alienwah` | **Partiel** | Parametres effectifs et presets |
-| EffUI - Distortion/Overdrive | Section FX | `Main.Part.Part[1..16].Fx` | `/Fx[1..3]/Distortion` | **Partiel** | Exposer les parametres natifs |
-| EffUI - EQ | Section + controleur | `Main.Part.Part[1..16].Fx` | `/Fx[1..3]/Eq` | **Partiel** | Courbe EQ et bandes |
-| EffUI - Dynamic Filter | Section FX | `Main.Part.Part[1..16].Fx` | `/Fx[1..3]/DynamicFilter` | **Partiel** | UI specialisee et modulation |
-| EffUI - Sympathetic strings | Section FX | `Main.Part.Part[1..16].Fx` | `/Fx[1..3]/Sympathetic` | **Partiel** | UI specialisee et presets |
+| EffUI - Reverb | Section FX | `Main.Part.Part[1..16].Fx` | `/Fx[1..3]/Reverb` | **Partiel** | Lots 016/017 : contrat slot, controles et presets |
+| EffUI - Echo | Section FX | `Main.Part.Part[1..16].Fx` | `/Fx[1..3]/Echo` | **Partiel** | Lots 016/017 : contrat slot, controles et presets |
+| EffUI - Chorus/Flange | Section FX | `Main.Part.Part[1..16].Fx` | `/Fx[1..3]/Chorus` | **Partiel** | Lots 016/017 : contrat slot, controles et presets |
+| EffUI - Phaser | Section FX | `Main.Part.Part[1..16].Fx` | `/Fx[1..3]/Phaser` | **Partiel** | Lots 016/017 : contrat slot, controles et presets |
+| EffUI - Alienwah | Section FX | `Main.Part.Part[1..16].Fx` | `/Fx[1..3]/Alienwah` | **Partiel** | Lots 016/017 : contrat slot, controles et presets |
+| EffUI - Distortion/Overdrive | Section FX | `Main.Part.Part[1..16].Fx` | `/Fx[1..3]/Distortion` | **Partiel** | Lots 016/017 : contrat slot, controles et presets |
+| EffUI - EQ | Section + controleur | `Main.Part.Part[1..16].Fx` | `/Fx[1..3]/Eq` | **Partiel** | Lot 018 : huit bandes et courbe native |
+| EffUI - Dynamic Filter | Section FX | `Main.Part.Part[1..16].Fx` | `/Fx[1..3]/DynamicFilter` | **Partiel** | Lot 018 : filtre et modulation adresses FX |
+| EffUI - Sympathetic strings | Section FX | `Main.Part.Part[1..16].Fx` | `/Fx[1..3]/Sympathetic` | **Partiel** | Lot 018 : UI specialisee et presets |
+| EffUI - Reverse | Section FX | Main / Part selon scope | `/Fx/Reverse` | **Absent** | Type natif 10 ; lot 018 |
 | Formant Filter window | Editeur integre | Ecran Filter concerne | `/Formant` | **Implemente** | Voyelles, formants et sequence presents ; QA audio et gestes restante |
-| PAD harmonic profile / overtone graph | Controleur graphique | `Main.Part.Part[1..16].Pad` | `/Profile`, `/Spectrum` | **Absent** | Porter apres le moteur PAD principal |
+| PAD harmonic profile / overtone graph | Controleur graphique | `Main.Part.Part[1..16].Pad` | `/Profile`, `/Spectrum` | **Absent** | Lot 014 : profil, positions et previews natifs |
 
 ### Avancement et priorites UI
 
 
 Priorites suivantes :
 
-1. Stabiliser les composants communs `EnvelopeUI`, `LFOUI`, filtres, previews et copy/paste.
-2. Completer Kit/Part et les controles globaux de l’instrument.
-3. Porter SUBsynth et PADsynth avec leurs graphes natifs.
-4. Porter les effets et leurs routages.
-5. Ajouter Settings, About/Licences, microtonalite et gestion complete des banques.
+1. Etendre les modules communs ADD aux proprietaires SUB/PAD, puis terminer SUB (010 a 012).
+2. Terminer PAD, ses graphes et la regeneration effective des samples (013 a 015).
+3. Terminer les dix effets et leurs routages Part/Insert/System (016 a 019).
+4. Verifier automatiquement contrats, clipboard et persistance (020), puis executer la validation finale audio/appareil commune (021).
+5. Reprendre les autres sujets M5 : adaptations ecrans, Settings, About/Licences, microtonalite et banques. MIDI reste reporte a M7.
 
 ### M6 - Presets historiques (compatibilite)
 - [ ] Inventorier formats historiques supportes upstream
@@ -222,11 +234,11 @@ Priorites suivantes :
 - [ ] Tests latence / notes bloquees
 
 ### M8 - Portage fonctionnel avance / parite
-- [ ] Completer modules synth manquants
+- [ ] Completer SUB/PAD : [lots 010 a 015](docs/backlog/README.md)
 - [ ] Remplacer le shim `fftw3f` temporaire par une solution FFT production (FFTW Android buildable ou alternative compatible)
 - [x] Tenter integration `FFTW3F_NATIVE` via `third_party/fftw3` et documenter le blocage actuel (vendor incomplet: codelets generes manquants, symboles `solvtab_*` au link)
 - [x] Preparer un switch CMake pour selectionner le backend FFT (shim actuel vs futur backend prod)
-- [ ] Effets / routings / multi (selon scope)
+- [ ] Completer FX Part/Insert/System et routages : [lots 016 a 019](docs/backlog/README.md)
 - [ ] Banque/favoris/recherche/tags
 - [ ] Export audio offline (optionnel)
 - [ ] Documenter ecarts restants vs desktop

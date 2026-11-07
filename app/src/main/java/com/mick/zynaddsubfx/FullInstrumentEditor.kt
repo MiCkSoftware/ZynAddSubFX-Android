@@ -211,12 +211,18 @@ private fun SynthEditorScaffold(
                     TextButton(onClick = onNavigateUp) {
                         Text(navigationLabel, fontFamily = FontFamily(Font(R.font.vt323regular)), fontSize = 15.sp)
                     }
-                    Text(
-                        title,
-                        color = Color(0xFFFFC857),
-                        style = MaterialTheme.typography.titleMedium,
-                        modifier = Modifier.weight(1f),
-                    )
+                    Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        NeonHeaderIcon(title, Color(0xFFFFC857))
+                        Text(
+                            title,
+                            color = Color(0xFFFFC857),
+                            style = MaterialTheme.typography.titleMedium,
+                            modifier = Modifier.weight(1f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                     headerActions()
                     if (dirty) {
                         Spacer(Modifier.width(5.dp))
@@ -234,10 +240,17 @@ private fun SynthEditorScaffold(
                         Surface(
                             color = if (selectedTab == tab) Color(0xFF23616A) else Color(0xFF182F35),
                             shape = RoundedCornerShape(6.dp),
-                            modifier = Modifier.clickable { onTabSelected(tab) },
+                            modifier = Modifier.selectable(selected = selectedTab == tab, role = Role.Tab,
+                                onClick = { onTabSelected(tab) }),
                         ) {
-                            Text(tab, fontFamily = FontFamily(Font(R.font.vt323regular)), fontSize = 15.sp,
-                                modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp))
+                            Row(Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                                NeonHeaderIcon(tab,
+                                    if (selectedTab == tab) Color(0xFF8CF5F1) else Color(0xFF7AB8BA),
+                                    Modifier.size(19.dp))
+                                Text(tab, fontFamily = FontFamily(Font(R.font.vt323regular)), fontSize = 15.sp)
+                            }
                         }
                     }
                 }

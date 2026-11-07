@@ -658,6 +658,8 @@ void FilterParams::add2XML(XMLwrapper& xml)
     xml.addpar("stages", Pstages);
     xml.addparreal("freq_tracking", freqtracking);
     xml.addparreal("gain",       gain);
+    xml.addpar("hpf", Phpf);
+    xml.addpar("lpf", Plpf);
 
     //formant filter parameters
     if((Pcategory == 1) || (!xml.minimal)) {
@@ -713,6 +715,8 @@ void FilterParams::getfromXML(XMLwrapper& xml)
     Pcategory    = xml.getpar127("category", Pcategory);
     Ptype        = xml.getpar127("type", Ptype);
     Pstages      = xml.getpar127("stages", Pstages);
+    Phpf         = xml.getpar127("hpf", Phpf);
+    Plpf         = xml.getpar127("lpf", Plpf);
     if(upgrade_3_0_2) {
         int Pfreq = xml.getpar127("freq", 0);
         basefreq  = (Pfreq / 64.0f - 1.0f) * 5.0f;

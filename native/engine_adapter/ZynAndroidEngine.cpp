@@ -32,6 +32,21 @@
 namespace {
 constexpr double kTwoPi = 6.28318530717958647692;
 constexpr auto kInstrumentApplyTimeout = std::chrono::milliseconds(1200);
+
+constexpr struct FilterTypeControl {
+    int maximum;
+    const char *options;
+} kFilterTypeControls[] = {
+    {8, "LPF1,HPF1,LPF2,HPF2,BPF1,Notch1,Peak1,Low shelf,High shelf"},
+    {0, nullptr}, // Formant has its own controls.
+    {3, "Low pass,High pass,Band pass,Notch"},
+    {2, "Low pass,Band pass,High pass"},
+    {5, "Feedback,Feedforward,Both,Negative feedback,Negative feedforward,Negative both"},
+};
+
+const FilterTypeControl &filterTypeControl(int category) {
+    return kFilterTypeControls[std::clamp(category, 0, 4)];
+}
 #ifndef ZYN_FFT_BACKEND_NAME
 #define ZYN_FFT_BACKEND_NAME "unknown"
 #endif
@@ -840,13 +855,21 @@ std::string ZynAndroidEngine::parameterSnapshot(int partIndex, int kitIndex) con
             const int gain = std::clamp(static_cast<int>(std::lround((filter.gain / 30.0f + 1.0f) * 64.0f)), 0, 127);
             add("add/filter/category", "Filter category", "ADD / Filter / Parameters", "enum",
                 filter.Pcategory, 0, 4, 0, "Analog,Formant,State variable,Moog,Comb");
-            add("add/filter/type", "Filter type", "ADD / Filter / Parameters", "enum",
-                filter.Ptype, 0, 8, 0, "LPF1,HPF1,LPF2,HPF2,BPF1,Notch1,Peak1,Low shelf,High shelf");
+            const auto &type = filterTypeControl(filter.Pcategory);
+            if (type.options)
+                add("add/filter/type", "Filter type", "ADD / Filter / Parameters", "enum",
+                    std::min<int>(filter.Ptype, type.maximum), 0, type.maximum, 0, type.options);
             add("add/filter/cutoff", "Cutoff frequency", "ADD / Filter / Parameters", "int", cutoff, 0, 127, 94);
             add("add/filter/q", "Q", "ADD / Filter / Parameters", "int", q, 0, 127, 40);
             add("add/filter/tracking", "Frequency tracking", "ADD / Filter / Parameters", "int", tracking, 0, 127, 64);
             add("add/filter/gain", "Filter gain", "ADD / Filter / Parameters", "int", gain, 0, 127, 64);
             add("add/filter/stages", "Filter stages", "ADD / Filter / Parameters", "int", filter.Pstages + 1, 1, 6, 1);
+            if (filter.Pcategory == 4) {
+                add("add/filter/combHpf", "Comb high pass", "ADD / Filter / Parameters", "int",
+                    filter.Phpf, 0, 127, 0);
+                add("add/filter/combLpf", "Comb low pass", "ADD / Filter / Parameters", "int",
+                    filter.Plpf, 0, 127, 127);
+            }
             if (filter.Pcategory == 1)
                 formantValue("add/filter", "ADD / Filter / Formant", filter);
         }
@@ -997,14 +1020,10 @@ std::string ZynAndroidEngine::parameterSnapshot(int partIndex, int kitIndex) con
                 const auto &filter = *v.VoiceFilter;
                 add((prefix + "filterCategory").c_str(), "Filter category", filterGroup.c_str(), "enum",
                     filter.Pcategory, 0, 4, 0, "Analog,Formant,State variable,Moog,Comb");
-                if (filter.Pcategory != 1) {
-                    const char *filterTypes = filter.Pcategory == 0 ? "LPF1,HPF1,LPF2,HPF2,BPF1,Notch1,Peak1,Low shelf,High shelf" :
-                        filter.Pcategory == 2 ? "Low pass,High pass,Band pass,Notch" :
-                        filter.Pcategory == 3 ? "Low pass,Band pass,High pass" :
-                        "Feedback,Feedforward,Both,Negative feedback,Negative feedforward,Negative both";
-                    const int filterTypeMax = filter.Pcategory == 0 ? 8 : filter.Pcategory == 2 ? 3 : filter.Pcategory == 3 ? 2 : 5;
+                const auto &type = filterTypeControl(filter.Pcategory);
+                if (type.options) {
                     add((prefix + "filterType").c_str(), "Filter type", filterGroup.c_str(), "enum",
-                        std::min<int>(filter.Ptype, filterTypeMax), 0, filterTypeMax, 0, filterTypes);
+                        std::min<int>(filter.Ptype, type.maximum), 0, type.maximum, 0, type.options);
                 }
                 add((prefix + "filterCutoff").c_str(), "Center frequency", filterGroup.c_str(), "int",
                     std::clamp(static_cast<int>(std::lround(((std::log2(filter.basefreq) - 9.96578428f) / 5.0f + 1.0f) * 64.0f)), 0, 127), 0, 127, 94);
@@ -1281,12 +1300,14 @@ bool ZynAndroidEngine::setParameter(int partIndex, int kitIndex, const std::stri
             const auto field = path.substr(11);
             if (field.rfind("formant/", 0) == 0) return writeFormant(filter, field.substr(8));
             else if (field == "category") filter.Pcategory = i(0, 4);
-            else if (field == "type") filter.Ptype = i(0, 8);
+            else if (field == "type") filter.Ptype = i(0, filterTypeControl(filter.Pcategory).maximum);
             else if (field == "cutoff") filter.basefreq = zyn::FilterParams::basefreqFromOldPreq(i(0, 127));
             else if (field == "q") filter.baseq = zyn::FilterParams::baseqFromOldPq(i(0, 127));
             else if (field == "tracking") filter.freqtracking = 100.0f * (i(0, 127) - 64.0f) / 64.0f;
             else if (field == "gain") filter.gain = zyn::FilterParams::gainFromOldPgain(i(0, 127));
             else if (field == "stages") filter.Pstages = i(1, 6) - 1;
+            else if (field == "combHpf") filter.Phpf = i(0, 127);
+            else if (field == "combLpf") filter.Plpf = i(0, 127);
             else return false;
             filter.changed = true;
         }
@@ -1403,11 +1424,7 @@ bool ZynAndroidEngine::setParameter(int partIndex, int kitIndex, const std::stri
                 if (field.rfind("filter/formant/", 0) == 0)
                     return writeFormant(filter, field.substr(15));
                 else if (field == "filterCategory") filter.Pcategory = i(0, 4);
-                else if (field == "filterType") {
-                    const int maxType = filter.Pcategory == 0 ? 8 : filter.Pcategory == 2 ? 3 :
-                        filter.Pcategory == 3 ? 2 : filter.Pcategory == 4 ? 5 : 0;
-                    filter.Ptype = i(0, maxType);
-                }
+                else if (field == "filterType") filter.Ptype = i(0, filterTypeControl(filter.Pcategory).maximum);
                 else if (field == "filterCutoff") filter.basefreq = zyn::FilterParams::basefreqFromOldPreq(i(0, 127));
                 else if (field == "filterQ") filter.baseq = zyn::FilterParams::baseqFromOldPq(i(0, 127));
                 else if (field == "filterStages") filter.Pstages = i(1, 6) - 1;

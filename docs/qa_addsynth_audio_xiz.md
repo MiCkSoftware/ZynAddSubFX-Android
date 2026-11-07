@@ -51,6 +51,8 @@ Les erreurs initiales de chemins `oscillator/` et `modOscillator/` dans le nouve
 
 ## Validation finale restante
 
+**Decision de Mick du 7 novembre 2026 : campagne differee jusqu'a SUBsynth, PADsynth et FX complets.** ADD est termine fonctionnellement dans le perimetre Android ; cette attente ne rouvre pas les features deja closes. La campagne commune est suivie dans [le backlog](backlog/README.md), lot 021. Les points ci-dessous conservent les limites des campagnes historiques ; les tests locaux des nouveaux lots continuent.
+
 - Ecoute comparative des trois presets, avant/apres export ; envelopes standard/libres, filtres global/voix/bypass, Formant, LFO depth/start et resonance.
 - Tous les modes du modulateur, sources internes/externes, references partagees et restrictions entre voix ; controles effectivement applicables.
 - Isolation audible parts/kits/voix, ADD+PAD, activations et mute ; notes fantomes apres changements repetes, notes maintenues, All Notes Off/Panic.
@@ -78,3 +80,7 @@ La reprise d’une part sans nom a aussi été vérifiée après arrêt forcé. 
 l’écriture de la session s’exécutent sur un thread de fond. Un essai sur émulateur a confirmé
 qu’une deuxième modification pendant l’écriture est conservée. La capture native reste
 synchrone et a pris 92 à 99 ms avec l’audio actif dans cet essai.
+
+## Correction du filtre global — 7 novembre 2026
+
+Correction presente dans le code local : types/options/bornes par categorie via le meme contrat que le filtre Voice, Comb HPF/LPF exposes et sauvegardes/recharges par FilterParams XML. Le test instrumental `globalFilterCategoriesAndCombControlsSurviveXizReload` est ajoute (categories, bornes, isolation Voice, clipboard et XIZ). Le rapport instrumental disponible porte sur le 6 novembre, avant cet ajout : aucune nouvelle execution n'est affirmee ici. La validation finale audio/appareil reste differee selon la decision ci-dessus.

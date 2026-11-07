@@ -280,11 +280,12 @@ internal fun NeonHeaderIcon(title: String, color: Color, modifier: Modifier = Mo
         val name = title.lowercase()
         when {
             "keyboard" in name || "key range" in name -> Icons.Outlined.Piano
-            "kit" in name || "voice" in name -> Icons.Outlined.Layers
-            "envelope" in name -> Icons.AutoMirrored.Outlined.ShowChart
-            "lfo" in name || "oscillator" in name || "resonance" in name -> Icons.Outlined.Waves
+            "kit" in name || "voice" in name || "instrument" in name -> Icons.Outlined.Layers
+            "envelope" in name || "preview" in name -> Icons.AutoMirrored.Outlined.ShowChart
+            "lfo" in name || "oscillator" in name || "resonance" in name || "modulation" in name ||
+                name == "output" || name == "base" -> Icons.Outlined.Waves
             "filter" in name || "formant" in name -> Icons.Outlined.FilterAlt
-            "frequency" in name || "harmonic" in name -> Icons.Outlined.GraphicEq
+            "frequency" in name || "harmonic" in name || "spectrum" in name -> Icons.Outlined.GraphicEq
             "amp" in name -> Icons.AutoMirrored.Outlined.VolumeUp
             "fx" in name || "effect" in name -> Icons.Outlined.AutoAwesome
             "performance" in name -> Icons.Outlined.Speed
