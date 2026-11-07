@@ -1993,7 +1993,7 @@ private fun ResonanceCurve(
                     ?: point.value.toFloat()) / 127f)
                 if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
             }
-            drawPath(path, Color(0xFFFF4D57), style = androidx.compose.ui.graphics.drawscope.Stroke(2.5f))
+            drawNeonCurve(path, Color(0xFFFF4D57))
         }
     }
 }
@@ -2007,7 +2007,7 @@ private fun VoiceMiniWave(seed: Int, modifier: Modifier) {
             val py = size.height * (.5f + .35f * kotlin.math.sin((x + seed * 3) * .55f))
             if (x == 0) path.moveTo(px, py) else path.lineTo(px, py)
         }
-        drawPath(path, Color(0xFF65F55D), style = androidx.compose.ui.graphics.drawscope.Stroke(2f))
+        drawNeonCurve(path, Color(0xFF65F55D))
     }
 }
 
@@ -2070,7 +2070,7 @@ private fun OscillatorPreview(
             val py = size.height * (.5f - normalized.toFloat() * .42f)
             if (x == 0) path.moveTo(px, py) else path.lineTo(px, py)
         }
-        drawPath(path, curveColor, style = androidx.compose.ui.graphics.drawscope.Stroke(2.5f))
+        drawNeonCurve(path, curveColor)
     }
 }
 

@@ -41,6 +41,9 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.style.TextOverflow
@@ -51,6 +54,34 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.math.log2
 import kotlin.math.pow
+
+// Reuse the preview's existing samples for both the luminous stroke and its wash.
+// Layered strokes keep the glow compatible with API 29 without an offscreen blur.
+internal fun DrawScope.drawNeonCurve(path: Path, color: Color) {
+    clipRect {
+        val wash = Path().apply {
+            addPath(path)
+            lineTo(size.width, size.height)
+            lineTo(0f, size.height)
+            close()
+        }
+        drawPath(wash, Brush.verticalGradient(listOf(
+            color.copy(alpha = color.alpha * .18f),
+            color.copy(alpha = color.alpha * .07f),
+            Color.Transparent,
+        )))
+        // Fine opacity steps approximate a soft falloff without visible contour bands.
+        for (layer in 12 downTo 1) {
+            val opacity = .065f * kotlin.math.exp(-layer * layer / 32f)
+            drawPath(path, color.copy(alpha = color.alpha * opacity),
+                style = Stroke((1.5f + layer * 2f).dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
+        }
+        drawPath(path, color,
+            style = Stroke(1.5.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
+        drawPath(path, androidx.compose.ui.graphics.lerp(color, Color.White.copy(alpha = color.alpha), .55f),
+            style = Stroke(.65.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
+    }
+}
 
 @Composable
 private fun FormantResponsePreview(
@@ -102,7 +133,7 @@ private fun FormantResponsePreview(
                 val y = size.height * (.5f - value.coerceIn(-1f, 1f) * .45f)
                 if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
             }
-            drawPath(path, Color(0xFFFF7048), style = Stroke(2.5f, cap = StrokeCap.Round))
+            drawNeonCurve(path, Color(0xFFFF7048))
         }
         labelPaint.color = android.graphics.Color.rgb(255, 215, 103)
         drawContext.canvas.nativeCanvas.drawText(
@@ -172,7 +203,7 @@ fun ModulePreview(
                 )
                 if (index == 0) path.moveTo(point.x, point.y) else path.lineTo(point.x, point.y)
             }
-            drawPath(path, accent, style = Stroke(2.5f, cap = StrokeCap.Round))
+            drawNeonCurve(path, accent)
         }
     }
 }
@@ -392,7 +423,7 @@ private fun EnvelopeCurve(
                     )
                 }
             }
-            drawPath(path, Color(0xFF66F0E9), style = Stroke(2.5f, cap = StrokeCap.Round))
+            drawNeonCurve(path, Color(0xFF66F0E9))
         }
     }
 }
