@@ -1,5 +1,12 @@
 # 018 — Porter EQ, Dynamic Filter, Sympathetic et Reverse
 
+## Conception UX avec Mick avant implementation
+
+- **Passe de design/conception obligatoire avec Mick avant de coder la nouvelle UX.** Perimetre : Courbe EQ interactive, selection et edition des huit bandes. Les panneaux Dynamic Filter/Sympathetic/Reverse reutilisent les composants existants ; toute interaction nouvelle decouverte doit aussi etre concertee.
+- Preparer une proposition concrete et reviewable (schema ou maquette, placement, interactions, etats et navigation) dans le langage visuel ADD existant, puis la discuter avec Mick et l’iterer selon ses retours.
+- Attendre sa validation explicite de cette proposition avant d’implementer les nouveaux composants/parcours concernes. L’accord pour ce backlog ne constitue pas une validation du design a venir.
+- Consigner la decision retenue dans ce prompt ou une note durable pour la suite. Les travaux natifs et tests independants de ces choix peuvent avancer sans attendre.
+
 ## Mission et dependance
 
 Apres 016/017, terminer les quatre effets specialises qui ne se reduisent pas a une grille generique. Reverse fait partie de la parite du fork.

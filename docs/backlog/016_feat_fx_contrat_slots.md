@@ -1,5 +1,12 @@
 # 016 — Brancher les slots FX et leur contrat natif
 
+## Conception UX avec Mick avant implementation
+
+- **Passe de design/conception obligatoire avec Mick avant de coder la nouvelle UX.** Perimetre : Presentation et navigation d’un slot FX : scope, type, preset, bypass et acces a l’edition, en reutilisant les controles ADD.
+- Preparer une proposition concrete et reviewable (schema ou maquette, placement, interactions, etats et navigation) dans le langage visuel ADD existant, puis la discuter avec Mick et l’iterer selon ses retours.
+- Attendre sa validation explicite de cette proposition avant d’implementer les nouveaux composants/parcours concernes. L’accord pour ce backlog ne constitue pas une validation du design a venir.
+- Consigner la decision retenue dans ce prompt ou une note durable pour la suite. Les travaux natifs et tests independants de ces choix peuvent avancer sans attendre.
+
 ## Mission et dependances
 
 Socle commun des lots FX 017 a 019 : adresser et editer un effet reel dans les trois scopes. Ne pas creer trois editeurs concurrents.

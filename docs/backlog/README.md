@@ -26,6 +26,12 @@ Les tests automatises et verifications ciblees de chaque lot restent necessaires
 | 020 | [Valider les contrats et la persistance SUB, PAD et FX](020_test_persistance_sub_pad_fx.md) | 010 a 019 |
 | 021 | [Executer la validation finale audio/appareil ADD, SUB, PAD et FX](021_qa_finale_audio_appareil.md) | 010 a 020 termines |
 
+## Conception des nouvelles UX avec Mick
+
+Decision du 7 novembre 2026 : les lots **012, 014, 015, 016, 018 (EQ) et 019** comportent une passe de design/conception obligatoire avec Mick avant implementation de leurs nouvelles UX.
+
+L’agent prepare une proposition concrete (schema ou maquette, interactions, etats et navigation), la discute et l’itere avec Mick, puis attend sa validation explicite avant de coder les nouveaux composants/parcours. Consigner les decisions retenues. Les travaux natifs/tests independants peuvent avancer ; les composants deja concus pour ADD restent a reutiliser.
+
 ## Etat de depart verifie dans le code
 
 - SUB : 8 controles directs et 64 couples magnitude/largeur harmonique exposes ; manquent amplitude complete, detune, enveloppes dont bandwidth, filtre complet, overtone spread et edition graphique.

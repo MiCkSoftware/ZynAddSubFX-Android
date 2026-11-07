@@ -1,5 +1,12 @@
 # 012 — Terminer les harmoniques et overtones SUB
 
+## Conception UX avec Mick avant implementation
+
+- **Passe de design/conception obligatoire avec Mick avant de coder la nouvelle UX.** Perimetre : Graphe SUB de magnitude/largeur de bande, positions des overtones, selection et edition des harmoniques. Reutiliser les gestes ADD lorsque pertinents.
+- Preparer une proposition concrete et reviewable (schema ou maquette, placement, interactions, etats et navigation) dans le langage visuel ADD existant, puis la discuter avec Mick et l’iterer selon ses retours.
+- Attendre sa validation explicite de cette proposition avant d’implementer les nouveaux composants/parcours concernes. L’accord pour ce backlog ne constitue pas une validation du design a venir.
+- Consigner la decision retenue dans ce prompt ou une note durable pour la suite. Les travaux natifs et tests independants de ces choix peuvent avancer sans attendre.
+
 ## Mission et dependances
 
 Apres 011, remplacer les longs grids de valeurs par une edition harmonique SUB complete et tactile, avec repartition des overtones et largeur de bande.

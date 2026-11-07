@@ -6,6 +6,8 @@ La correction locale du filtre global ADD est presente (categories, Comb et XML)
 
 [Index, contexte et dependances du backlog](docs/backlog/README.md). Ordre conseille :
 
+**Conception UX avec Mick requise avant implementation** pour les nouveaux composants des lots 012, 014, 015, 016, 018 (EQ) et 019 : proposition concrete, echange et validation explicite. Les prompts precisent le perimetre ; reutiliser le design ADD existant.
+
 - [ ] [010 — Etendre les modules communs a SUB et PAD](docs/backlog/010_feat_modules_communs_sub_pad.md)
 - [ ] [011 — Completer les parametres SUBsynth](docs/backlog/011_feat_subsynth_parametres.md)
 - [ ] [012 — Terminer les harmoniques et overtones SUB](docs/backlog/012_feat_subsynth_harmoniques.md)

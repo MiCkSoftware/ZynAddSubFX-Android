@@ -1,5 +1,12 @@
 # 014 — Porter profil, spectre, oscillateur et resonance PAD
 
+## Conception UX avec Mick avant implementation
+
+- **Passe de design/conception obligatoire avec Mick avant de coder la nouvelle UX.** Perimetre : Profil d’une harmonique PAD et graphe des positions des overtones. Les editeurs oscillateur et resonance ADD sont a reutiliser, sans nouvelle conception de leurs controles.
+- Preparer une proposition concrete et reviewable (schema ou maquette, placement, interactions, etats et navigation) dans le langage visuel ADD existant, puis la discuter avec Mick et l’iterer selon ses retours.
+- Attendre sa validation explicite de cette proposition avant d’implementer les nouveaux composants/parcours concernes. L’accord pour ce backlog ne constitue pas une validation du design a venir.
+- Consigner la decision retenue dans ce prompt ou une note durable pour la suite. Les travaux natifs et tests independants de ces choix peuvent avancer sans attendre.
+
 ## Mission et dependances
 
 Apres 010 et 013, terminer la structure harmonique PAD et ses vrais graphes natifs. Le commit des samples est pris en charge par 015.

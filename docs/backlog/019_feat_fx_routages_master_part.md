@@ -1,5 +1,12 @@
 # 019 — Terminer les routages FX Part et Master
 
+## Conception UX avec Mick avant implementation
+
+- **Passe de design/conception obligatoire avec Mick avant de coder la nouvelle UX.** Perimetre : Presentation et manipulation des chaines Part, assignations Insert, sends/retours System et passage entre scopes.
+- Preparer une proposition concrete et reviewable (schema ou maquette, placement, interactions, etats et navigation) dans le langage visuel ADD existant, puis la discuter avec Mick et l’iterer selon ses retours.
+- Attendre sa validation explicite de cette proposition avant d’implementer les nouveaux composants/parcours concernes. L’accord pour ce backlog ne constitue pas une validation du design a venir.
+- Consigner la decision retenue dans ce prompt ou une note durable pour la suite. Les travaux natifs et tests independants de ces choix peuvent avancer sans attendre.
+
 ## Mission et dependances
 
 Apres 016 a 018, terminer les parcours FX au niveau Part et Main/Master : placements, bypass, sends et retours. La presence de slots seuls ne termine pas les FX.
