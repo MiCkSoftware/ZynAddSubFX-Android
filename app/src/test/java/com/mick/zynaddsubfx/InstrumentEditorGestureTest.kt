@@ -4,11 +4,11 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class InstrumentEditorGestureTest {
-    private class Engine : InstrumentEditorEngine {
+    private class Engine(private val pathPrefix: String = "add/voice/0/osc/harmonic") : InstrumentEditorEngine {
         val parameters = (0 until 4096).map { index ->
             SynthEngine.ParameterValue(
                 SynthEngine.ParameterDescriptor(
-                    "add/voice/0/osc/harmonic/$index/magnitude", "Magnitude", "Harmonics",
+                    "$pathPrefix/$index/magnitude", "Magnitude", "Harmonics",
                     SynthEngine.ParameterType.INTEGER, 0.0, 127.0, 64.0, emptyList(),
                     SynthEngine.PreferredControl.KNOB,
                 ), 64.0,
@@ -130,5 +130,25 @@ class InstrumentEditorGestureTest {
         assertTrue(model.state.operation is SynthEngine.OperationState.Failed)
         model.finishParameterDrag()
         assertEquals(80.0, model.state.snapshot!!.values[0].value, 0.0)
+    }
+
+    @Test fun subHarmonicGestureReconcilesOnlyAtTheEnd() {
+        val engine = Engine("sub/harmonic")
+        val model = InstrumentEditorViewModel(engine)
+        model.open(2, 3)
+        model.selectEngine("SUB")
+        val snapshot = model.state.snapshot
+        val revision = model.state.revision
+        repeat(256) { model.dragParameter(engine.parameters[63], (it % 128).toDouble()) }
+        assertSame(snapshot, model.state.snapshot)
+        assertEquals(1, engine.snapshots)
+        assertEquals(0, engine.previews)
+        assertEquals(revision, model.state.revision)
+        assertEquals(127.0, model.parameterValue(engine.parameters[63]), 0.0)
+        model.finishParameterDrag()
+        assertEquals(2, engine.snapshots)
+        assertEquals(revision + 1, model.state.revision)
+        assertEquals(2, model.state.partIndex)
+        assertEquals(3, model.state.kitIndex)
     }
 }

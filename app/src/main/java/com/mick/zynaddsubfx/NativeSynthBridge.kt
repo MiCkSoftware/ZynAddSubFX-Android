@@ -34,11 +34,11 @@ object NativeSynthBridge {
     external fun nativeFineDetuneCents(type: Int, value: Int): Float
     external fun nativeSetParameter(partIndex: Int, kitIndex: Int, path: String, value: Double): Boolean
     external fun nativeGetModulePreview(
-        partIndex: Int, kitIndex: Int, kind: Int, index: Int, role: Int, resolution: Int
+        partIndex: Int, kitIndex: Int, kind: Int, index: Int, role: Int, resolution: Int, engine: Int = 0, referenceNote: Int = 69
     ): String
-    external fun nativeCopyModule(partIndex: Int, kitIndex: Int, kind: Int, index: Int, role: Int): Boolean
-    external fun nativeCanPasteModule(kind: Int, role: Int): Boolean
-    external fun nativePasteModule(partIndex: Int, kitIndex: Int, kind: Int, index: Int, role: Int): Boolean
+    external fun nativeCopyModule(partIndex: Int, kitIndex: Int, kind: Int, index: Int, role: Int, engine: Int = 0): Boolean
+    external fun nativeCanPasteModule(kind: Int, role: Int, engine: Int = 0): Boolean
+    external fun nativePasteModule(partIndex: Int, kitIndex: Int, kind: Int, index: Int, role: Int, engine: Int = 0): Boolean
     external fun nativeGetClipboardType(): String
     external fun nativeRenameInstrument(partIndex: Int, name: String): Boolean
     external fun nativeExportInstrument(partIndex: Int, path: String): Boolean

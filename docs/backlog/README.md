@@ -7,15 +7,15 @@ Etat du 7 novembre 2026. Les numeros donnent l'ordre conseille ; les dependances
 ADD est termine fonctionnellement dans le perimetre Android retenu. La correction du filtre global (types par categorie et Comb HPF/LPF, y compris XML) est presente localement ; le nouveau test de regression n'a pas de resultat d'execution dans le rapport disponible.
 La validation finale audio/appareil ADD+SUB+PAD+FX est volontairement reportee par Mick apres achevement fonctionnel des trois chantiers SUB, PAD et FX. Elle est suivie par 021 : ne pas la declarer faite et ne pas rouvrir ADD pour cette seule attente.
 
-Les tests automatises et verifications ciblees de chaque lot restent necessaires. Cette preparation n'execute aucun de ces lots.
+Les tests automatises et verifications ciblees de chaque lot restent necessaires. Le lot 010 est implemente localement : [rapport, executions et limites](../qa_common_modules_sub_pad.md).
 
 ## Ordre et dependances
 
 | Lot | Prompt executable | Prerequis |
 |---|---|---|
-| 010 | [Etendre les modules communs a SUB et PAD](010_feat_modules_communs_sub_pad.md) | Socle |
-| 011 | [Completer les parametres SUBsynth](011_feat_subsynth_parametres.md) | 010 |
-| 012 | [Terminer les harmoniques et overtones SUB](012_feat_subsynth_harmoniques.md) | 011 |
+| 010 | Termine — modules communs SUB/PAD ; [rapport et limites](../qa_common_modules_sub_pad.md) | Socle ; QA finale 021 differee |
+| 011 | Termine — mapping SUB complet ; [rapport et limites](../qa_subsynth_011_012.md) | 010 ; QA finale 021 differee |
+| 012 | Termine — harmoniques/overtones SUB ; [rapport et limites](../qa_subsynth_011_012.md) | 011 ; design valide le 8 novembre |
 | 013 | [Completer les parametres de jeu PADsynth](013_feat_padsynth_parametres.md) | 010 |
 | 014 | [Porter profil, spectre, oscillateur et resonance PAD](014_feat_padsynth_spectre_profil.md) | 010, 013 |
 | 015 | [Terminer qualite et regeneration des samples PAD](015_feat_padsynth_generation.md) | 013, 014 |
@@ -28,15 +28,17 @@ Les tests automatises et verifications ciblees de chaque lot restent necessaires
 
 ## Conception des nouvelles UX avec Mick
 
-Decision du 7 novembre 2026 : les lots **012, 014, 015, 016, 018 (EQ) et 019** comportent une passe de design/conception obligatoire avec Mick avant implementation de leurs nouvelles UX.
+Decision du 7 novembre 2026, actualisee apres validation du design 012 : les lots **014, 015, 016, 018 (EQ) et 019** comportent une passe de design/conception obligatoire avec Mick avant implementation de leurs nouvelles UX.
 
 L’agent prepare une proposition concrete (schema ou maquette, interactions, etats et navigation), la discute et l’itere avec Mick, puis attend sa validation explicite avant de coder les nouveaux composants/parcours. Consigner les decisions retenues. Les travaux natifs/tests independants peuvent avancer ; les composants deja concus pour ADD restent a reutiliser.
 
-## Etat de depart verifie dans le code
+Le design SUB 012 a ete valide par Mick le 8 novembre puis implemente ; sa precision demande les knobs/popup existants pour les enums. [Decisions et bilan](../qa_subsynth_011_012.md).
 
-- SUB : 8 controles directs et 64 couples magnitude/largeur harmonique exposes ; manquent amplitude complete, detune, enveloppes dont bandwidth, filtre complet, overtone spread et edition graphique.
-- PAD : 12 controles directs exposes ; manquent modules de jeu, profil/positions complets, oscillateur/resonance adresses PAD, base note/qualite complete et regeneration apres edition.
-- Modules communs : les composants existent, mais modeles/adresses, previews et clipboard visent aujourd'hui surtout ADD. Etendre les proprietaires avant de dupliquer des ecrans.
+## Etat verifie dans le code
+
+- SUB : mapping complet, cinq sections, 64 harmoniques/largeurs et Overtones implementes par 010/011/012. 29 tests JVM, contrat natif hote et builds ARM64/x86_64 OK ; QA finale appareil/audio differee (021).
+- PAD : controles initiaux, trois enveloppes/LFO et filtre branches par 010 ; oscillateur/resonance adressables nativement. Restent les parametres 013, surfaces/profil 014 et qualite/generation 015.
+- Modules communs : proprietaires ADD/SUB/PAD, composants Compose, previews et clipboard XML partages depuis 010. 27 tests JVM et contrat natif hote OK ; tests instrumentes compiles, sans execution appareil.
 - FX : DSP compile, mais grilles/contrat d'edition FX absents. Le code d'inspection et le send Part -> System existent. Trois FX Part par part, huit inserts Master, quatre systemes ; dix types incluant Reverse.
 - ComplexEditorSheet et les messages FX sont des placeholders, pas une parite implementee.
 - Le build Gradle selectionne FFTW3F_NATIVE ; docs/porting/fft_backend_strategy.md decrit un historique qui doit etre revalide avant toute decision FFT.

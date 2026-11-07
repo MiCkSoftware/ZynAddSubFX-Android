@@ -422,27 +422,27 @@ Java_com_mick_zynaddsubfx_NativeSynthBridge_nativeSetParameter(
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_mick_zynaddsubfx_NativeSynthBridge_nativeGetModulePreview(
         JNIEnv *env, jobject, jint partIndex, jint kitIndex, jint kind, jint index, jint role,
-        jint resolution) {
-    const std::string value = gEngine.modulePreview(partIndex, kitIndex, kind, index, role, resolution);
+        jint resolution, jint engine, jint referenceNote) {
+    const std::string value = gEngine.modulePreview(partIndex, kitIndex, kind, index, role, resolution, engine, referenceNote);
     return env->NewStringUTF(value.c_str());
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_mick_zynaddsubfx_NativeSynthBridge_nativeCopyModule(
-        JNIEnv *, jobject, jint partIndex, jint kitIndex, jint kind, jint index, jint role) {
-    return gEngine.copyModule(partIndex, kitIndex, kind, index, role) ? JNI_TRUE : JNI_FALSE;
+        JNIEnv *, jobject, jint partIndex, jint kitIndex, jint kind, jint index, jint role, jint engine) {
+    return gEngine.copyModule(partIndex, kitIndex, kind, index, role, engine) ? JNI_TRUE : JNI_FALSE;
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_mick_zynaddsubfx_NativeSynthBridge_nativeCanPasteModule(
-        JNIEnv *, jobject, jint kind, jint role) {
-    return gEngine.canPasteModule(kind, role) ? JNI_TRUE : JNI_FALSE;
+        JNIEnv *, jobject, jint kind, jint role, jint engine) {
+    return gEngine.canPasteModule(kind, role, engine) ? JNI_TRUE : JNI_FALSE;
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_mick_zynaddsubfx_NativeSynthBridge_nativePasteModule(
-        JNIEnv *, jobject, jint partIndex, jint kitIndex, jint kind, jint index, jint role) {
-    return gEngine.pasteModule(partIndex, kitIndex, kind, index, role) ? JNI_TRUE : JNI_FALSE;
+        JNIEnv *, jobject, jint partIndex, jint kitIndex, jint kind, jint index, jint role, jint engine) {
+    return gEngine.pasteModule(partIndex, kitIndex, kind, index, role, engine) ? JNI_TRUE : JNI_FALSE;
 }
 
 extern "C" JNIEXPORT jstring JNICALL

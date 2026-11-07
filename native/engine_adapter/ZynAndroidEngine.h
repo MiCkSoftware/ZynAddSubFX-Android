@@ -47,10 +47,10 @@ public:
     static float fineDetuneCents(int type, int value);
     bool setParameter(int partIndex, int kitIndex, const std::string &path, double value);
     std::string modulePreview(int partIndex, int kitIndex, int kind, int index, int role,
-                              int resolution);
-    bool copyModule(int partIndex, int kitIndex, int kind, int index, int role);
-    bool canPasteModule(int kind, int role) const;
-    bool pasteModule(int partIndex, int kitIndex, int kind, int index, int role);
+                              int resolution, int engine = 0, int referenceNote = 69);
+    bool copyModule(int partIndex, int kitIndex, int kind, int index, int role, int engine = 0);
+    bool canPasteModule(int kind, int role, int engine = 0) const;
+    bool pasteModule(int partIndex, int kitIndex, int kind, int index, int role, int engine = 0);
     std::string clipboardType() const;
     bool exportInstrument(int partIndex, const std::string &path);
     bool renameInstrument(int partIndex, const std::string &name);

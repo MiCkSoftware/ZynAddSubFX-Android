@@ -125,6 +125,7 @@ class Part
         void setkeylimit(unsigned char Pkeylimit);
         void setvoicelimit(unsigned char Pvoicelimit);
         void setkititemstatus(unsigned kititem, bool Penabled_);
+        bool setKitSynthEnabled(unsigned kititem, int engine, bool enabled);
 
         unsigned char partno; /**<the part number in Master*/
         bool          Penabled; /**<if the part is enabled*/

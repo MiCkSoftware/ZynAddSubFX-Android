@@ -139,11 +139,11 @@ ADsynth est termine fonctionnellement dans le perimetre Android retenu. Les vali
 
 Contexte, dependances et criteres detailles : [index du backlog](docs/backlog/README.md). Les tests locaux restent propres a chaque lot ; seule la campagne finale globale est differee. Les numeros ordonnent le travail sans exiger une nouvelle analyse generale.
 
-**Conception UX avec Mick requise avant implementation** pour les nouveaux composants des lots 012, 014, 015, 016, 018 (EQ) et 019 : proposition concrete, echange et validation explicite. Les prompts precisent le perimetre ; reutiliser le design ADD existant.
+**Conception UX avec Mick requise avant implementation** pour les nouveaux composants des lots 014, 015, 016, 018 (EQ) et 019 : proposition concrete, echange et validation explicite. Les prompts precisent le perimetre ; reutiliser le design ADD existant.
 
-- [ ] [010 — Etendre les modules communs a SUB et PAD](docs/backlog/010_feat_modules_communs_sub_pad.md)
-- [ ] [011 — Completer les parametres SUBsynth](docs/backlog/011_feat_subsynth_parametres.md)
-- [ ] [012 — Terminer les harmoniques et overtones SUB](docs/backlog/012_feat_subsynth_harmoniques.md)
+- [x] 010 — Modules communs SUB/PAD implementes : adressage moteur, enveloppes (dont bandwidth), filtres, LFO PAD, previews et clipboard natifs ; activation des parametres par Part. 27 tests JVM et contrat natif hote OK, builds Android ARM64/x86_64 OK. [Rapport et limites](docs/qa_common_modules_sub_pad.md) ; audio/appareil differe au lot 021, persistance transverse au lot 020.
+- [x] 011 — Mapping SUB complet Amp/Frequency/Bandwidth/Filter, controles ADD et enums knob/popup ; 29 tests JVM, contrat natif hote et builds ARM64/x86_64 OK. [Rapport et limites](docs/qa_subsynth_011_012.md). QA appareil/audio differee (021).
+- [x] 012 — UX harmonique ADD adaptee aux 64 rangs SUB, magnitude/largeur, Overtones complet, preview natif, Clear et clipboard isole ; proposition validee par Mick le 8 novembre avec knobs/popup pour les enums. [Preuves et limites](docs/qa_subsynth_011_012.md).
 - [ ] [013 — Completer les parametres de jeu PADsynth](docs/backlog/013_feat_padsynth_parametres.md)
 - [ ] [014 — Porter profil, spectre, oscillateur et resonance PAD](docs/backlog/014_feat_padsynth_spectre_profil.md)
 - [ ] [015 — Terminer qualite et regeneration des samples PAD](docs/backlog/015_feat_padsynth_generation.md)
@@ -186,10 +186,10 @@ Chaque lot termine met a jour TASKS.md, TODO.md et l'index, conserve les preuves
 | ADnoteUI - Modulator Oscillator | Preview + ecran | `Main.Part.Part[1..16].Add.Voice[1..8]` | `/Modulation/OscillatorPreview` -> `.ModulatorOscillator` | **Implemente** | Validé par Mick le 6 novembre 2026 |
 | OscilGenUI / OscilEditor | Controleur d'ecran | Ecrans Oscillator | `/Parameters`, `/Harmonics`, `/Phases` | **Implemente** | Paramètres avancés, quatre vues natives et actions harmoniques. Validé par Mick le 6 novembre 2026 |
 | ResonanceUI | Preview + ecran | `Main.Part.Part[1..16].Add` | `/ResonancePreview` -> `.Resonance` | **Implemente** | Tests utilisateur valides le 1 novembre 2026 |
-| EnvelopeUI / EnvelopeFreeEdit | Controleur | Variable | `/Amplitude|Frequency|Filter|Modulation/Envelope` | **Implemente** | ADD complet ; extension SUB/PAD suivie par 010, validation finale commune differee |
-| LFOUI | Controleur | Variable | `/Amplitude|Frequency|Filter/LFO` | **Implemente** | ADD branche ; extension PAD suivie par 010/013, pas de LFO SUB natif |
+| EnvelopeUI / EnvelopeFreeEdit | Controleur | Variable | `/Amplitude|Frequency|Filter|Modulation/Envelope` | **Implemente** | ADD/SUB/PAD branches, dont bandwidth SUB ; validation finale commune differee (021) |
+| LFOUI | Controleur | Variable | `/Amplitude|Frequency|Filter/LFO` | **Implemente** | ADD/PAD branches ; pas de LFO SUB natif ; validation finale commune differee (021) |
 | FilterUI | Section reutilisable | Variable | `/Filter` | **Implemente** | ADD et Formant branches ; extension SUB/PAD/FX suivie dans le backlog |
-| SUBnoteUI | Ecran moteur | `Main.Part.Part[1..16]` | `.Sub` | **Partiel** | Lots 010 a 012 : parametres, modules et harmoniques/overtones |
+| SUBnoteUI | Ecran moteur | `Main.Part.Part[1..16]` | `.Sub` | **Implemente** | Lots 010/011/012 : mapping, modules, harmoniques/overtones ; QA finale appareil/audio differee (021) |
 | PADnoteUI | Ecran moteur | `Main.Part.Part[1..16]` | `.Pad` | **Partiel** | Lots 010, 013 a 015 : modules, structure, qualite et generation |
 
 ### Effets et outils graphiques
@@ -214,7 +214,7 @@ Chaque lot termine met a jour TASKS.md, TODO.md et l'index, conserve les preuves
 
 Priorites suivantes :
 
-1. Etendre les modules communs ADD aux proprietaires SUB/PAD, puis terminer SUB (010 a 012).
+1. SUB termine fonctionnellement (010/011/012) ; poursuivre PAD et conserver la QA finale differee (021).
 2. Terminer PAD, ses graphes et la regeneration effective des samples (013 a 015).
 3. Terminer les dix effets et leurs routages Part/Insert/System (016 a 019).
 4. Verifier automatiquement contrats, clipboard et persistance (020), puis executer la validation finale audio/appareil commune (021).

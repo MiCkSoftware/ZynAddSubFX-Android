@@ -443,6 +443,8 @@ void Part::defaultsinstrument()
     kit[0].Penabled   = 1;
     kit[0].Padenabled = 1;
     kit[0].adpars->defaults();
+    if(kit[0].subpars) kit[0].subpars->defaults();
+    if(kit[0].padpars) kit[0].padpars->defaults();
 
     for(int nefx = 0; nefx < NUM_PART_EFX; ++nefx) {
         partefx[nefx]->defaults();
@@ -1250,6 +1252,35 @@ void Part::setkititemstatus(unsigned kititem, bool Penabled_)
         kkit.subpars = new SUBnoteParameters(&time);
         kkit.padpars = new PADnoteParameters(synth, fft, &time);
     }
+}
+
+// Parameter ownership stays with Part: enabling a synth must make its data
+// available, including kit zero where construction only allocates ADD.
+bool Part::setKitSynthEnabled(unsigned kititem, int engine, bool enabled)
+{
+    if(kititem >= NUM_KIT_ITEMS || engine < 0 || engine > 2)
+        return false;
+    auto &item = kit[kititem];
+    if(kititem != 0 && !item.Penabled)
+        return false;
+    switch(engine) {
+        case 0:
+            if(enabled && !item.adpars)
+                item.adpars = new ADnoteParameters(synth, fft, &time);
+            item.Padenabled = enabled;
+            break;
+        case 1:
+            if(enabled && !item.subpars)
+                item.subpars = new SUBnoteParameters(&time);
+            item.Psubenabled = enabled;
+            break;
+        case 2:
+            if(enabled && !item.padpars)
+                item.padpars = new PADnoteParameters(synth, fft, &time);
+            item.Ppadenabled = enabled;
+            break;
+    }
+    return true;
 }
 
 void Part::add2XMLinstrument(XMLwrapper& xml)

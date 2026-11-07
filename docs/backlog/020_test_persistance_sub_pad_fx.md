@@ -12,6 +12,8 @@ Apres les lots fonctionnels 010 a 019, completer les tests automatises transvers
 - SynthEngine et les chemins de session/chargement dans MainActivity.kt et NativeSynthBridge sont deja presents ; ne pas ajouter une nouvelle couche de stockage.
 - Le test ajoute globalFilterCategoriesAndCombControlsSurviveXizReload couvre categories, Comb, clipboard et XIZ. Sa presence dans le code ne prouve pas son execution ; rapport disponible lors de la preparation : 17 tests instrumentes du 6 novembre, anterieur a cet ajout.
 
+- Constat du lot 010 : `Part::add2XMLinstrument` omet les branches des moteurs entierement OFF si `SaveFullXml` est faux, meme avec `minimal=false`. Traiter/tester explicitement ce cas ; [preuves et limites du socle commun](../qa_common_modules_sub_pad.md).
+
 ## Travail et criteres d'acceptation
 
 - Corpus identifie par vrais chemins assets : SUB seul, PAD seul, instrument ADD+SUB+PAD et plusieurs kits, FX des trois scopes. Pas de noms de presets inventes.

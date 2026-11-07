@@ -99,4 +99,46 @@ class ParameterRoutingTest {
 
         assertTrue(parametersFor(resonance, "ADD", "Resonance", 0).isEmpty())
     }
+
+    @Test
+    fun subAndPadUseStructuredModuleAndSectionRouting() {
+        val all = listOf("SUB", "PAD").flatMap { module ->
+            listOf(
+                "Frequency" to SynthEngine.ParameterSection.FREQUENCY,
+                "Filter" to SynthEngine.ParameterSection.FILTER,
+                "Harmonics" to SynthEngine.ParameterSection.HARMONICS,
+            ).map { (_, section) ->
+                val parameter = value("${module.lowercase()}/field", SynthEngine.ParameterScope.GLOBAL, section)
+                parameter.copy(descriptor = parameter.descriptor.copy(module = SynthEngine.ParameterModule.valueOf(module)))
+            }
+        }
+        for (module in listOf("SUB", "PAD")) {
+            for ((tab, section) in listOf("Frequency" to SynthEngine.ParameterSection.FREQUENCY,
+                "Filter" to SynthEngine.ParameterSection.FILTER, "Harmonics" to SynthEngine.ParameterSection.HARMONICS)) {
+                val selected = parametersFor(all, module, tab, 0)
+                assertEquals(1, selected.size)
+                assertEquals(SynthEngine.ParameterModule.valueOf(module), selected.single().descriptor.module)
+                assertEquals(section, selected.single().descriptor.section)
+            }
+        }
+    }
+
+    @Test
+    fun subBandwidthIsIndependentOfHarmonicsAndStereoStaysAtKitLevel() {
+        fun sub(path: String, section: SynthEngine.ParameterSection) =
+            value(path, SynthEngine.ParameterScope.GLOBAL, section).let {
+                it.copy(descriptor = it.descriptor.copy(module = SynthEngine.ParameterModule.SUB))
+            }
+        val bandwidth = listOf(sub("sub/bandwidth", SynthEngine.ParameterSection.BANDWIDTH),
+            sub("sub/bandwidthEnvelope/attackTime", SynthEngine.ParameterSection.BANDWIDTH))
+        val harmonics = listOf(sub("sub/harmonic/63/bandwidth", SynthEngine.ParameterSection.HARMONICS),
+            sub("sub/overtone/par1", SynthEngine.ParameterSection.HARMONICS))
+        val stereo = sub("sub/stereo", SynthEngine.ParameterSection.GLOBAL)
+        val all = bandwidth + harmonics + stereo
+        assertEquals(bandwidth, parametersFor(all, "SUB", "Bandwidth", 0))
+        assertEquals(harmonics, parametersFor(all, "SUB", "Harmonics", 0))
+        assertTrue(parametersFor(all, "SUB", "Global", 0).isEmpty())
+        assertEquals(listOf("Amp", "Harmonics", "Frequency", "Bandwidth", "Filter"),
+            InstrumentEditorViewModel.tabsFor("SUB"))
+    }
 }

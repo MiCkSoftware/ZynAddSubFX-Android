@@ -142,7 +142,7 @@ class SynthEngine(private val context: Context) : InstrumentEditorEngine {
     enum class ParameterScope { GLOBAL, VOICE, HARMONIC, EFFECT, UNKNOWN }
     enum class ParameterSection {
         GLOBAL, AMPLITUDE, FREQUENCY, FILTER, VOICE, OSCILLATOR, MODULATION,
-        UNISON, RESONANCE, HARMONICS, PROFILE, SPECTRUM, QUALITY, ROUTING, OTHER,
+        UNISON, RESONANCE, BANDWIDTH, HARMONICS, PROFILE, SPECTRUM, QUALITY, ROUTING, OTHER,
     }
     enum class ParameterFamily { BASIC, ENVELOPE, LFO, FILTER, OSCILLATOR, FORMANT, RESONANCE, HARMONIC, OTHER }
 
@@ -366,20 +366,20 @@ class SynthEngine(private val context: Context) : InstrumentEditorEngine {
     override fun preview(partIndex: Int, kitIndex: Int, address: ModuleAddress, resolution: Int): PreviewSeries =
         runCatching {
             NativeSynthBridge.nativeGetModulePreview(
-                partIndex, kitIndex, address.kind, address.index, address.role, resolution.coerceIn(16, 512)
+                partIndex, kitIndex, address.kind, address.index, address.role, resolution.coerceIn(16, 512), address.engine.code, address.referenceNote.coerceIn(0, 127)
             ).split(',').mapNotNull(String::toFloatOrNull).let(::PreviewSeries)
         }.getOrDefault(PreviewSeries.Empty)
 
     override fun copyModule(partIndex: Int, kitIndex: Int, address: ModuleAddress): Boolean = runCatching {
-        NativeSynthBridge.nativeCopyModule(partIndex, kitIndex, address.kind, address.index, address.role)
+        NativeSynthBridge.nativeCopyModule(partIndex, kitIndex, address.kind, address.index, address.role, address.engine.code)
     }.getOrDefault(false)
 
     override fun canPasteModule(address: ModuleAddress): Boolean = runCatching {
-        NativeSynthBridge.nativeCanPasteModule(address.kind, address.role)
+        NativeSynthBridge.nativeCanPasteModule(address.kind, address.role, address.engine.code)
     }.getOrDefault(false)
 
     override fun pasteModule(partIndex: Int, kitIndex: Int, address: ModuleAddress): Boolean = runCatching {
-        NativeSynthBridge.nativePasteModule(partIndex, kitIndex, address.kind, address.index, address.role)
+        NativeSynthBridge.nativePasteModule(partIndex, kitIndex, address.kind, address.index, address.role, address.engine.code)
     }.getOrDefault(false).also { if (it) instrumentChanged(partIndex) }
 
     fun clipboardType(): String = runCatching { NativeSynthBridge.nativeGetClipboardType() }.getOrDefault("")

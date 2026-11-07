@@ -501,13 +501,7 @@ fun EnvelopeUI(
     valueOf: (SynthEngine.ParameterValue) -> Double = { it.value },
 ) {
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        val enable = model.parameters.firstOrNull { it.descriptor.path == "add/voice/${model.address.index}/" + when (model.address.envelopeRole) {
-                EnvelopeRole.AMPLITUDE -> "ampEnvelopeEnabled"
-                EnvelopeRole.FREQUENCY -> "freqEnvelopeEnabled"
-                EnvelopeRole.FILTER -> "filterEnvelopeEnabled"
-                EnvelopeRole.MODULATOR_AMPLITUDE -> "modAmpEnvelopeEnabled"
-                EnvelopeRole.MODULATOR_FREQUENCY -> "modFreqEnvelopeEnabled"
-            } }
+        val enable = model.parameters.firstOrNull { it.descriptor.path == "${model.prefix}Enabled" }
         CompactModuleActions(model.title, onCopy, onPaste, canPaste, enable, onWrite,
             textColor = model.parameters.firstOrNull { it.descriptor.path.startsWith("${model.prefix}/") }
                 ?.let { Color.hsv(addLabelHue(it.descriptor), .45f, .95f) } ?: Color(0xFFFFC857))
@@ -516,7 +510,7 @@ fun EnvelopeUI(
         val previewFields = when (model.address.envelopeRole) {
             EnvelopeRole.AMPLITUDE, EnvelopeRole.MODULATOR_AMPLITUDE ->
                 arrayOf("attackTime", "decayTime", "sustain", "releaseTime")
-            EnvelopeRole.FREQUENCY, EnvelopeRole.MODULATOR_FREQUENCY ->
+            EnvelopeRole.FREQUENCY, EnvelopeRole.MODULATOR_FREQUENCY, EnvelopeRole.BANDWIDTH ->
                 arrayOf("attackValue", "attackTime", "releaseTime", "releaseValue")
             EnvelopeRole.FILTER ->
                 arrayOf("attackValue", "attackTime", "decayTime", "releaseTime")
@@ -540,11 +534,7 @@ fun LFOUI(
     onCommit: () -> Unit = {},
 ) {
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        val enable = model.parameters.firstOrNull { it.descriptor.path == "add/voice/${model.address.index}/" + when (model.address.lfoRole) {
-                LfoRole.AMPLITUDE -> "ampLfoEnabled"
-                LfoRole.FREQUENCY -> "freqLfoEnabled"
-                LfoRole.FILTER -> "filterLfoEnabled"
-            } }
+        val enable = model.parameters.firstOrNull { it.descriptor.path == "${model.prefix}Enabled" }
         CompactModuleActions(model.title, onCopy, onPaste, canPaste, enable, onWrite,
             textColor = model.parameters.firstOrNull { it.descriptor.path.startsWith("${model.prefix}/") }
                 ?.let { Color.hsv(addLabelHue(it.descriptor), .45f, .95f) } ?: Color(0xFFFFC857))
@@ -571,7 +561,7 @@ fun FilterUI(
 ) {
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         val enable = model.parameters.firstOrNull {
-                it.descriptor.path == "add/voice/${model.address.index}/filter"
+                it.descriptor.path == if (model.address.index < 0) "${model.address.engine.path}/filterEnabled" else "add/voice/${model.address.index}/filter"
             }
         CompactModuleActions("FILTER", onCopy, onPaste, canPaste, enable, onWrite, sectionHeading = true)
         if (enable == null || enable.value >= .5) {
@@ -590,6 +580,7 @@ fun CommonSynthModules(
     model: InstrumentEditorViewModel,
     section: SynthEngine.ParameterSection,
     voiceIndex: Int = -1,
+    engine: ModuleEngine = ModuleEngine.ADD,
     onOpenEnvelope: (ModuleAddress.Envelope) -> Unit,
     onOpenLfo: (ModuleAddress.Lfo) -> Unit,
     onOpenFilter: (ModuleAddress.Filter) -> Unit,
@@ -600,6 +591,7 @@ fun CommonSynthModules(
         SynthEngine.ParameterSection.AMPLITUDE -> listOf(EnvelopeRole.AMPLITUDE)
         SynthEngine.ParameterSection.FREQUENCY -> listOf(EnvelopeRole.FREQUENCY)
         SynthEngine.ParameterSection.FILTER -> listOf(EnvelopeRole.FILTER)
+        SynthEngine.ParameterSection.BANDWIDTH -> if (engine == ModuleEngine.SUB) listOf(EnvelopeRole.BANDWIDTH) else emptyList()
         SynthEngine.ParameterSection.MODULATION ->
             listOf(EnvelopeRole.MODULATOR_AMPLITUDE, EnvelopeRole.MODULATOR_FREQUENCY)
         else -> emptyList()
@@ -612,7 +604,7 @@ fun CommonSynthModules(
     }
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         if (section == SynthEngine.ParameterSection.FILTER) {
-            val address = ModuleAddress.Filter(voiceIndex)
+            val address = ModuleAddress.Filter(voiceIndex, engine = engine)
             FilterModel.from(values, address)?.let { filter ->
                 val preview = remember(model.state.revision, address, filter.category) { model.preview(address) }
                 FilterUI(
@@ -628,11 +620,12 @@ fun CommonSynthModules(
                 )
             }
         }
-        val filterEnabled = section != SynthEngine.ParameterSection.FILTER || voiceIndex < 0 ||
-            values.firstOrNull { it.descriptor.path == "add/voice/$voiceIndex/filter" }?.value != 0.0
+        val filterEnablePath = if (voiceIndex < 0) "${engine.path}/filterEnabled" else "add/voice/$voiceIndex/filter"
+        val filterEnabled = section != SynthEngine.ParameterSection.FILTER ||
+            values.firstOrNull { it.descriptor.path == filterEnablePath }?.value != 0.0
         if (filterEnabled) {
             envelopeRoles.forEach { role ->
-                val address = ModuleAddress.Envelope(voiceIndex, role)
+                val address = ModuleAddress.Envelope(voiceIndex, role, engine)
                 remember(values, address) { EnvelopeModel.from(values, address) }?.let { envelope ->
                     val preview = remember(model.state.revision, address) { model.preview(address) }
                     EnvelopeUI(
@@ -650,7 +643,7 @@ fun CommonSynthModules(
                 }
             }
             lfoRole?.let { role ->
-                val address = ModuleAddress.Lfo(voiceIndex, role)
+                val address = ModuleAddress.Lfo(voiceIndex, role, engine)
                 LfoModel.from(values, address)?.let { lfo ->
                     val preview = remember(model.state.revision, address) { model.preview(address) }
                     LFOUI(

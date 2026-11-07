@@ -4,7 +4,15 @@ import kotlin.math.pow
 
 const val FORMANT_VOWEL_SLOTS = 6
 
+internal fun subHarmonicHue(index: Int): Float = (index * 137.508f) % 360f
+
+enum class ModuleEngine(val code: Int, val path: String) {
+    ADD(0, "add"), SUB(1, "sub"), PAD(2, "pad"),
+}
+
 sealed interface ModuleAddress {
+    val engine: ModuleEngine get() = ModuleEngine.ADD
+    val referenceNote: Int get() = 69
     val kind: Int
     val index: Int
     val role: Int
@@ -14,34 +22,55 @@ sealed interface ModuleAddress {
         override val role = 0
     }
 
-    data class Oscillator(override val index: Int, val modulator: Boolean = false) : ModuleAddress {
+    data class Oscillator(override val index: Int, val modulator: Boolean = false, override val engine: ModuleEngine = ModuleEngine.ADD) : ModuleAddress {
         override val kind = 1
         override val role = if (modulator) 1 else 0
     }
 
     data class OscillatorPreview(val oscillator: Oscillator, val view: OscillatorPreviewView) : ModuleAddress {
+        override val engine = oscillator.engine
         override val kind = 8
         override val index = oscillator.index
         override val role = view.code * 2 + oscillator.role
     }
 
-    data class Envelope(override val index: Int = -1, val envelopeRole: EnvelopeRole) : ModuleAddress {
+    data class Envelope(override val index: Int = -1, val envelopeRole: EnvelopeRole, override val engine: ModuleEngine = ModuleEngine.ADD) : ModuleAddress {
         override val kind = 2
         override val role = envelopeRole.code
     }
 
-    data class Lfo(override val index: Int = -1, val lfoRole: LfoRole) : ModuleAddress {
+    data class Lfo(override val index: Int = -1, val lfoRole: LfoRole, override val engine: ModuleEngine = ModuleEngine.ADD) : ModuleAddress {
         override val kind = 3
         override val role = lfoRole.code
     }
 
-    data class Filter(override val index: Int = -1, val vowel: Int = 0) : ModuleAddress {
+    data class Filter(override val index: Int = -1, val vowel: Int = 0, override val engine: ModuleEngine = ModuleEngine.ADD) : ModuleAddress {
         override val kind = 4
         override val role = vowel.coerceIn(0, FORMANT_VOWEL_SLOTS - 1)
     }
 
+    data class SubHarmonicsPreview(override val referenceNote: Int) : ModuleAddress {
+        override val engine = ModuleEngine.SUB
+        override val kind = 9
+        override val index = -1
+        override val role = 0
+    }
+
+    data object SubHarmonics : ModuleAddress {
+        override val engine = ModuleEngine.SUB
+        override val kind = 9
+        override val index = -1
+        override val role = 0
+    }
+
     data class Amplitude(override val index: Int) : ModuleAddress {
         override val kind = 7
+        override val role = 0
+    }
+
+    data class EngineResonance(override val engine: ModuleEngine) : ModuleAddress {
+        override val kind = 5
+        override val index = -1
         override val role = 0
     }
 
@@ -51,7 +80,7 @@ sealed interface ModuleAddress {
         override val role = 0
     }
 
-    data class Vowel(override val index: Int = -1, val vowel: Int) : ModuleAddress {
+    data class Vowel(override val index: Int = -1, val vowel: Int, override val engine: ModuleEngine = ModuleEngine.ADD) : ModuleAddress {
         override val kind = 6
         override val role = vowel.coerceIn(0, FORMANT_VOWEL_SLOTS - 1)
     }
@@ -69,6 +98,7 @@ enum class EnvelopeRole(val code: Int, val title: String) {
     FILTER(2, "Filter envelope"),
     MODULATOR_AMPLITUDE(3, "Modulator amplitude envelope"),
     MODULATOR_FREQUENCY(4, "Modulator frequency envelope"),
+    BANDWIDTH(5, "Bandwidth envelope"),
 }
 
 enum class LfoRole(val code: Int, val title: String) {
@@ -124,28 +154,18 @@ data class EnvelopeModel(
             values: List<SynthEngine.ParameterValue>,
             address: ModuleAddress.Envelope,
         ): EnvelopeModel? {
-            val prefix = when {
-                address.index < 0 -> when (address.envelopeRole) {
-                    EnvelopeRole.AMPLITUDE -> "add/ampEnvelope"
-                    EnvelopeRole.FREQUENCY -> "add/freqEnvelope"
-                    EnvelopeRole.FILTER -> "add/filterEnvelope"
-                    else -> return null
-                }
-                else -> "add/voice/${address.index}/" + when (address.envelopeRole) {
-                    EnvelopeRole.AMPLITUDE -> "ampEnvelope"
-                    EnvelopeRole.FREQUENCY -> "freqEnvelope"
-                    EnvelopeRole.FILTER -> "filterEnvelope"
-                    EnvelopeRole.MODULATOR_AMPLITUDE -> "modAmpEnvelope"
-                    EnvelopeRole.MODULATOR_FREQUENCY -> "modFreqEnvelope"
-                }
+            if (address.index >= 0 && address.engine != ModuleEngine.ADD) return null
+            val field = when (address.envelopeRole) {
+                EnvelopeRole.AMPLITUDE -> "ampEnvelope"
+                EnvelopeRole.FREQUENCY -> "freqEnvelope"
+                EnvelopeRole.FILTER -> "filterEnvelope"
+                EnvelopeRole.BANDWIDTH -> if (address.engine == ModuleEngine.SUB && address.index < 0) "bandwidthEnvelope" else return null
+                EnvelopeRole.MODULATOR_AMPLITUDE -> if (address.index >= 0) "modAmpEnvelope" else return null
+                EnvelopeRole.MODULATOR_FREQUENCY -> if (address.index >= 0) "modFreqEnvelope" else return null
             }
-            val enablePath = if (address.index < 0) null else "add/voice/${address.index}/" + when (address.envelopeRole) {
-                EnvelopeRole.AMPLITUDE -> "ampEnvelopeEnabled"
-                EnvelopeRole.FREQUENCY -> "freqEnvelopeEnabled"
-                EnvelopeRole.FILTER -> "filterEnvelopeEnabled"
-                EnvelopeRole.MODULATOR_AMPLITUDE -> "modAmpEnvelopeEnabled"
-                EnvelopeRole.MODULATOR_FREQUENCY -> "modFreqEnvelopeEnabled"
-            }
+            val owner = if (address.index < 0) address.engine.path else "add/voice/${address.index}"
+            val prefix = "$owner/$field"
+            val enablePath = "${prefix}Enabled"
             val parameters = values.filter {
                 it.descriptor.path.startsWith("$prefix/") || it.descriptor.path == enablePath
             }
@@ -182,24 +202,14 @@ data class LfoModel(
 
     companion object {
         fun from(values: List<SynthEngine.ParameterValue>, address: ModuleAddress.Lfo): LfoModel? {
-            val prefix = if (address.index < 0) {
-                "add/" + when (address.lfoRole) {
-                    LfoRole.AMPLITUDE -> "ampLfo"
-                    LfoRole.FREQUENCY -> "freqLfo"
-                    LfoRole.FILTER -> "filterLfo"
-                }
-            } else {
-                "add/voice/${address.index}/" + when (address.lfoRole) {
-                    LfoRole.AMPLITUDE -> "ampLfo"
-                    LfoRole.FREQUENCY -> "freqLfo"
-                    LfoRole.FILTER -> "filterLfo"
-                }
+            if (address.engine == ModuleEngine.SUB || (address.index >= 0 && address.engine != ModuleEngine.ADD)) return null
+            val owner = if (address.index < 0) address.engine.path else "add/voice/${address.index}"
+            val prefix = "$owner/" + when (address.lfoRole) {
+                LfoRole.AMPLITUDE -> "ampLfo"
+                LfoRole.FREQUENCY -> "freqLfo"
+                LfoRole.FILTER -> "filterLfo"
             }
-            val enablePath = if (address.index < 0) null else "add/voice/${address.index}/" + when (address.lfoRole) {
-                LfoRole.AMPLITUDE -> "ampLfoEnabled"
-                LfoRole.FREQUENCY -> "freqLfoEnabled"
-                LfoRole.FILTER -> "filterLfoEnabled"
-            }
+            val enablePath = "${prefix}Enabled"
             val parameters = values.filter {
                 it.descriptor.path.startsWith("$prefix/") || it.descriptor.path == enablePath
             }
@@ -229,7 +239,8 @@ data class FilterModel(
 
     companion object {
         fun from(values: List<SynthEngine.ParameterValue>, address: ModuleAddress.Filter): FilterModel? {
-            val prefix = if (address.index < 0) "add/filter" else "add/voice/${address.index}/filter"
+            if (address.index >= 0 && address.engine != ModuleEngine.ADD) return null
+            val prefix = if (address.index < 0) "${address.engine.path}/filter" else "add/voice/${address.index}/filter"
             val voiceFilterFields = setOf(
                 "filter", "bypassGlobalFilter", "filterCategory", "filterType", "filterCutoff",
                 "filterQ", "filterStages", "filterTracking", "filterGain", "filterCombHpf",
@@ -238,7 +249,7 @@ data class FilterModel(
             val parameters = values.filter { value ->
                 val path = value.descriptor.path
                 if (address.index < 0) {
-                    path.startsWith("$prefix/") || path in setOf("add/filterVelocity", "add/filterVelocitySense")
+                    path.startsWith("$prefix/") || path in setOf("${address.engine.path}/filterVelocity", "${address.engine.path}/filterVelocitySense", "${address.engine.path}/filterEnabled")
                 } else {
                     path.startsWith("$prefix/formant/") ||
                         path.substringAfter("add/voice/${address.index}/") in voiceFilterFields

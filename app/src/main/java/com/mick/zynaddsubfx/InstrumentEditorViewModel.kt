@@ -32,7 +32,7 @@ class InstrumentEditorViewModel(private val engine: InstrumentEditorEngine) : Vi
     companion object {
         fun tabsFor(engineName: String): List<String> = when (engineName) {
             "ADD" -> listOf("Frequency", "Amp", "Filter", "Resonance", "Voices")
-            "SUB" -> listOf("Global", "Amp", "Frequency", "Filter", "Harmonics")
+            "SUB" -> listOf("Amp", "Harmonics", "Frequency", "Bandwidth", "Filter")
             "PAD" -> listOf("Global", "Amp", "Frequency", "Filter", "Profile", "Spectrum", "Quality")
             "FX" -> listOf("Routing", "FX 1", "FX 2", "FX 3")
             else -> listOf("Global")

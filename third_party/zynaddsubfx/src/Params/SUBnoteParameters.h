@@ -41,6 +41,8 @@ class SUBnoteParameters:public Presets
         void getfromXML(XMLwrapper& xml);
         void updateFrequencyMultipliers(void);
         void paste(SUBnoteParameters &sub);
+        void pasteHarmonics(const SUBnoteParameters &sub);
+        void resetHarmonics();
 
         //Parameters
         //AMPLITUDE PARAMETERS

@@ -23,6 +23,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -81,6 +82,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.clip
@@ -112,6 +114,7 @@ private data class OscillatorEditorTarget(
 private sealed interface InstrumentEditorDestination {
     data object VoiceDetail : InstrumentEditorDestination
     data object Resonance : InstrumentEditorDestination
+    data object SubHarmonics : InstrumentEditorDestination
     data class Oscillator(val target: OscillatorEditorTarget) : InstrumentEditorDestination
     data class Envelope(val address: ModuleAddress.Envelope) : InstrumentEditorDestination
     data class Lfo(val address: ModuleAddress.Lfo) : InstrumentEditorDestination
@@ -121,12 +124,13 @@ private sealed interface InstrumentEditorDestination {
 private fun InstrumentEditorDestination.encode(): String = when (this) {
     InstrumentEditorDestination.VoiceDetail -> "voice"
     InstrumentEditorDestination.Resonance -> "resonance"
+    InstrumentEditorDestination.SubHarmonics -> "sub-harmonics"
     is InstrumentEditorDestination.Oscillator ->
         "osc:${target.kind.name}:${target.ownerVoice}"
     is InstrumentEditorDestination.Envelope ->
-        "env:${address.index}:${address.envelopeRole.name}"
-    is InstrumentEditorDestination.Lfo -> "lfo:${address.index}:${address.lfoRole.name}"
-    is InstrumentEditorDestination.Filter -> "filter:${address.index}:${address.vowel}"
+        "env:${address.index}:${address.envelopeRole.name}:${address.engine.name}"
+    is InstrumentEditorDestination.Lfo -> "lfo:${address.index}:${address.lfoRole.name}:${address.engine.name}"
+    is InstrumentEditorDestination.Filter -> "filter:${address.index}:${address.vowel}:${address.engine.name}"
 }
 
 private fun decodeDestination(value: String): InstrumentEditorDestination? {
@@ -134,6 +138,7 @@ private fun decodeDestination(value: String): InstrumentEditorDestination? {
     return when (fields.firstOrNull()) {
         "voice" -> InstrumentEditorDestination.VoiceDetail
         "resonance" -> InstrumentEditorDestination.Resonance
+        "sub-harmonics" -> InstrumentEditorDestination.SubHarmonics
         "osc" -> InstrumentEditorDestination.Oscillator(
             OscillatorEditorTarget(
                 runCatching { OscillatorEditorKind.valueOf(fields[1]) }.getOrDefault(OscillatorEditorKind.Voice),
@@ -144,24 +149,28 @@ private fun decodeDestination(value: String): InstrumentEditorDestination? {
             ModuleAddress.Envelope(
                 fields.getOrNull(1)?.toIntOrNull()?.coerceIn(-1, 7) ?: -1,
                 runCatching { EnvelopeRole.valueOf(fields[2]) }.getOrDefault(EnvelopeRole.AMPLITUDE),
+                runCatching { ModuleEngine.valueOf(fields[3]) }.getOrDefault(ModuleEngine.ADD),
             )
         )
         "lfo" -> InstrumentEditorDestination.Lfo(
             ModuleAddress.Lfo(
                 fields.getOrNull(1)?.toIntOrNull()?.coerceIn(-1, 7) ?: -1,
                 runCatching { LfoRole.valueOf(fields[2]) }.getOrDefault(LfoRole.AMPLITUDE),
+                runCatching { ModuleEngine.valueOf(fields[3]) }.getOrDefault(ModuleEngine.ADD),
             )
         )
         "filter" -> InstrumentEditorDestination.Filter(
             ModuleAddress.Filter(
                 fields.getOrNull(1)?.toIntOrNull()?.coerceIn(-1, 7) ?: -1,
                 fields.getOrNull(2)?.toIntOrNull()?.coerceIn(0, FORMANT_VOWEL_SLOTS - 1) ?: 0,
+                runCatching { ModuleEngine.valueOf(fields[3]) }.getOrDefault(ModuleEngine.ADD),
             )
         )
         "formant" -> InstrumentEditorDestination.Filter(
             ModuleAddress.Filter(
                 fields.getOrNull(1)?.toIntOrNull()?.coerceIn(-1, 7) ?: -1,
                 fields.getOrNull(2)?.toIntOrNull()?.coerceIn(0, FORMANT_VOWEL_SLOTS - 1) ?: 0,
+                runCatching { ModuleEngine.valueOf(fields[3]) }.getOrDefault(ModuleEngine.ADD),
             )
         )
         else -> null
@@ -169,7 +178,8 @@ private fun decodeDestination(value: String): InstrumentEditorDestination? {
 }
 
 private fun parentDestination(destination: InstrumentEditorDestination): InstrumentEditorDestination? = when (destination) {
-    InstrumentEditorDestination.VoiceDetail, InstrumentEditorDestination.Resonance -> null
+    InstrumentEditorDestination.VoiceDetail, InstrumentEditorDestination.Resonance,
+    InstrumentEditorDestination.SubHarmonics -> null
     is InstrumentEditorDestination.Oscillator -> InstrumentEditorDestination.VoiceDetail
     is InstrumentEditorDestination.Envelope ->
         if (destination.address.index >= 0) InstrumentEditorDestination.VoiceDetail else null
@@ -286,6 +296,11 @@ fun FullInstrumentEditor(
     val density = LocalDensity.current
     val model = remember(engine) { InstrumentEditorViewModel(engine) }
     val state = model.state
+    var referenceNote by rememberSaveable(partIndex, kitIndex) { mutableStateOf(69) }
+    val pressKeyboardNote: (Int) -> Unit = { note ->
+        if (module == "SUB" && note in 0..127) referenceNote = note
+        onPressKeyboardNote(note)
+    }
     CompositionLocalProvider(LocalEnumContext provides listOf(partIndex, kitIndex, module, state.partIndex, state.kitIndex, state.selectedVoice)) {
     var savedVoice by rememberSaveable { mutableStateOf(0) }
     var selector by remember { mutableStateOf<String?>(null) }
@@ -303,6 +318,8 @@ fun FullInstrumentEditor(
     val oscillatorSectionOffsets = remember { mutableStateOf<Map<String, Int>>(emptyMap()) }
     val oscillatorPreviewOcclusion = with(density) { 112.dp.roundToPx() }
     val resonanceScroll = rememberScrollState()
+    val subHarmonicsScroll = rememberScrollState()
+    val subHarmonicsOffsets = remember(partIndex, kitIndex) { mutableStateOf<Map<String, Int>>(emptyMap()) }
     val scope = rememberCoroutineScope()
     LaunchedEffect(partIndex, kitIndex, module) {
         model.open(partIndex, kitIndex)
@@ -340,6 +357,36 @@ fun FullInstrumentEditor(
     } else baseContextPath
     val navigateBack: () -> Unit = { destination = destination?.let(::parentDestination) }
     BackHandler(enabled = currentDestination != null) { navigateBack() }
+    if (currentDestination == InstrumentEditorDestination.SubHarmonics) {
+        val tabs = listOf("Preview", "Harmonics", "Overtones")
+        SynthEditorScaffold(
+            title = "SUB harmonics", contextPath = contextPath,
+            navigationLabel = "‹ SUB", onNavigateUp = navigateBack,
+            tabs = tabs,
+            selectedTab = if (subHarmonicsScroll.value > 0 && subHarmonicsScroll.value == subHarmonicsScroll.maxValue) {
+                tabs.last()
+            } else activeAnchor(subHarmonicsScroll.value +
+                if (subHarmonicsScroll.value > 0) oscillatorPreviewOcclusion else 0,
+                tabs, subHarmonicsOffsets.value),
+            onTabSelected = { section -> scope.launch {
+                subHarmonicsScroll.animateScrollTo(if (section == "Preview") 0 else
+                    ((subHarmonicsOffsets.value[section] ?: 0) - oscillatorPreviewOcclusion).coerceAtLeast(0))
+            } },
+            dirty = state.dirty, onActions = null, heldNotes = heldNotes,
+            keyboardOctaveShift = keyboardOctaveShift, onPressKeyboardNote = pressKeyboardNote,
+            onReleaseKeyboardNote = onReleaseKeyboardNote, modifier = modifier,
+            headerActions = {
+                ModuleClipboardActions("Harmonics", { model.copyModule(ModuleAddress.SubHarmonics) },
+                    { model.pasteModule(ModuleAddress.SubHarmonics) }, model.canPasteModule(ModuleAddress.SubHarmonics))
+            },
+        ) { contentModifier ->
+            SubHarmonicsEditor(model, subHarmonicsScroll, referenceNote, contentModifier) { section, offset ->
+                if (subHarmonicsOffsets.value[section] != offset)
+                    subHarmonicsOffsets.value = subHarmonicsOffsets.value + (section to offset)
+            }
+        }
+        return@CompositionLocalProvider
+    }
     if (currentDestination is InstrumentEditorDestination.Oscillator) {
         val oscillatorTitle = if (currentDestination.target.kind == OscillatorEditorKind.Modulator) {
             "Modulator oscillator"
@@ -372,7 +419,7 @@ fun FullInstrumentEditor(
             onActions = null,
             heldNotes = heldNotes,
             keyboardOctaveShift = keyboardOctaveShift,
-            onPressKeyboardNote = onPressKeyboardNote,
+            onPressKeyboardNote = pressKeyboardNote,
             onReleaseKeyboardNote = onReleaseKeyboardNote,
             modifier = modifier,
         ) { contentModifier ->
@@ -404,7 +451,7 @@ fun FullInstrumentEditor(
             onActions = null,
             heldNotes = heldNotes,
             keyboardOctaveShift = keyboardOctaveShift,
-            onPressKeyboardNote = onPressKeyboardNote,
+            onPressKeyboardNote = pressKeyboardNote,
             onReleaseKeyboardNote = onReleaseKeyboardNote,
             modifier = modifier,
             headerActions = {
@@ -446,7 +493,7 @@ fun FullInstrumentEditor(
             onActions = null,
             heldNotes = heldNotes,
             keyboardOctaveShift = keyboardOctaveShift,
-            onPressKeyboardNote = onPressKeyboardNote,
+            onPressKeyboardNote = pressKeyboardNote,
             onReleaseKeyboardNote = onReleaseKeyboardNote,
             modifier = modifier,
         ) { contentModifier ->
@@ -483,7 +530,7 @@ fun FullInstrumentEditor(
             onActions = null,
             heldNotes = heldNotes,
             keyboardOctaveShift = keyboardOctaveShift,
-            onPressKeyboardNote = onPressKeyboardNote,
+            onPressKeyboardNote = pressKeyboardNote,
             onReleaseKeyboardNote = onReleaseKeyboardNote,
             modifier = modifier,
         ) { contentModifier ->
@@ -519,7 +566,7 @@ fun FullInstrumentEditor(
             onActions = null,
             heldNotes = heldNotes,
             keyboardOctaveShift = keyboardOctaveShift,
-            onPressKeyboardNote = onPressKeyboardNote,
+            onPressKeyboardNote = pressKeyboardNote,
             onReleaseKeyboardNote = onReleaseKeyboardNote,
             modifier = modifier,
         ) { contentModifier ->
@@ -532,9 +579,9 @@ fun FullInstrumentEditor(
                     onDrag = model::dragParameter,
                     onCommit = model::finishParameterDrag,
                     onPreviewVowel = { vowel -> model.preview(currentDestination.address.copy(vowel = vowel), 192) },
-                    onCopyVowel = { vowel -> model.copyModule(ModuleAddress.Vowel(currentDestination.address.index, vowel)) },
-                    onPasteVowel = { vowel -> model.pasteModule(ModuleAddress.Vowel(currentDestination.address.index, vowel)) },
-                    canPasteVowel = { vowel -> model.canPasteModule(ModuleAddress.Vowel(currentDestination.address.index, vowel)) },
+                    onCopyVowel = { vowel -> model.copyModule(ModuleAddress.Vowel(currentDestination.address.index, vowel, currentDestination.address.engine)) },
+                    onPasteVowel = { vowel -> model.pasteModule(ModuleAddress.Vowel(currentDestination.address.index, vowel, currentDestination.address.engine)) },
+                    canPasteVowel = { vowel -> model.canPasteModule(ModuleAddress.Vowel(currentDestination.address.index, vowel, currentDestination.address.engine)) },
                     modifier = contentModifier,
                 )
             }
@@ -562,7 +609,7 @@ fun FullInstrumentEditor(
             onActions = null,
             heldNotes = heldNotes,
             keyboardOctaveShift = keyboardOctaveShift,
-            onPressKeyboardNote = onPressKeyboardNote,
+            onPressKeyboardNote = pressKeyboardNote,
             onReleaseKeyboardNote = onReleaseKeyboardNote,
             modifier = modifier,
             headerActions = {
@@ -644,7 +691,7 @@ fun FullInstrumentEditor(
                 onActions = null,
                 heldNotes = heldNotes,
                 keyboardOctaveShift = keyboardOctaveShift,
-                onPressKeyboardNote = onPressKeyboardNote,
+                onPressKeyboardNote = pressKeyboardNote,
                 onReleaseKeyboardNote = onReleaseKeyboardNote,
                 modifier = Modifier.weight(1f),
             ) { contentModifier ->
@@ -655,15 +702,22 @@ fun FullInstrumentEditor(
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     items(sectionNames, key = { it }) { section ->
+                        if (module == "SUB") {
+                            SubSynthSection(model, section, referenceNote,
+                                onOpenEnvelope = { destination = InstrumentEditorDestination.Envelope(it) },
+                                onOpenFilter = { destination = InstrumentEditorDestination.Filter(it) },
+                                onOpenHarmonics = { destination = InstrumentEditorDestination.SubHarmonics })
+                            return@items
+                        }
                         val rawParameters = parametersFor(
                             state.snapshot?.values.orEmpty(),
                             module,
                             section,
                             state.selectedVoice,
                         ).let { if (section == "Voices") emptyList() else it }
-                        val parameters = if (module == "ADD") {
+                        val parameters = if (module in setOf("ADD", "SUB", "PAD")) {
                             when (section) {
-                                "Amp", "Frequency" -> rawParameters.filterNot {
+                                "Amp", "Frequency", "Harmonics" -> rawParameters.filterNot {
                                     it.descriptor.family in setOf(
                                         SynthEngine.ParameterFamily.ENVELOPE,
                                         SynthEngine.ParameterFamily.LFO,
@@ -690,8 +744,8 @@ fun FullInstrumentEditor(
                             onEdit = model::reset,
                             onDrag = model::dragParameter,
                             onCommit = model::finishParameterDrag,
-                            verticalLabels = module == "ADD",
-                            leadingContentAfterParameters = module == "ADD" && section in setOf("Amp", "Frequency"),
+                            verticalLabels = module in setOf("ADD", "SUB", "PAD"),
+                            leadingContentAfterParameters = module in setOf("ADD", "SUB", "PAD") && section in setOf("Amp", "Frequency"),
                             leadingContent = when (section) {
                                 "Voices" -> ({
                                     VoiceMatrix(
@@ -724,12 +778,14 @@ fun FullInstrumentEditor(
                                         }
                                     }
                                 })
-                                "Amp", "Frequency", "Filter" -> if (module == "ADD") ({
+                                "Amp", "Frequency", "Filter", "Harmonics" -> if (module in setOf("ADD", "SUB", "PAD")) ({
                                     CommonSynthModules(
                                         model = model,
+                                        engine = ModuleEngine.valueOf(module),
                                         section = when (section) {
                                             "Amp" -> SynthEngine.ParameterSection.AMPLITUDE
                                             "Frequency" -> SynthEngine.ParameterSection.FREQUENCY
+                                            "Harmonics" -> SynthEngine.ParameterSection.HARMONICS
                                             else -> SynthEngine.ParameterSection.FILTER
                                         },
                                         onOpenEnvelope = {
@@ -1616,12 +1672,6 @@ private fun AddOscillatorEditorScreen(
                         }
                     }
                 }
-                Text(
-                    "Swipe ↔ harmonic · ↕ magnitude · all ${magnitudes.size}",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.labelMedium,
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp),
-                )
                 HarmonicOverview(
                     magnitudes = magnitudes,
                     enabled = oscillatorEditable,
@@ -1637,6 +1687,258 @@ private fun AddOscillatorEditorScreen(
             }
     }
 
+}
+
+@Composable
+private fun SubSynthSection(
+    model: InstrumentEditorViewModel,
+    section: String,
+    referenceNote: Int,
+    onOpenEnvelope: (ModuleAddress.Envelope) -> Unit,
+    onOpenFilter: (ModuleAddress.Filter) -> Unit,
+    onOpenHarmonics: () -> Unit,
+) {
+    val values = model.state.snapshot?.values.orEmpty()
+    if (section == "Harmonics") {
+        val preview = remember(model.state.revision, model.state.partIndex, model.state.kitIndex, referenceNote) {
+            model.preview(ModuleAddress.SubHarmonicsPreview(referenceNote), 64)
+        }
+        Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+            CompactModuleActions("Harmonics", { model.copyModule(ModuleAddress.SubHarmonics) },
+                { model.pasteModule(ModuleAddress.SubHarmonics) }, model.canPasteModule(ModuleAddress.SubHarmonics),
+                sectionHeading = true)
+            SubHarmonicPreview(preview, -1, referenceNote, Modifier.fillMaxWidth().height(140.dp)
+                .clickable(onClickLabel = "Edit SUB harmonics", onClick = onOpenHarmonics))
+        }
+        return
+    }
+    val parameters = remember(values, section) {
+        parametersFor(values, "SUB", section, 0).filterNot {
+            section == "Filter" || it.descriptor.family in setOf(
+                SynthEngine.ParameterFamily.ENVELOPE, SynthEngine.ParameterFamily.LFO)
+        }
+    }
+    val fixed = values.firstOrNull { it.descriptor.path == "sub/fixedFreq" }?.value == 1.0
+    val detuneType = values.firstOrNull { it.descriptor.path == "sub/detuneType" }?.value?.toInt() ?: 1
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+        if (section != "Filter") SectionBanner(section)
+        DenseParameterGrid(
+            parameters, model::write, verticalLabels = true,
+            onLongPress = model::reset, onReset = model::reset,
+            onDrag = model::dragParameter, onCommit = model::finishParameterDrag,
+            enabled = { it.descriptor.path != "sub/fixedFreqEt" || fixed },
+            valueText = { parameter ->
+                val value = parameter.value
+                when (parameter.descriptor.path) {
+                    "sub/panning" -> if (value == 0.0) "Rnd" else value.roundToInt().toString()
+                    "sub/volume" -> "%.1f dB".format(60.0 * (value / 96.0 - 1.0))
+                    "sub/detune" -> "%.2f ct".format(SynthEngine.fineDetuneCents(detuneType, value.roundToInt()))
+                    "sub/bend" -> "%.2f×".format(value / 24.0)
+                    "sub/offsetHz" -> "%.2f Hz".format((value / 64.0).let { 15.0 * it * kotlin.math.sqrt(kotlin.math.abs(it)) })
+                    "sub/bandwidthScale" -> (value.roundToInt() - 64).toString()
+                    else -> value.roundToInt().toString()
+                }
+            },
+        )
+        CommonSynthModules(
+            model, when (section) {
+                "Amp" -> SynthEngine.ParameterSection.AMPLITUDE
+                "Frequency" -> SynthEngine.ParameterSection.FREQUENCY
+                "Bandwidth" -> SynthEngine.ParameterSection.BANDWIDTH
+                else -> SynthEngine.ParameterSection.FILTER
+            }, engine = ModuleEngine.SUB,
+            onOpenEnvelope = onOpenEnvelope, onOpenLfo = {}, onOpenFilter = onOpenFilter,
+        )
+    }
+}
+
+@Composable
+private fun SubHarmonicsEditor(
+    model: InstrumentEditorViewModel,
+    scrollState: ScrollState,
+    referenceNote: Int,
+    modifier: Modifier = Modifier,
+    onSectionPosition: (String, Int) -> Unit,
+) {
+    val state = model.state
+    val values = state.snapshot?.values.orEmpty()
+    val harmonics = remember(values) { values.filter { it.descriptor.path.startsWith("sub/harmonic/") } }
+    val magnitudes = remember(harmonics) { harmonics.filter { it.descriptor.path.endsWith("/magnitude") } }
+    val widths = remember(harmonics) { harmonics.filter { it.descriptor.path.endsWith("/bandwidth") } }
+    val settings = remember(values) { values.filter { it.descriptor.path in setOf("sub/magnitudeType", "sub/start") } }
+    val overtones = remember(values) { values.filter { it.descriptor.path.startsWith("sub/overtone/") } }
+    var selected by rememberSaveable(state.partIndex, state.kitIndex) { mutableStateOf(0) }
+    var editWidth by rememberSaveable(state.partIndex, state.kitIndex) { mutableStateOf(false) }
+    var confirmClear by remember { mutableStateOf(false) }
+    val address = ModuleAddress.SubHarmonics
+    val preview = remember(state.revision, state.partIndex, state.kitIndex, referenceNote) {
+        model.preview(ModuleAddress.SubHarmonicsPreview(referenceNote), 64)
+    }
+    val magnitude = magnitudes.getOrNull(selected)
+    val width = widths.getOrNull(selected)
+    val hue = Color.hsv(188f, .30f, .22f)
+    CollapsingPreviewLayout(
+        scrollState, modifier, expandedTop = 4.dp, maskBehindPreview = true,
+        preview = { previewModifier -> SubHarmonicPreview(preview, selected, referenceNote, previewModifier) },
+    ) { bottomPadding ->
+        Spacer(Modifier.fillMaxWidth().height(218.dp).onGloballyPositioned {
+            onSectionPosition("Preview", it.positionInParent().y.roundToInt())
+        })
+        Box(Modifier.onGloballyPositioned {
+            onSectionPosition("Harmonics", it.positionInParent().y.roundToInt())
+        }) { SectionBanner("Harmonics") }
+        if (magnitude != null && width != null) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                HarmonicKnobCard("Harmonic #", hue, { (selected + 1).toFloat() }, 1f, 64f,
+                    { selected = it.roundToInt().minus(1).coerceIn(magnitudes.indices) }, modifier = Modifier.weight(1f))
+                HarmonicKnobCard("Magnitude", hue, { model.parameterValue(magnitude).toFloat() }, 0f, 127f,
+                    { model.dragParameter(magnitude, it.roundToInt().toDouble()) }, model::finishParameterDrag,
+                    identity = magnitude.descriptor.path, modifier = Modifier.weight(1f))
+                HarmonicKnobCard("Relative width", hue, { model.parameterValue(width).toFloat() }, 0f, 127f,
+                    { model.dragParameter(width, it.roundToInt().toDouble()) }, model::finishParameterDrag,
+                    identity = width.descriptor.path, modifier = Modifier.weight(1f))
+                DenseControlCard("Reset", Color.hsv(32f, .30f, .22f), Modifier.weight(1f)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        LedButton("Reset harmonic ${selected + 1}", false, {
+                            model.dragParameter(magnitude, magnitude.descriptor.defaultValue)
+                            model.dragParameter(width, width.descriptor.defaultValue)
+                            model.finishParameterDrag()
+                        }, displayLabel = "ONE", action = true, compact = true)
+                        LedButton("Reset all SUB harmonics", false, { confirmClear = true },
+                            displayLabel = "ALL", action = true, compact = true)
+                    }
+                }
+            }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            LedButton("Edit magnitudes", !editWidth, { model.finishParameterDrag(); editWidth = false },
+                displayLabel = "Magnitude", compact = true, modifier = Modifier.weight(1f))
+            LedButton("Edit bandwidths", editWidth, { model.finishParameterDrag(); editWidth = true },
+                displayLabel = "Bandwidth", compact = true, modifier = Modifier.weight(1f))
+        }
+        HarmonicOverview(
+            if (editWidth) widths else magnitudes, true, model::parameterValue, model::finishParameterDrag,
+            selected, { selected = it }, { index, value ->
+                (if (editWidth) widths else magnitudes).getOrNull(index)?.let { model.dragParameter(it, value) }
+            }, Modifier.fillMaxWidth().height(150.dp), unipolar = true,
+        )
+        DenseParameterGrid(settings, model::write, verticalLabels = true, onLongPress = model::reset,
+            onReset = model::reset, onDrag = model::dragParameter, onCommit = model::finishParameterDrag)
+        Box(Modifier.onGloballyPositioned {
+            onSectionPosition("Overtones", it.positionInParent().y.roundToInt())
+        }) { SectionBanner("Overtones") }
+        val mode = overtones.firstOrNull { it.descriptor.path == "sub/overtone/type" }?.value?.toInt() ?: 0
+        DenseParameterGrid(overtones, model::write, verticalLabels = true, onLongPress = model::reset,
+            onReset = model::reset, onDrag = model::dragParameter, onCommit = model::finishParameterDrag,
+            enabled = { parameter -> when (parameter.descriptor.path.substringAfterLast('/')) {
+                "par1", "par3" -> mode != 0
+                "par2" -> mode in 1..6
+                else -> true
+            } })
+        Spacer(Modifier.height(bottomPadding))
+    }
+    if (confirmClear) AlertDialog(
+        onDismissRequest = { confirmClear = false }, title = { Text("Reset SUB harmonics?") },
+        text = { Text("Fundamental 127, all other magnitudes 0, relative widths 64.") },
+        confirmButton = { TextButton(onClick = {
+            model.writePath("sub/action/clearHarmonics", 1.0); confirmClear = false
+        }) { Text("Reset all") } }, dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("Cancel") } },
+    )
+}
+
+@Composable
+private fun SubHarmonicPreview(preview: PreviewSeries, selected: Int, referenceNote: Int, modifier: Modifier = Modifier) {
+    val referenceHz = remember(referenceNote) { 440.0 * 2.0.pow((referenceNote - 69) / 12.0) }
+    val noteLabel = remember(referenceNote) {
+        val names = listOf("C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B")
+        "${names[referenceNote % 12]}${referenceNote / 12 - 1} · ${"%.1f".format(referenceHz)} Hz"
+    }
+    val bands = remember(preview) { preview.values.chunked(3).filter { it.size == 3 } }
+    // Fixed audible-frequency viewport: changing note moves the bands, never the axis.
+    val minimumHz = 20.0
+    val maximumHz = 20_000.0
+    val octaves = kotlin.math.log2(maximumHz / minimumHz)
+    val band = bands.getOrNull(selected)
+    val selectedLabel = if (band == null) "64 harmonic bands" else {
+        val frequency = referenceHz * band[0]
+        val frequencyLabel = if (frequency < 1000) "%.0f Hz".format(frequency) else "%.3g kHz".format(frequency / 1000)
+        "#${selected + 1} · $frequencyLabel · ×${"%.3g".format(band[0])} f₀"
+    }
+    val axisPaint = remember { android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+        typeface = android.graphics.Typeface.MONOSPACE
+        color = android.graphics.Color.rgb(145, 179, 183)
+    } }
+    Surface(modifier, color = Color(0xFF050A0C), shape = RoundedCornerShape(7.dp),
+        border = BorderStroke(1.dp, Color(0xFF2E6973))) {
+        Box {
+            Canvas(Modifier.fillMaxSize().semantics {
+                contentDescription = "$selectedLabel, 20 Hz to 20 kHz, positions and bandwidths at reference $noteLabel"
+            }) {
+                val leftMargin = 10.dp.toPx()
+                val plotWidth = (size.width - leftMargin * 2).coerceAtLeast(1f)
+                val topMargin = 32.dp.toPx()
+                val baseline = size.height - 22.dp.toPx()
+                val plotHeight = (baseline - topMargin).coerceAtLeast(1f)
+                axisPaint.textSize = 10.sp.toPx()
+                axisPaint.textAlign = android.graphics.Paint.Align.LEFT
+                var lastLabelRight = Float.NEGATIVE_INFINITY
+                val endpointLabel = "20k Hz"
+                val endpointLeft = size.width - leftMargin - axisPaint.measureText(endpointLabel)
+                for (hz in listOf(20, 50, 100, 200, 500, 1000, 2000, 5000, 10000)) {
+                    val x = leftMargin + (kotlin.math.log2(hz / minimumHz) / octaves).toFloat() * plotWidth
+                    drawLine(Color(0xFF193139), androidx.compose.ui.geometry.Offset(x, topMargin),
+                        androidx.compose.ui.geometry.Offset(x, baseline), 1f)
+                    val label = if (hz < 1000) hz.toString() else "${hz / 1000}k"
+                    val labelWidth = axisPaint.measureText(label)
+                    if (x >= lastLabelRight + 8.dp.toPx() && x + labelWidth + 8.dp.toPx() < endpointLeft) {
+                        drawContext.canvas.nativeCanvas.drawText(label, x, size.height - 6.dp.toPx(), axisPaint)
+                        lastLabelRight = x + labelWidth
+                    }
+                }
+                axisPaint.textAlign = android.graphics.Paint.Align.RIGHT
+                drawContext.canvas.nativeCanvas.drawText(endpointLabel,
+                    size.width - leftMargin, size.height - 6.dp.toPx(), axisPaint)
+                bands.forEachIndexed { index, item ->
+                    val center = kotlin.math.log2((referenceHz * item[0]).coerceAtLeast(.0001) / minimumHz)
+                    val x = leftMargin + (center / octaves).toFloat() * plotWidth
+                    val centerVisible = center in 0.0..octaves
+                    val color = Color.hsv(subHarmonicHue(index), .65f, .95f)
+                    if (item[1] > 0f) {
+                        // Native bandwidth is in octaves: equal widths here mean equal ratios,
+                        // while absolute bandwidth in Hz grows with the center frequency.
+                        val low = center - item[2] / 2.0
+                        val high = center + item[2] / 2.0
+                        val left = leftMargin + (low / octaves).coerceIn(0.0, 1.0).toFloat() * plotWidth
+                        val right = leftMargin + (high / octaves).coerceIn(0.0, 1.0).toFloat() * plotWidth
+                        val top = baseline - item[1].coerceIn(0f, 1f) * plotHeight
+                        if (high >= 0 && low <= octaves) drawRect(color.copy(alpha = .18f),
+                            androidx.compose.ui.geometry.Offset(left, top),
+                            androidx.compose.ui.geometry.Size((right - left).coerceAtLeast(0f), baseline - top))
+                        if (centerVisible) {
+                            drawLine(color, androidx.compose.ui.geometry.Offset(x, baseline),
+                                androidx.compose.ui.geometry.Offset(x, top), strokeWidth = if (index == selected) 3f else 1f)
+                            // Separate foot marker, without inflating the magnitude.
+                            drawCircle(color, if (index == selected) 2.dp.toPx() else 1.3.dp.toPx(),
+                                androidx.compose.ui.geometry.Offset(x, baseline + 3.dp.toPx()))
+                        }
+                    }
+                    if (index == selected && centerVisible) drawLine(color.copy(alpha = .7f),
+                        androidx.compose.ui.geometry.Offset(x, topMargin),
+                        androidx.compose.ui.geometry.Offset(x, baseline), strokeWidth = 1f)
+                }
+            }
+            Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 5.dp),
+                horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text(selectedLabel, color = Color(0xFFFFD783), style = MaterialTheme.typography.labelSmall,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                Spacer(Modifier.width(6.dp))
+                Surface(color = Color(0xFF183238), shape = RoundedCornerShape(4.dp)) {
+                    Text(noteLabel, color = Color(0xFFA4C8CB), style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp))
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -1726,6 +2028,7 @@ private fun HarmonicOverview(
     onSelect: (Int) -> Unit,
     onMagnitudeChange: (Int, Double) -> Unit,
     modifier: Modifier = Modifier,
+    unipolar: Boolean = false,
 ) {
     var size by remember { mutableStateOf(IntSize.Zero) }
     val currentValueOf by rememberUpdatedState(valueOf)
@@ -1735,7 +2038,14 @@ private fun HarmonicOverview(
     val currentOnSelect by rememberUpdatedState(onSelect)
     val currentOnMagnitudeChange by rememberUpdatedState(onMagnitudeChange)
     Canvas(
-        modifier.alpha(if (enabled) 1f else .45f).onSizeChanged { size = it }.pointerInput(magnitudes.firstOrNull()?.descriptor?.path, magnitudes.size, size, enabled) {
+        modifier.semantics { contentDescription = "Harmonics, selected ${selected + 1} of ${magnitudes.size}" }
+            .pointerInput(unipolar, enabled, magnitudes.size) {
+                if (unipolar && enabled) detectTapGestures { position ->
+                    if (currentMagnitudes.isNotEmpty() && size.width > 0)
+                        currentOnSelect((position.x / size.width * currentMagnitudes.size).toInt()
+                            .coerceIn(currentMagnitudes.indices))
+                }
+            }.alpha(if (enabled) 1f else .45f).onSizeChanged { size = it }.pointerInput(magnitudes.firstOrNull()?.descriptor?.path, magnitudes.size, size, enabled) {
             if (!enabled) return@pointerInput
             var accumulatedHorizontalDrag = 0f
             var dragSelection = currentSelected
@@ -1794,9 +2104,15 @@ private fun HarmonicOverview(
         if (magnitudes.isNotEmpty()) {
             val slot = size.width / magnitudes.size
             magnitudes.forEachIndexed { index, harmonic ->
-                val normalized = ((valueOf(harmonic) - 64.0) / 63.0).coerceIn(-1.0, 1.0).toFloat()
+                val normalized = if (unipolar) {
+                    ((valueOf(harmonic) - harmonic.descriptor.minimum) /
+                        (harmonic.descriptor.maximum - harmonic.descriptor.minimum)).coerceIn(0.0, 1.0).toFloat()
+                } else ((valueOf(harmonic) - 64.0) / 63.0).coerceIn(-1.0, 1.0).toFloat()
+                val baseline = if (unipolar) size.height * .96f else centerY
+                val color = if (unipolar) Color.hsv(subHarmonicHue(index), .65f, .95f)
+                    else if (index == selected) Color(0xFFFFC857) else Color(0xFF36C5C9)
                 val x = slot * (index + .5f)
-                val y = centerY - normalized * centerY * .88f
+                val y = if (unipolar) baseline - normalized * size.height * .88f else centerY - normalized * centerY * .88f
                 drawLine(
                     color = Color(0xFF23434B),
                     start = androidx.compose.ui.geometry.Offset(x, centerY * .12f),
@@ -1804,13 +2120,13 @@ private fun HarmonicOverview(
                     strokeWidth = maxOf(1f, slot * .16f),
                 )
                 drawLine(
-                    color = if (index == selected) Color(0xFFFFC857) else Color(0xFF36C5C9),
-                    start = androidx.compose.ui.geometry.Offset(x, centerY),
+                    color = color,
+                    start = androidx.compose.ui.geometry.Offset(x, baseline),
                     end = androidx.compose.ui.geometry.Offset(x, y),
                     strokeWidth = if (index == selected) maxOf(3f, slot * .8f) else maxOf(1f, slot * .55f),
                 )
                 drawCircle(
-                    color = if (index == selected) Color(0xFFFFC857) else Color(0xFF36C5C9),
+                    color = color,
                     radius = if (index == selected) maxOf(2.5f, slot * .42f) else maxOf(1.2f, slot * .2f),
                     center = androidx.compose.ui.geometry.Offset(x, y),
                 )
@@ -2212,6 +2528,22 @@ internal fun parametersFor(
             "Resonance" -> false
             else -> false
         }
+    }
+    if (module in setOf("SUB", "PAD")) {
+        if (descriptor.module.name != module || descriptor.scope == SynthEngine.ParameterScope.VOICE ||
+            descriptor.path == "${module.lowercase()}/stereo") return@filter false
+        val section = when (tab) {
+            "Global" -> SynthEngine.ParameterSection.GLOBAL
+            "Amp" -> SynthEngine.ParameterSection.AMPLITUDE
+            "Frequency" -> SynthEngine.ParameterSection.FREQUENCY
+            "Filter" -> SynthEngine.ParameterSection.FILTER
+            "Bandwidth" -> SynthEngine.ParameterSection.BANDWIDTH
+            "Harmonics" -> SynthEngine.ParameterSection.HARMONICS
+            "Profile" -> SynthEngine.ParameterSection.PROFILE
+            "Quality" -> SynthEngine.ParameterSection.QUALITY
+            else -> return@filter false
+        }
+        return@filter descriptor.section == section
     }
     val group = parameter.descriptor.group
     if (!group.startsWith(module, ignoreCase = true)) return@filter false

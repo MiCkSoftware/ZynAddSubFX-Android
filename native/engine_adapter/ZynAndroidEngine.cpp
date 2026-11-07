@@ -15,6 +15,7 @@
 #include "globals.h"
 #include "Misc/Config.h"
 #include "Misc/Util.h"
+#include "Misc/Time.h"
 #include "Misc/Master.h"
 #include "Misc/Part.h"
 #include "Misc/XMLwrapper.h"
@@ -103,6 +104,75 @@ constexpr struct OscillatorControl {
     {"ampRandomPower", "Randomness power", &zyn::OscilGen::Pamprandpower, 0, 127, 64},
 };
 
+// Module engine codes are shared with ModuleEngine in Kotlin: ADD=0, SUB=1, PAD=2.
+bool supportsModule(int engine, int kind, int role) {
+    if (engine < 0 || engine > 2 || kind < 0 || kind > 9) return false;
+    if (kind == 9) return engine == 1 && role == 0;
+    if (kind == 2) return role >= 0 && (engine == 0 ? role <= 4 :
+        engine == 1 ? (role <= 2 || role == 5) : role <= 2);
+    if (kind == 3) return engine != 1 && role >= 0 && role <= 2;
+    if (kind == 4 || kind == 6) return role >= 0 && role < FF_MAX_VOWELS;
+    if (kind == 5) return engine != 1 && role == 0;
+    if (kind == 1 || kind == 8) return engine != 1 && role >= 0 &&
+        role <= (kind == 1 ? 1 : 5) && (engine == 0 || !(role & 1));
+    return engine == 0 && role == 0;
+}
+
+struct ResolvedModule {
+    zyn::EnvelopeParams *envelope = nullptr;
+    zyn::LFOParams *lfo = nullptr;
+    zyn::FilterParams *filter = nullptr;
+    zyn::OscilGen *oscillator = nullptr;
+    zyn::Resonance *resonance = nullptr;
+};
+
+ResolvedModule resolveModule(const zyn::Part::Kit &kit, int engine, int index, int role) {
+    ResolvedModule result;
+    if (index < -1 || index >= NUM_VOICES || (engine != 0 && index != -1)) return result;
+    if (engine == 0 && kit.adpars) {
+        if (index == -1) {
+            auto &g = kit.adpars->GlobalPar;
+            result.envelope = role == 0 ? g.AmpEnvelope : role == 1 ? g.FreqEnvelope : role == 2 ? g.FilterEnvelope : nullptr;
+            result.lfo = role == 0 ? g.AmpLfo : role == 1 ? g.FreqLfo : role == 2 ? g.FilterLfo : nullptr;
+            result.filter = g.GlobalFilter;
+            result.resonance = g.Reson;
+        } else {
+            auto &v = kit.adpars->VoicePar[index];
+            result.envelope = role == 0 ? v.AmpEnvelope : role == 1 ? v.FreqEnvelope :
+                role == 2 ? v.FilterEnvelope : role == 3 ? v.FMAmpEnvelope : role == 4 ? v.FMFreqEnvelope : nullptr;
+            result.lfo = role == 0 ? v.AmpLfo : role == 1 ? v.FreqLfo : role == 2 ? v.FilterLfo : nullptr;
+            result.filter = v.VoiceFilter;
+            result.oscillator = (role & 1) ? v.FmGn : v.OscilGn;
+        }
+    } else if (engine == 1 && kit.subpars) {
+        auto &p = *kit.subpars;
+        result.envelope = role == 0 ? p.AmpEnvelope : role == 1 ? p.FreqEnvelope :
+            role == 2 ? p.GlobalFilterEnvelope : role == 5 ? p.BandWidthEnvelope : nullptr;
+        result.filter = p.GlobalFilter;
+    } else if (engine == 2 && kit.padpars) {
+        auto &p = *kit.padpars;
+        result.envelope = role == 0 ? p.AmpEnvelope : role == 1 ? p.FreqEnvelope : role == 2 ? p.FilterEnvelope : nullptr;
+        result.lfo = role == 0 ? p.AmpLfo : role == 1 ? p.FreqLfo : role == 2 ? p.FilterLfo : nullptr;
+        result.filter = p.GlobalFilter;
+        result.oscillator = p.oscilgen;
+        result.resonance = p.resonance;
+    }
+    return result;
+}
+
+bool hasModule(const zyn::Part::Kit &kit, const ResolvedModule &module, int kind, int index) {
+    switch (kind) {
+        case 0: case 7: return kit.adpars && index >= 0 && index < NUM_VOICES;
+        case 1: case 8: return module.oscillator != nullptr;
+        case 2: return module.envelope != nullptr;
+        case 3: return module.lfo != nullptr;
+        case 4: case 6: return module.filter != nullptr;
+        case 5: return module.resonance != nullptr;
+        case 9: return kit.subpars && index == -1;
+        default: return false;
+    }
+}
+
 struct ParameterMetadata {
     const char *module = "unknown";
     const char *scope = "global";
@@ -141,7 +211,8 @@ ParameterMetadata parameterMetadata(std::string_view path, std::string_view grou
     }
 
     bool sectionFromPath = false;
-    if (path.rfind("add/", 0) == 0) {
+    if (metadata.module == std::string_view("add") || metadata.module == std::string_view("sub") ||
+        metadata.module == std::string_view("pad")) {
         auto field = path.substr(4);
         if (field.rfind("voice/", 0) == 0) {
             field = field.substr(field.find('/') + 1);
@@ -168,12 +239,19 @@ ParameterMetadata parameterMetadata(std::string_view path, std::string_view grou
             } else {
                 metadata.section = "voice";
             }
+        } else if (metadata.module == std::string_view("sub") &&
+                   (field.rfind("bandwidth", 0) == 0 || field == "stages")) {
+            metadata.section = "bandwidth";
+        } else if (metadata.module == std::string_view("sub") &&
+                   (field.rfind("harmonic", 0) == 0 || field.rfind("overtone", 0) == 0 || field == "magnitudeType" || field == "start")) {
+            metadata.section = "harmonics";
         } else if (field.rfind("amp", 0) == 0 || field.rfind("volume", 0) == 0 ||
                    field.rfind("panning", 0) == 0 || field.rfind("velocity", 0) == 0 ||
                    field.rfind("punch", 0) == 0 || field.rfind("fadeIn", 0) == 0) {
             metadata.section = "amplitude";
         } else if (field.rfind("freq", 0) == 0 || field.rfind("detune", 0) == 0 ||
-                   field.rfind("octave", 0) == 0 || field.rfind("coarse", 0) == 0) {
+                   field.rfind("octave", 0) == 0 || field.rfind("coarse", 0) == 0 ||
+                   field.rfind("fixedFreq", 0) == 0 || field == "bend" || field == "offsetHz") {
             metadata.section = "frequency";
         } else if (field.rfind("filter", 0) == 0) {
             metadata.section = "filter";
@@ -182,7 +260,8 @@ ParameterMetadata parameterMetadata(std::string_view path, std::string_view grou
         } else {
             metadata.section = "global";
         }
-        sectionFromPath = true;
+        sectionFromPath = path.rfind("add/", 0) == 0 || path.rfind("sub/", 0) == 0 || field.find("Envelope") != std::string_view::npos ||
+            field.find("Lfo") != std::string_view::npos || field.rfind("filter", 0) == 0;
     }
     if (!sectionFromPath) {
         if (group.find("Amplitude") != std::string_view::npos) metadata.section = "amplitude";
@@ -206,7 +285,8 @@ ParameterMetadata parameterMetadata(std::string_view path, std::string_view grou
     else if (path.find("/osc/") != std::string_view::npos ||
              path.find("/modOsc/") != std::string_view::npos) metadata.family = "oscillator";
     else if (path.find("resonance") != std::string_view::npos) metadata.family = "resonance";
-    else if (path.find("/harmonic/") != std::string_view::npos) metadata.family = "harmonic";
+    else if (path.find("/harmonic/") != std::string_view::npos || path.rfind("sub/overtone", 0) == 0 ||
+             path == "sub/magnitudeType" || path == "sub/start") metadata.family = "harmonic";
     else if (path.find("filter") != std::string_view::npos ||
              path.find("Filter") != std::string_view::npos) metadata.family = "filter";
     return metadata;
@@ -782,6 +862,33 @@ std::string ZynAndroidEngine::parameterSnapshot(int partIndex, int kitIndex) con
         add((std::string(prefix) + "/waveform").c_str(), "LFO waveform", group, "enum", lfo.PLFOtype, 0, 7, 0,
             "Sine,Triangle,Square,Ramp up,Ramp down,Exp down 1,Exp down 2,Random");
     };
+    auto filterValue = [&](const std::string &prefix, const std::string &group, const zyn::FilterParams &filter) {
+        const int cutoff = std::clamp(static_cast<int>(std::lround(
+            ((std::log2(filter.basefreq) - 9.96578428f) / 5.0f + 1.0f) * 64.0f)), 0, 127);
+        const int q = std::clamp(static_cast<int>(std::lround(
+            127.0f * std::sqrt(std::log(0.9f + filter.baseq) / std::log(1000.0f)))), 0, 127);
+        const int tracking = std::clamp(static_cast<int>(std::lround(filter.freqtracking / 100.0f * 64.0f + 64.0f)), 0, 127);
+        const int gain = std::clamp(static_cast<int>(std::lround((filter.gain / 30.0f + 1.0f) * 64.0f)), 0, 127);
+        add((prefix + "/category").c_str(), "Filter category", (group + " / Parameters").c_str(), "enum",
+            filter.Pcategory, 0, 4, 0, "Analog,Formant,State variable,Moog,Comb");
+        const auto &type = filterTypeControl(filter.Pcategory);
+        if (type.options)
+            add((prefix + "/type").c_str(), "Filter type", (group + " / Parameters").c_str(), "enum",
+                std::min<int>(filter.Ptype, type.maximum), 0, type.maximum, 0, type.options);
+        add((prefix + "/cutoff").c_str(), "Cutoff frequency", (group + " / Parameters").c_str(), "int", cutoff, 0, 127, 94);
+        add((prefix + "/q").c_str(), "Q", (group + " / Parameters").c_str(), "int", q, 0, 127, 40);
+        add((prefix + "/tracking").c_str(), "Frequency tracking", (group + " / Parameters").c_str(), "int", tracking, 0, 127, 64);
+        add((prefix + "/gain").c_str(), "Filter gain", (group + " / Parameters").c_str(), "int", gain, 0, 127, 64);
+        add((prefix + "/stages").c_str(), "Filter stages", (group + " / Parameters").c_str(), "int", filter.Pstages + 1, 1, 6, 1);
+        if (filter.Pcategory == 4) {
+            add((prefix + "/combHpf").c_str(), "Comb high pass", (group + " / Parameters").c_str(), "int",
+                filter.Phpf, 0, 127, 0);
+            add((prefix + "/combLpf").c_str(), "Comb low pass", (group + " / Parameters").c_str(), "int",
+                filter.Plpf, 0, 127, 127);
+        }
+        if (filter.Pcategory == 1)
+            formantValue(prefix.c_str(), (group + " / Formant").c_str(), filter);
+    };
     add("part/enabled", "Enabled", "Part", "bool", part->Penabled, 0, 1, 1);
     add("part/volume", "Volume", "Part", "int", std::clamp(
         static_cast<int>(std::lround(96.0f * part->Volume / 40.0f + 96.0f)), 0, 127), 0, 127, 96);
@@ -845,34 +952,7 @@ std::string ZynAndroidEngine::parameterSnapshot(int partIndex, int kitIndex) con
         const int coarse = g.PCoarseDetune % 1024 >= 512 ? g.PCoarseDetune % 1024 - 1024 : g.PCoarseDetune % 1024;
         add("add/octave", "Octave", "ADD / Frequency / Global", "int", octave, -8, 7, 0);
         add("add/coarse", "Coarse detune", "ADD / Frequency / Global", "int", coarse, -64, 63, 0);
-        if (g.GlobalFilter) {
-            const auto &filter = *g.GlobalFilter;
-            const int cutoff = std::clamp(static_cast<int>(std::lround(
-                ((std::log2(filter.basefreq) - 9.96578428f) / 5.0f + 1.0f) * 64.0f)), 0, 127);
-            const int q = std::clamp(static_cast<int>(std::lround(
-                127.0f * std::sqrt(std::log(0.9f + filter.baseq) / std::log(1000.0f)))), 0, 127);
-            const int tracking = std::clamp(static_cast<int>(std::lround(filter.freqtracking / 100.0f * 64.0f + 64.0f)), 0, 127);
-            const int gain = std::clamp(static_cast<int>(std::lround((filter.gain / 30.0f + 1.0f) * 64.0f)), 0, 127);
-            add("add/filter/category", "Filter category", "ADD / Filter / Parameters", "enum",
-                filter.Pcategory, 0, 4, 0, "Analog,Formant,State variable,Moog,Comb");
-            const auto &type = filterTypeControl(filter.Pcategory);
-            if (type.options)
-                add("add/filter/type", "Filter type", "ADD / Filter / Parameters", "enum",
-                    std::min<int>(filter.Ptype, type.maximum), 0, type.maximum, 0, type.options);
-            add("add/filter/cutoff", "Cutoff frequency", "ADD / Filter / Parameters", "int", cutoff, 0, 127, 94);
-            add("add/filter/q", "Q", "ADD / Filter / Parameters", "int", q, 0, 127, 40);
-            add("add/filter/tracking", "Frequency tracking", "ADD / Filter / Parameters", "int", tracking, 0, 127, 64);
-            add("add/filter/gain", "Filter gain", "ADD / Filter / Parameters", "int", gain, 0, 127, 64);
-            add("add/filter/stages", "Filter stages", "ADD / Filter / Parameters", "int", filter.Pstages + 1, 1, 6, 1);
-            if (filter.Pcategory == 4) {
-                add("add/filter/combHpf", "Comb high pass", "ADD / Filter / Parameters", "int",
-                    filter.Phpf, 0, 127, 0);
-                add("add/filter/combLpf", "Comb low pass", "ADD / Filter / Parameters", "int",
-                    filter.Plpf, 0, 127, 127);
-            }
-            if (filter.Pcategory == 1)
-                formantValue("add/filter", "ADD / Filter / Formant", filter);
-        }
+        if (g.GlobalFilter) filterValue("add/filter", "ADD / Filter", *g.GlobalFilter);
         if (g.FilterEnvelope)
             envelopeValue("add/filterEnvelope", "ADD / Filter / Envelope", *g.FilterEnvelope, true, false, false);
         if (g.FilterLfo)
@@ -1070,14 +1150,60 @@ std::string ZynAndroidEngine::parameterSnapshot(int partIndex, int kitIndex) con
             if (v.FmGn) addOscillator(*v.FmGn, prefix + "modOsc/", group + " / Modulator oscillator");
         }
     }
+    for (int engine = 1; engine <= 2; ++engine) {
+        const std::string prefix = engine == 1 ? "sub" : "pad";
+        const std::string group = engine == 1 ? "SUB" : "PAD";
+        const char *fields[] = {"ampEnvelope", "freqEnvelope", "filterEnvelope", nullptr, nullptr, "bandwidthEnvelope"};
+        const char *sections[] = {"Amplitude", "Frequency", "Filter", nullptr, nullptr, "Bandwidth"};
+        for (int role : {0, 1, 2, 5}) {
+            const auto module = resolveModule(kit, engine, -1, role);
+            if (module.envelope) envelopeValue((prefix + "/" + fields[role]).c_str(),
+                (group + " / " + sections[role] + " / Envelope").c_str(), *module.envelope,
+                role == 0 || role == 2, role == 0, role == 0);
+            if (role < 3 && module.lfo) {
+                const char *lfoFields[] = {"ampLfo", "freqLfo", "filterLfo"};
+                lfoValue((prefix + "/" + lfoFields[role]).c_str(),
+                    (group + " / " + sections[role] + " / LFO").c_str(), *module.lfo);
+            }
+        }
+        const auto module = resolveModule(kit, engine, -1, 0);
+        if (module.filter) filterValue(prefix + "/filter", group + " / Filter", *module.filter);
+    }
     if (kit.subpars) {
         const auto &s = *kit.subpars;
+        add("sub/freqEnvelopeEnabled", "Frequency envelope", "SUB / Frequency / Envelope", "bool", s.PFreqEnvelopeEnabled, 0, 1, 0);
+        add("sub/bandwidthEnvelopeEnabled", "Bandwidth envelope", "SUB / Bandwidth / Envelope", "bool", s.PBandWidthEnvelopeEnabled, 0, 1, 0);
+        add("sub/filterVelocity", "Velocity amount", "SUB / Filter / Parameters", "int", s.PGlobalFilterVelocityScale, 0, 127, 0);
+        add("sub/filterVelocitySense", "Velocity sensitivity", "SUB / Filter / Parameters", "int", s.PGlobalFilterVelocityScaleFunction, 0, 127, 64);
         add("sub/stereo", "Stereo", "SUB / Global", "bool", s.Pstereo, 0, 1, 1);
+        add("sub/volume", "Volume", "SUB / Amplitude", "int", std::clamp(
+            static_cast<int>(std::lround(96.0f * (1.0f + s.Volume / 60.0f))), 0, 127), 0, 127, 96);
+        add("sub/velocity", "Velocity", "SUB / Amplitude", "int",
+            std::clamp(static_cast<int>(std::lround(s.AmpVelocityScaleFunction * 127.0f / 100.0f)), 0, 127), 0, 127, 90);
+        add("sub/detune", "Fine detune", "SUB / Frequency", "int", s.PDetune, 0, 16383, 8192);
+        add("sub/detuneType", "Detune type", "SUB / Frequency", "enum", s.PDetuneType, 1, 4, 1,
+            "Default,L35 cents,L10 cents,E100 cents,E1200 cents");
+        int octave = s.PCoarseDetune / 1024;
+        if (octave >= 8) octave -= 16;
+        int coarse = s.PCoarseDetune % 1024;
+        if (coarse >= 512) coarse -= 1024;
+        add("sub/octave", "Octave", "SUB / Frequency", "int", octave, -8, 7, 0);
+        add("sub/coarse", "Coarse detune", "SUB / Frequency", "int", coarse, -64, 63, 0);
+        add("sub/bend", "Bend", "SUB / Frequency", "int", static_cast<int>(s.PBendAdjust) - 64, -64, 63, 24);
+        add("sub/offsetHz", "Offset Hz", "SUB / Frequency", "int", static_cast<int>(s.POffsetHz) - 64, -64, 63, 0);
+        add("sub/fixedFreqEt", "Equal temperament", "SUB / Frequency", "int", s.PfixedfreqET, 0, 127, 0);
+        add("sub/magnitudeType", "Magnitude scale", "SUB / Harmonics", "enum", s.Phmagtype, 0, 4, 0,
+            "Linear,-40 dB,-60 dB,-80 dB,-100 dB");
+        add("sub/overtone/type", "Positions", "SUB / Harmonics / Overtones", "enum", s.POvertoneSpread.type,
+            0, 7, 0, "Harmonic,ShiftU,ShiftL,PowerU,PowerL,Sine,Power,Shift");
+        add("sub/overtone/par1", "Parameter 1", "SUB / Harmonics / Overtones", "int", s.POvertoneSpread.par1, 0, 255, 0);
+        add("sub/overtone/par2", "Parameter 2", "SUB / Harmonics / Overtones", "int", s.POvertoneSpread.par2, 0, 255, 0);
+        add("sub/overtone/par3", "Force harmonics", "SUB / Harmonics / Overtones", "int", s.POvertoneSpread.par3, 0, 255, 0);
         add("sub/panning", "Panning", "SUB / Amplitude", "int", s.PPanning, 0, 127, 64);
-        add("sub/bandwidth", "Bandwidth", "SUB / Harmonics", "int", s.Pbandwidth, 0, 127, 64);
-        add("sub/bandwidthScale", "Bandwidth scale", "SUB / Harmonics", "int", s.Pbwscale, 0, 127, 64);
-        add("sub/stages", "Filter stages", "SUB / Harmonics", "int", s.Pnumstages, 1, 5, 2);
-        add("sub/start", "Harmonic start", "SUB / Harmonics", "enum", s.Pstart, 0, 2, 1, "Zero,Random,Positive");
+        add("sub/bandwidth", "Bandwidth", "SUB / Bandwidth", "int", s.Pbandwidth, 0, 127, 40);
+        add("sub/bandwidthScale", "Bandwidth scale", "SUB / Bandwidth", "int", s.Pbwscale, 0, 127, 64);
+        add("sub/stages", "Noise filter stages", "SUB / Bandwidth", "int", s.Pnumstages, 1, 5, 2);
+        add("sub/start", "Harmonic start", "SUB / Harmonics", "enum", s.Pstart, 0, 2, 1, "Zero,Random,Max.");
         add("sub/fixedFreq", "Fixed frequency", "SUB / Frequency", "bool", s.Pfixedfreq, 0, 1, 0);
         add("sub/filterEnabled", "Global filter", "SUB / Filter", "bool", s.PGlobalFilterEnabled, 0, 1, 0);
         for (int h = 0; h < MAX_SUB_HARMONICS; ++h) {
@@ -1088,6 +1214,8 @@ std::string ZynAndroidEngine::parameterSnapshot(int partIndex, int kitIndex) con
     }
     if (kit.padpars) {
         const auto &p = *kit.padpars;
+        add("pad/filterVelocity", "Velocity amount", "PAD / Filter / Parameters", "int", p.PFilterVelocityScale, 0, 127, 0);
+        add("pad/filterVelocitySense", "Velocity sensitivity", "PAD / Filter / Parameters", "int", p.PFilterVelocityScaleFunction, 0, 127, 64);
         add("pad/stereo", "Stereo", "PAD / Global", "bool", p.PStereo, 0, 1, 1);
         add("pad/panning", "Panning", "PAD / Amplitude", "int", p.PPanning, 0, 127, 64);
         add("pad/volume", "Volume", "PAD / Amplitude", "int", p.PVolume, 0, 127, 90);
@@ -1234,6 +1362,39 @@ bool ZynAndroidEngine::setParameter(int partIndex, int kitIndex, const std::stri
         else return false;
         return true;
     };
+    auto writeFilter = [&](zyn::FilterParams &filter, const std::string &field) {
+        if (field.rfind("formant/", 0) == 0) return writeFormant(filter, field.substr(8));
+        else if (field == "category") filter.Pcategory = i(0, 4);
+        else if (field == "type") filter.Ptype = i(0, filterTypeControl(filter.Pcategory).maximum);
+        else if (field == "cutoff") filter.basefreq = zyn::FilterParams::basefreqFromOldPreq(i(0, 127));
+        else if (field == "q") filter.baseq = zyn::FilterParams::baseqFromOldPq(i(0, 127));
+        else if (field == "tracking") filter.freqtracking = 100.0f * (i(0, 127) - 64.0f) / 64.0f;
+        else if (field == "gain") filter.gain = zyn::FilterParams::gainFromOldPgain(i(0, 127));
+        else if (field == "stages") filter.Pstages = i(1, 6) - 1;
+        else if (field == "combHpf") filter.Phpf = i(0, 127);
+        else if (field == "combLpf") filter.Plpf = i(0, 127);
+        else return false;
+        filter.changed = true;
+        return true;
+    };
+    if (path.rfind("sub/", 0) == 0 || path.rfind("pad/", 0) == 0) {
+        const int engine = path.rfind("sub/", 0) == 0 ? 1 : 2;
+        const auto rest = path.substr(4);
+        const char *fields[] = {"ampEnvelope/", "freqEnvelope/", "filterEnvelope/", nullptr, nullptr, "bandwidthEnvelope/"};
+        for (int role : {0, 1, 2, 5}) {
+            const auto module = resolveModule(kit, engine, -1, role);
+            if (rest.rfind(fields[role], 0) == 0)
+                return module.envelope && writeEnvelope(*module.envelope, rest.substr(std::strlen(fields[role])));
+            if (role < 3) {
+                const char *lfoFields[] = {"ampLfo/", "freqLfo/", "filterLfo/"};
+                if (rest.rfind(lfoFields[role], 0) == 0)
+                    return module.lfo && writeLfo(*module.lfo, rest.substr(std::strlen(lfoFields[role])));
+            }
+        }
+        const auto module = resolveModule(kit, engine, -1, 0);
+        if (rest.rfind("filter/", 0) == 0)
+            return module.filter && writeFilter(*module.filter, rest.substr(7));
+    }
     if (path == "part/enabled") return setPartEnabled(partIndex, b());
     if (path == "part/volume") return setPartVolume127(partIndex, i(0, 127));
     if (path == "part/panning") return setPartPanning(partIndex, i(0, 127));
@@ -1257,9 +1418,9 @@ bool ZynAndroidEngine::setParameter(int partIndex, int kitIndex, const std::stri
     else if (path == "kit/minKey") kit.Pminkey = i(0, 127);
     else if (path == "kit/maxKey") kit.Pmaxkey = i(0, 127);
     else if (path == "kit/sendFx") kit.Psendtoparteffect = i(0, 3);
-    else if (path == "kit/addEnabled") kit.Padenabled = b();
-    else if (path == "kit/subEnabled") kit.Psubenabled = b();
-    else if (path == "kit/padEnabled") kit.Ppadenabled = b();
+    else if (path == "kit/addEnabled") return part->setKitSynthEnabled(kitIndex, 0, b());
+    else if (path == "kit/subEnabled") return part->setKitSynthEnabled(kitIndex, 1, b());
+    else if (path == "kit/padEnabled") return part->setKitSynthEnabled(kitIndex, 2, b());
     else if (path.rfind("add/", 0) == 0 && kit.adpars) {
         auto &g = kit.adpars->GlobalPar;
         if (path == "add/stereo") g.PStereo = b();
@@ -1297,19 +1458,7 @@ bool ZynAndroidEngine::setParameter(int partIndex, int kitIndex, const std::stri
             if (!writeLfo(*g.FilterLfo, path.substr(14))) return false;
         } else if (path.rfind("add/filter/", 0) == 0 && g.GlobalFilter) {
             auto &filter = *g.GlobalFilter;
-            const auto field = path.substr(11);
-            if (field.rfind("formant/", 0) == 0) return writeFormant(filter, field.substr(8));
-            else if (field == "category") filter.Pcategory = i(0, 4);
-            else if (field == "type") filter.Ptype = i(0, filterTypeControl(filter.Pcategory).maximum);
-            else if (field == "cutoff") filter.basefreq = zyn::FilterParams::basefreqFromOldPreq(i(0, 127));
-            else if (field == "q") filter.baseq = zyn::FilterParams::baseqFromOldPq(i(0, 127));
-            else if (field == "tracking") filter.freqtracking = 100.0f * (i(0, 127) - 64.0f) / 64.0f;
-            else if (field == "gain") filter.gain = zyn::FilterParams::gainFromOldPgain(i(0, 127));
-            else if (field == "stages") filter.Pstages = i(1, 6) - 1;
-            else if (field == "combHpf") filter.Phpf = i(0, 127);
-            else if (field == "combLpf") filter.Plpf = i(0, 127);
-            else return false;
-            filter.changed = true;
+            return writeFilter(filter, path.substr(11));
         }
         else if (path.rfind("add/resonance/", 0) == 0 && g.Reson) {
             auto &resonance = *g.Reson;
@@ -1471,7 +1620,33 @@ bool ZynAndroidEngine::setParameter(int partIndex, int kitIndex, const std::stri
         } else return false;
     } else if (path.rfind("sub/", 0) == 0 && kit.subpars) {
         auto &s = *kit.subpars;
-        if (path == "sub/stereo") s.Pstereo = b();
+        if (path == "sub/freqEnvelopeEnabled") s.PFreqEnvelopeEnabled = b();
+        else if (path == "sub/bandwidthEnvelopeEnabled") s.PBandWidthEnvelopeEnabled = b();
+        else if (path == "sub/filterVelocity") s.PGlobalFilterVelocityScale = i(0, 127);
+        else if (path == "sub/filterVelocitySense") s.PGlobalFilterVelocityScaleFunction = i(0, 127);
+        else if (path == "sub/stereo") s.Pstereo = b();
+        else if (path == "sub/volume") s.Volume = -60.0f * (1.0f - i(0, 127) / 96.0f);
+        else if (path == "sub/velocity") s.AmpVelocityScaleFunction = i(0, 127) * 100.0f / 127.0f;
+        else if (path == "sub/detune") s.PDetune = i(0, 16383);
+        else if (path == "sub/detuneType") s.PDetuneType = i(1, 4);
+        else if (path == "sub/octave") {
+            int octave = i(-8, 7);
+            if (octave < 0) octave += 16;
+            s.PCoarseDetune = octave * 1024 + s.PCoarseDetune % 1024;
+        } else if (path == "sub/coarse") {
+            int coarse = i(-64, 63);
+            if (coarse < 0) coarse += 1024;
+            s.PCoarseDetune = coarse + (s.PCoarseDetune / 1024) * 1024;
+        }
+        else if (path == "sub/bend") s.PBendAdjust = i(-64, 63) + 64;
+        else if (path == "sub/offsetHz") s.POffsetHz = i(-64, 63) + 64;
+        else if (path == "sub/fixedFreqEt") s.PfixedfreqET = i(0, 127);
+        else if (path == "sub/magnitudeType") s.Phmagtype = i(0, 4);
+        else if (path == "sub/overtone/type") s.POvertoneSpread.type = i(0, 7);
+        else if (path == "sub/overtone/par1") s.POvertoneSpread.par1 = i(0, 255);
+        else if (path == "sub/overtone/par2") s.POvertoneSpread.par2 = i(0, 255);
+        else if (path == "sub/overtone/par3") s.POvertoneSpread.par3 = i(0, 255);
+        else if (path == "sub/action/clearHarmonics") s.resetHarmonics();
         else if (path == "sub/panning") s.PPanning = i(0, 127);
         else if (path == "sub/bandwidth") s.Pbandwidth = i(0, 127);
         else if (path == "sub/bandwidthScale") s.Pbwscale = i(0, 127);
@@ -1490,10 +1665,13 @@ bool ZynAndroidEngine::setParameter(int partIndex, int kitIndex, const std::stri
             else if (field == "bandwidth") s.Phrelbw[h] = i(0, 127);
             else return false;
         } else return false;
-        s.updateFrequencyMultipliers();
+        if (path.rfind("sub/overtone/", 0) == 0) s.updateFrequencyMultipliers();
+        if (s.time) s.last_update_timestamp = s.time->time();
     } else if (path.rfind("pad/", 0) == 0 && kit.padpars) {
         auto &p = *kit.padpars;
-        if (path == "pad/stereo") p.PStereo = b();
+        if (path == "pad/filterVelocity") p.PFilterVelocityScale = i(0, 127);
+        else if (path == "pad/filterVelocitySense") p.PFilterVelocityScaleFunction = i(0, 127);
+        else if (path == "pad/stereo") p.PStereo = b();
         else if (path == "pad/panning") p.PPanning = i(0, 127);
         else if (path == "pad/volume") p.PVolume = i(0, 127);
         else if (path == "pad/bandwidth") p.Pbandwidth = i(0, 1000);
@@ -1521,55 +1699,43 @@ const char *moduleKindName(int kind) {
         case 5: return "resonance";
         case 6: return "vowel";
         case 7: return "voice-amplitude";
+        case 9: return "sub-harmonics";
         default: return "";
     }
 }
 }
 
-bool ZynAndroidEngine::copyModule(int partIndex, int kitIndex, int kind, int index, int role) {
+bool ZynAndroidEngine::copyModule(int partIndex, int kitIndex, int kind, int index, int role, int engine) {
     if (!zynReady_.load() || !master_ || !presetsStore_ || partIndex < 0 || partIndex >= NUM_MIDI_PARTS ||
         kitIndex < 0 || kitIndex >= NUM_KIT_ITEMS || !master_->part[partIndex]) return false;
     auto &kit = master_->part[partIndex]->kit[kitIndex];
-    if (!kit.adpars) return false;
-    auto &global = kit.adpars->GlobalPar;
+    const auto module = resolveModule(kit, engine, index, role);
+    if (!supportsModule(engine, kind, role) || !hasModule(kit, module, kind, index)) return false;
     if (kind == 0) {
         if (index < 0 || index >= NUM_VOICES) return false;
         kit.adpars->copy(*presetsStore_, index, nullptr);
     } else if (kind == 1) {
-        if (index < 0 || index >= NUM_VOICES) return false;
-        auto *oscillator = role == 1 ? kit.adpars->VoicePar[index].FmGn : kit.adpars->VoicePar[index].OscilGn;
+        auto *oscillator = module.oscillator;
         if (!oscillator) return false;
         oscillator->copy(*presetsStore_, nullptr);
     } else if (kind == 2) {
-        zyn::EnvelopeParams *envelope = nullptr;
-        if (index < 0) envelope = role == 0 ? global.AmpEnvelope : role == 1 ? global.FreqEnvelope : global.FilterEnvelope;
-        else if (index < NUM_VOICES) {
-            auto &voice = kit.adpars->VoicePar[index];
-            envelope = role == 0 ? voice.AmpEnvelope : role == 1 ? voice.FreqEnvelope :
-                role == 2 ? voice.FilterEnvelope : role == 3 ? voice.FMAmpEnvelope : voice.FMFreqEnvelope;
-        }
+        auto *envelope = module.envelope;
         if (!envelope) return false;
         envelope->copy(*presetsStore_, nullptr);
     } else if (kind == 3) {
-        zyn::LFOParams *lfo = nullptr;
-        if (index < 0) lfo = role == 0 ? global.AmpLfo : role == 1 ? global.FreqLfo : global.FilterLfo;
-        else if (index < NUM_VOICES) {
-            auto &voice = kit.adpars->VoicePar[index];
-            lfo = role == 0 ? voice.AmpLfo : role == 1 ? voice.FreqLfo : voice.FilterLfo;
-        }
+        auto *lfo = module.lfo;
         if (!lfo) return false;
         lfo->copy(*presetsStore_, nullptr);
     } else if (kind == 4 || kind == 6) {
-        zyn::FilterParams *filter = index < 0 ? global.GlobalFilter :
-            index < NUM_VOICES ? kit.adpars->VoicePar[index].VoiceFilter : nullptr;
+        auto *filter = module.filter;
         if (!filter) return false;
         if (kind == 6) {
             if (role < 0 || role >= FF_MAX_VOWELS) return false;
             filter->copy(*presetsStore_, role, nullptr);
         } else filter->copy(*presetsStore_, nullptr);
     } else if (kind == 5) {
-        if (!global.Reson) return false;
-        global.Reson->copy(*presetsStore_, nullptr);
+        if (!module.resonance) return false;
+        module.resonance->copy(*presetsStore_, nullptr);
     } else if (kind == 7) {
         if (index < 0 || index >= NUM_VOICES) return false;
         const auto &voice = kit.adpars->VoicePar[index];
@@ -1582,63 +1748,57 @@ bool ZynAndroidEngine::copyModule(int partIndex, int kitIndex, int kind, int ind
         xml.endbranch();
         char type[] = "VoiceAmplitude";
         presetsStore_->copyclipboard(xml, type);
+    } else if (kind == 9) {
+        zyn::XMLwrapper xml;
+        xml.minimal = false;
+        xml.beginbranch("SubHarmonics");
+        kit.subpars->add2XML(xml);
+        xml.endbranch();
+        char type[] = "SubHarmonics";
+        presetsStore_->copyclipboard(xml, type);
     } else return false;
     clipboardKind_ = moduleKindName(kind);
     return !presetsStore_->clipboard.data.empty();
 }
 
-bool ZynAndroidEngine::canPasteModule(int kind, int role) const {
-    if (!presetsStore_ || presetsStore_->clipboard.data.empty() || clipboardKind_ != moduleKindName(kind)) return false;
-    if (kind == 2) return role >= 0 && role <= 4;
-    return kind == 3 || kind == 1 || kind == 0 || kind == 4 || kind == 5 || kind == 6 || kind == 7;
+bool ZynAndroidEngine::canPasteModule(int kind, int role, int engine) const {
+    return supportsModule(engine, kind, role) && kind != 8 && presetsStore_ &&
+        !presetsStore_->clipboard.data.empty() && clipboardKind_ == moduleKindName(kind);
 }
 
-bool ZynAndroidEngine::pasteModule(int partIndex, int kitIndex, int kind, int index, int role) {
-    if (!canPasteModule(kind, role) || !zynReady_.load() || !master_ || partIndex < 0 ||
+bool ZynAndroidEngine::pasteModule(int partIndex, int kitIndex, int kind, int index, int role, int engine) {
+    if (!canPasteModule(kind, role, engine) || !zynReady_.load() || !master_ || partIndex < 0 ||
         partIndex >= NUM_MIDI_PARTS || kitIndex < 0 || kitIndex >= NUM_KIT_ITEMS ||
         !master_->part[partIndex]) return false;
     auto &kit = master_->part[partIndex]->kit[kitIndex];
-    if (!kit.adpars) return false;
+    const auto module = resolveModule(kit, engine, index, role);
+    if (!supportsModule(engine, kind, role) || !hasModule(kit, module, kind, index)) return false;
     zyn::XMLwrapper xml;
     if (!xml.putXMLdata(presetsStore_->clipboard.data.c_str())) return false;
     if (!xml.enterbranch(presetsStore_->clipboard.type.c_str())) return false;
     master_->ShutUp();
-    auto &global = kit.adpars->GlobalPar;
     if (kind == 0) {
         if (index < 0 || index >= NUM_VOICES) return false;
         kit.adpars->defaults(index);
         kit.adpars->getfromXMLsection(xml, index);
     } else if (kind == 1) {
-        if (index < 0 || index >= NUM_VOICES) return false;
-        auto *oscillator = role == 1 ? kit.adpars->VoicePar[index].FmGn : kit.adpars->VoicePar[index].OscilGn;
+        auto *oscillator = module.oscillator;
         if (!oscillator) return false;
         oscillator->defaults();
         oscillator->getfromXML(xml);
         oscillator->prepare();
     } else if (kind == 2) {
-        zyn::EnvelopeParams *envelope = nullptr;
-        if (index < 0) envelope = role == 0 ? global.AmpEnvelope : role == 1 ? global.FreqEnvelope : global.FilterEnvelope;
-        else if (index < NUM_VOICES) {
-            auto &voice = kit.adpars->VoicePar[index];
-            envelope = role == 0 ? voice.AmpEnvelope : role == 1 ? voice.FreqEnvelope :
-                role == 2 ? voice.FilterEnvelope : role == 3 ? voice.FMAmpEnvelope : voice.FMFreqEnvelope;
-        }
+        auto *envelope = module.envelope;
         if (!envelope) return false;
         envelope->defaults();
         envelope->getfromXML(xml);
     } else if (kind == 3) {
-        zyn::LFOParams *lfo = nullptr;
-        if (index < 0) lfo = role == 0 ? global.AmpLfo : role == 1 ? global.FreqLfo : global.FilterLfo;
-        else if (index < NUM_VOICES) {
-            auto &voice = kit.adpars->VoicePar[index];
-            lfo = role == 0 ? voice.AmpLfo : role == 1 ? voice.FreqLfo : voice.FilterLfo;
-        }
+        auto *lfo = module.lfo;
         if (!lfo) return false;
         lfo->defaults();
         lfo->getfromXML(xml);
     } else if (kind == 4 || kind == 6) {
-        auto *filter = index < 0 ? global.GlobalFilter :
-            index < NUM_VOICES ? kit.adpars->VoicePar[index].VoiceFilter : nullptr;
+        auto *filter = module.filter;
         if (!filter) return false;
         if (kind == 6) {
             if (role < 0 || role >= FF_MAX_VOWELS) return false;
@@ -1650,9 +1810,9 @@ bool ZynAndroidEngine::pasteModule(int partIndex, int kitIndex, int kind, int in
         }
         filter->changed = true;
     } else if (kind == 5) {
-        if (!global.Reson) return false;
-        global.Reson->defaults();
-        global.Reson->getfromXML(xml);
+        if (!module.resonance) return false;
+        module.resonance->defaults();
+        module.resonance->getfromXML(xml);
     } else if (kind == 7) {
         if (index < 0 || index >= NUM_VOICES) return false;
         auto &voice = kit.adpars->VoicePar[index];
@@ -1660,6 +1820,10 @@ bool ZynAndroidEngine::pasteModule(int partIndex, int kitIndex, int kind, int in
         voice.volume = xml.getparreal("volume", voice.volume, -60.0f, 0.0f);
         voice.PAmpVelocityScaleFunction = xml.getpar127("velocity", voice.PAmpVelocityScaleFunction);
         voice.PPanning = xml.getpar127("panning", voice.PPanning);
+    } else if (kind == 9) {
+        zyn::SUBnoteParameters source;
+        source.getfromXML(xml);
+        kit.subpars->pasteHarmonics(source);
     } else return false;
     xml.exitbranch();
     return true;
@@ -1671,20 +1835,36 @@ std::string ZynAndroidEngine::clipboardType() const {
 }
 
 std::string ZynAndroidEngine::modulePreview(
-        int partIndex, int kitIndex, int kind, int index, int role, int resolution) {
+        int partIndex, int kitIndex, int kind, int index, int role, int resolution, int engine, int referenceNote) {
     if (!zynReady_.load() || !master_ || partIndex < 0 || partIndex >= NUM_MIDI_PARTS ||
         kitIndex < 0 || kitIndex >= NUM_KIT_ITEMS || !master_->part[partIndex]) return {};
     auto &kit = master_->part[partIndex]->kit[kitIndex];
-    if (!kit.adpars) return {};
+    const auto module = resolveModule(kit, engine, index, role);
+    if (!supportsModule(engine, kind, role) || !hasModule(kit, module, kind, index)) return {};
+    if (kind == 9) {
+        // Fixed 64 triples: multiplier, linear magnitude (zero means inactive), bandwidth
+        // in octaves at the requested equal-tempered reference note (A4 by default).
+        if (referenceNote < 0 || referenceNote > 127) return {};
+        const float referenceHz = 440.0f * std::pow(2.0f, (referenceNote - 69) / 12.0f);
+        const auto &sub = *kit.subpars;
+        std::ostringstream out;
+        for (int h = 0; h < MAX_SUB_HARMONICS; ++h) {
+            if (h) out << ',';
+            const float ratio = sub.POvertoneFreqMult[h];
+            out << ratio << ',' << (sub.Phmag[h] == 0 ? 0.0f :
+                zyn::SUBnoteParameters::convertHarmonicMag(sub.Phmag[h], sub.Phmagtype)) << ',' <<
+                zyn::SUBnoteParameters::convertBandwidth(sub.Pbandwidth, sub.Pnumstages,
+                    referenceHz * ratio, sub.Pbwscale, sub.Phrelbw[h]);
+        }
+        return out.str();
+    }
     const int count = std::clamp(resolution, 16, 512);
     std::vector<float> points(count, 0.0f);
-    auto &global = kit.adpars->GlobalPar;
     if (kind == 1 || kind == 8) {
         // Kind 8 is preview-only. The low role bit selects carrier/modulator.
-        if (index < 0 || index >= NUM_VOICES || !synth_ || role < 0 ||
+        if (!synth_ || role < 0 ||
             (kind == 1 ? role > 1 : role > 5)) return {};
-        auto &voice = kit.adpars->VoicePar[index];
-        auto *oscillator = (role & 1) ? voice.FmGn : voice.OscilGn;
+        auto *oscillator = module.oscillator;
         if (!oscillator) return {};
         const int view = kind == 1 ? -1 : role / 2;
         if (view <= 0) {
@@ -1707,13 +1887,7 @@ std::string ZynAndroidEngine::modulePreview(
                 points[n - 1] = std::max(0.0f, spectrum[n]) / peak;
         }
     } else if (kind == 2) {
-        zyn::EnvelopeParams *envelope = nullptr;
-        if (index < 0) envelope = role == 0 ? global.AmpEnvelope : role == 1 ? global.FreqEnvelope : global.FilterEnvelope;
-        else if (index < NUM_VOICES) {
-            auto &voice = kit.adpars->VoicePar[index];
-            envelope = role == 0 ? voice.AmpEnvelope : role == 1 ? voice.FreqEnvelope :
-                role == 2 ? voice.FilterEnvelope : role == 3 ? voice.FMAmpEnvelope : voice.FMFreqEnvelope;
-        }
+        auto *envelope = module.envelope;
         if (!envelope || envelope->Penvpoints < 2) return {};
         float total = 0.0f;
         for (int p = 1; p < envelope->Penvpoints; ++p) total += std::max(.0001f, envelope->envdt[p]);
@@ -1727,12 +1901,7 @@ std::string ZynAndroidEngine::modulePreview(
                 envelope->Penvval[segment] * fraction) / 63.5f - 1.0f;
         }
     } else if (kind == 3) {
-        zyn::LFOParams *lfo = nullptr;
-        if (index < 0) lfo = role == 0 ? global.AmpLfo : role == 1 ? global.FreqLfo : global.FilterLfo;
-        else if (index < NUM_VOICES) {
-            auto &voice = kit.adpars->VoicePar[index];
-            lfo = role == 0 ? voice.AmpLfo : role == 1 ? voice.FreqLfo : voice.FilterLfo;
-        }
+        auto *lfo = module.lfo;
         if (!lfo) return {};
         const float depth = lfo->Pintensity / 127.0f;
         // One period is shown; frequency changes its duration, while depth and start phase
@@ -1756,8 +1925,7 @@ std::string ZynAndroidEngine::modulePreview(
             points[n] = shape * depth;
         }
     } else if (kind == 4) {
-        auto *filter = index < 0 ? global.GlobalFilter :
-            index < NUM_VOICES ? kit.adpars->VoicePar[index].VoiceFilter : nullptr;
+        auto *filter = module.filter;
         if (!filter) return {};
         for (int n = 0; n < count; ++n) {
             const float x = n / static_cast<float>(count - 1);
@@ -1804,9 +1972,9 @@ std::string ZynAndroidEngine::modulePreview(
             }
         }
     } else if (kind == 5) {
-        if (!global.Reson) return {};
+        if (!module.resonance) return {};
         for (int n = 0; n < count; ++n)
-            points[n] = global.Reson->getfreqresponse(global.Reson->getfreqx(n / static_cast<float>(count - 1)));
+            points[n] = module.resonance->getfreqresponse(module.resonance->getfreqx(n / static_cast<float>(count - 1)));
     } else return {};
     std::ostringstream out;
     for (int n = 0; n < count; ++n) {
@@ -1942,8 +2110,7 @@ bool ZynAndroidEngine::setPartAddEnabled(int partIndex, bool enabled) {
     for (int i = 0; i < NUM_KIT_ITEMS; ++i) {
         auto &k = part->kit[i];
         if (!(k.Penabled || i == 0)) continue;
-        k.Padenabled = enabled;
-        touched = true;
+        touched = part->setKitSynthEnabled(i, 0, enabled) || touched;
     }
     return touched;
 }
@@ -1957,8 +2124,7 @@ bool ZynAndroidEngine::setPartSubEnabled(int partIndex, bool enabled) {
     for (int i = 0; i < NUM_KIT_ITEMS; ++i) {
         auto &k = part->kit[i];
         if (!(k.Penabled || i == 0)) continue;
-        k.Psubenabled = enabled;
-        touched = true;
+        touched = part->setKitSynthEnabled(i, 1, enabled) || touched;
     }
     return touched;
 }
@@ -1972,8 +2138,7 @@ bool ZynAndroidEngine::setPartPadEnabled(int partIndex, bool enabled) {
     for (int i = 0; i < NUM_KIT_ITEMS; ++i) {
         auto &k = part->kit[i];
         if (!(k.Penabled || i == 0)) continue;
-        k.Ppadenabled = enabled;
-        touched = true;
+        touched = part->setKitSynthEnabled(i, 2, enabled) || touched;
     }
     return touched;
 }

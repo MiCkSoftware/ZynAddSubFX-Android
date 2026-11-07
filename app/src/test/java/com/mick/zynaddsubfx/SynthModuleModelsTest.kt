@@ -75,4 +75,49 @@ class SynthModuleModelsTest {
         assertEquals(5, model?.formant?.count)
         assertEquals(4, model?.formant?.sequenceSize)
     }
+
+    @Test
+    fun commonModelsResolveEngineWithoutDependingOnLabels() {
+        val values = listOf(
+            value("add/freqEnvelope/attackTime", 11.0, "renamed"),
+            value("sub/freqEnvelope/attackTime", 22.0, "renamed"),
+            value("sub/freqEnvelopeEnabled", 0.0, "renamed"),
+            value("sub/bandwidthEnvelope/attackTime", 33.0, "renamed"),
+            value("pad/freqEnvelope/attackTime", 44.0, "renamed"),
+            value("pad/freqLfo/depth", 55.0, "renamed"),
+        )
+        for ((engine, expected) in listOf(ModuleEngine.ADD to 11.0, ModuleEngine.SUB to 22.0, ModuleEngine.PAD to 44.0)) {
+            val model = EnvelopeModel.from(values, ModuleAddress.Envelope(envelopeRole = EnvelopeRole.FREQUENCY, engine = engine))!!
+            assertEquals(expected, model.parameter("attackTime")!!.value, 0.0)
+            assertEquals(if (engine == ModuleEngine.SUB) 2 else 1, model.parameters.size)
+        }
+        assertEquals(33.0, EnvelopeModel.from(values,
+            ModuleAddress.Envelope(envelopeRole = EnvelopeRole.BANDWIDTH, engine = ModuleEngine.SUB))!!.parameter("attackTime")!!.value, 0.0)
+        assertEquals(null, EnvelopeModel.from(values,
+            ModuleAddress.Envelope(envelopeRole = EnvelopeRole.BANDWIDTH, engine = ModuleEngine.PAD)))
+        assertEquals(null, EnvelopeModel.from(values,
+            ModuleAddress.Envelope(0, EnvelopeRole.FREQUENCY, ModuleEngine.SUB)))
+        assertEquals(null, LfoModel.from(values, ModuleAddress.Lfo(lfoRole = LfoRole.FREQUENCY, engine = ModuleEngine.SUB)))
+        assertEquals(55.0, LfoModel.from(values,
+            ModuleAddress.Lfo(lfoRole = LfoRole.FREQUENCY, engine = ModuleEngine.PAD))!!.parameter("depth")!!.value, 0.0)
+    }
+
+    @Test
+    fun subFilterOwnsEnableAndCompleteFormants() {
+        val values = listOf(
+            value("sub/filterEnabled", 0.0),
+            value("sub/filter/category", 1.0),
+            value("sub/filter/formant/count", 7.0),
+            value("sub/filter/formant/sequenceSize", 6.0),
+            value("sub/filter/formant/vowel/5/6/frequency", 81.0),
+            value("pad/filter/category", 4.0),
+            value("add/filter/category", 0.0),
+        )
+        val model = FilterModel.from(values, ModuleAddress.Filter(engine = ModuleEngine.SUB))!!
+        assertEquals(1, model.category)
+        assertEquals(7, model.formant!!.count)
+        assertEquals(6, model.formant.sequenceSize)
+        assertEquals(5, model.parameters.size)
+        assertEquals(0.0, model.parameters.first { it.descriptor.path == "sub/filterEnabled" }.value, 0.0)
+    }
 }

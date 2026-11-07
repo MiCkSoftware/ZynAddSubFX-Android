@@ -131,11 +131,7 @@ static const rtosc::Ports SUBnotePorts = {
     {"clear:", rDoc("Reset all harmonics to equal bandwidth/zero amplitude"), NULL,
         rBegin;
         (void) msg;
-        for(int i=0; i<MAX_SUB_HARMONICS; ++i) {
-            obj->Phmag[i]   = 0;
-            obj->Phrelbw[i] = 64;
-        }
-        obj->Phmag[0] = 127;
+        obj->resetHarmonics();
         rEnd},
     {"detunevalue:", rDoc("Get note detune value"), NULL,
         rBegin;
@@ -327,11 +323,7 @@ void SUBnoteParameters::defaults()
     POvertoneSpread.par3 = 0;
     updateFrequencyMultipliers();
 
-    for(int n = 0; n < MAX_SUB_HARMONICS; ++n) {
-        Phmag[n]   = 0;
-        Phrelbw[n] = 64;
-    }
-    Phmag[0] = 127;
+    resetHarmonics();
 
     PGlobalFilterEnabled = false;
     PGlobalFilterVelocityScale = 0;
@@ -528,29 +520,36 @@ void SUBnoteParameters::paste(SUBnoteParameters &sub)
     //Other Parameters
     doPaste(Pfixedfreq);
     doPaste(PfixedfreqET);
-    doPaste(POvertoneSpread.type);
-    doPaste(POvertoneSpread.par1);
-    doPaste(POvertoneSpread.par2);
-    doPaste(POvertoneSpread.par3);
-
-    for(int i=0; i<MAX_SUB_HARMONICS; ++i)
-        doPaste(POvertoneFreqMult[i]);
-
+    pasteHarmonics(sub);
     doPaste(Pnumstages);
     doPaste(Pbandwidth);
-    doPaste(Phmagtype);
-
-    for(int i=0; i<MAX_SUB_HARMONICS; ++i) {
-        doPaste(Phmag[i]);
-        doPaste(Phrelbw[i]);
-    }
-
     doPaste(Pbwscale);
-    doPaste(Pstart);
 
     if ( time ) {
         last_update_timestamp = time->time();
     }
+}
+
+void SUBnoteParameters::resetHarmonics()
+{
+    for(int i = 0; i < MAX_SUB_HARMONICS; ++i) {
+        Phmag[i] = i == 0 ? 127 : 0;
+        Phrelbw[i] = 64;
+    }
+    if(time) last_update_timestamp = time->time();
+}
+
+void SUBnoteParameters::pasteHarmonics(const SUBnoteParameters &sub)
+{
+    Phmagtype = sub.Phmagtype;
+    Pstart = sub.Pstart;
+    POvertoneSpread = sub.POvertoneSpread;
+    for(int i = 0; i < MAX_SUB_HARMONICS; ++i) {
+        Phmag[i] = sub.Phmag[i];
+        Phrelbw[i] = sub.Phrelbw[i];
+    }
+    updateFrequencyMultipliers();
+    if(time) last_update_timestamp = time->time();
 }
 
 void SUBnoteParameters::getfromXML(XMLwrapper& xml)
