@@ -1,6 +1,6 @@
 # Backlog SUBsynth, PADsynth et FX
 
-Etat du 7 novembre 2026. Les numeros donnent l'ordre conseille ; les dependances indiquent les prerequis reels. Le lot 009_misc reste un suivi UX distinct.
+Etat actualise le 8 novembre 2026. Les numeros donnent l'ordre conseille ; les dependances indiquent les prerequis reels. Le lot 009_misc reste un suivi UX distinct.
 
 ## Decision de perimetre
 
@@ -8,6 +8,8 @@ ADD est termine fonctionnellement dans le perimetre Android retenu. La correctio
 La validation finale audio/appareil ADD+SUB+PAD+FX est volontairement reportee par Mick apres achevement fonctionnel des trois chantiers SUB, PAD et FX. Elle est suivie par 021 : ne pas la declarer faite et ne pas rouvrir ADD pour cette seule attente.
 
 Les tests automatises et verifications ciblees de chaque lot restent necessaires. Le lot 010 est implemente localement : [rapport, executions et limites](../qa_common_modules_sub_pad.md).
+
+Serie SUBsynth 010–012 close avec l’accord de Mick le 8 novembre 2026 apres iterations UX. [Bilan final](../qa_subsynth_011_012.md). Prochaine etape : 013 (PADsynth). Les lots transverses 020/021 restent ouverts.
 
 ## Ordre et dependances
 

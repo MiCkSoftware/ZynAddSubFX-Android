@@ -144,6 +144,9 @@ Contexte, dependances et criteres detailles : [index du backlog](docs/backlog/RE
 - [x] 010 — Modules communs SUB/PAD implementes : adressage moteur, enveloppes (dont bandwidth), filtres, LFO PAD, previews et clipboard natifs ; activation des parametres par Part. 27 tests JVM et contrat natif hote OK, builds Android ARM64/x86_64 OK. [Rapport et limites](docs/qa_common_modules_sub_pad.md) ; audio/appareil differe au lot 021, persistance transverse au lot 020.
 - [x] 011 — Mapping SUB complet Amp/Frequency/Bandwidth/Filter, controles ADD et enums knob/popup ; 29 tests JVM, contrat natif hote et builds ARM64/x86_64 OK. [Rapport et limites](docs/qa_subsynth_011_012.md). QA appareil/audio differee (021).
 - [x] 012 — UX harmonique ADD adaptee aux 64 rangs SUB, magnitude/largeur, Overtones complet, preview natif, Clear et clipboard isole ; proposition validee par Mick le 8 novembre avec knobs/popup pour les enums. [Preuves et limites](docs/qa_subsynth_011_012.md).
+
+Cloture de la serie SUBsynth 010–012 acceptee par Mick le 8 novembre 2026, apres les iterations UX. [Bilan final et limites](docs/qa_subsynth_011_012.md). Suite fonctionnelle : PADsynth (013–015), puis FX ; persistance transverse 020 et campagne finale audio/appareil 021 restent ouvertes.
+
 - [ ] [013 — Completer les parametres de jeu PADsynth](docs/backlog/013_feat_padsynth_parametres.md)
 - [ ] [014 — Porter profil, spectre, oscillateur et resonance PAD](docs/backlog/014_feat_padsynth_spectre_profil.md)
 - [ ] [015 — Terminer qualite et regeneration des samples PAD](docs/backlog/015_feat_padsynth_generation.md)

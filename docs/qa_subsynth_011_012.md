@@ -82,3 +82,15 @@ Compilation Kotlin et 29 tests JVM passes ; calculs de projection verifies pour 
 ## Dernier ajustement de navigation — 8 novembre 2026
 
 A la demande de Mick, Harmonics est place entre Amp et Frequency dans l'ordre des onglets et du contenu SUB. Le texte « Edit harmonics » est retire ; la vignette conserve son action d'ouverture du sous-ecran. Compilation Kotlin et 29 tests JVM reverifies. SUB est termine fonctionnellement pour les lots 010/011/012 ; restent les verifications/corrections de persistance transverse 020 (notamment XIZ moteur entierement OFF) et la validation finale audio/appareil 021 deja differee.
+
+## Cloture de la serie — 8 novembre 2026
+
+Mick accepte la cloture de cette serie apres implementation et iterations sur captures. Les lots 010/011/012 sont termines fonctionnellement dans le perimetre Android retenu.
+
+Derniers ajustements : ordre Amp / Harmonics / Frequency / Bandwidth / Filter ; retrait du lien redondant Edit harmonics ; suppression des textes d'aide autour du graphe SUB puis du texte equivalent des harmoniques ADD Voice/Modulator. Les gestes et controles restent presents. Les decisions de preview (sous-ecran, reduction au scroll, axe fixe en Hz, note de reference, hues par rang, absence de selection tactile) sont conservees.
+
+Le preset fourni Organ/0067-Sub_Organ.xiz a ete inspecte comme candidat au controle : kit zero actif, SUB seul, ADD/PAD OFF, quatre harmoniques actives. Ce constat de contenu ne constitue pas une validation audio du preset sur appareil.
+
+La cloture utilisateur porte sur la serie fonctionnelle/UX ; elle ne declare ni une campagne audio/appareil comparative complete ni la matrice complete de persistance. Le cas connu d'export XIZ avec moteur entierement OFF reste au lot 020 ; la campagne finale commune reste au lot 021.
+
+Verification de cloture : compilation Kotlin et 29 tests JVM passes sur l’etat final, apres suppression des textes d’aide SUB/ADD.
