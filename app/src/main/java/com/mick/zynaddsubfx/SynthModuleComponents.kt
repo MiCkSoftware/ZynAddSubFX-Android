@@ -25,6 +25,18 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.AutoAwesome
+import androidx.compose.material.icons.outlined.FilterAlt
+import androidx.compose.material.icons.outlined.GraphicEq
+import androidx.compose.material.icons.outlined.Layers
+import androidx.compose.material.icons.outlined.Piano
+import androidx.compose.material.icons.automirrored.outlined.ShowChart
+import androidx.compose.material.icons.outlined.Speed
+import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material.icons.automirrored.outlined.VolumeUp
+import androidx.compose.material.icons.outlined.Waves
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -39,6 +51,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
@@ -260,18 +275,56 @@ private fun CommonParameterGrid(
 }
 
 @Composable
-internal fun SectionBanner(title: String, gradient: Boolean = true, textColor: Color = Color(0xFFFFC857), actions: @Composable () -> Unit = {}) {
+internal fun NeonHeaderIcon(title: String, color: Color, modifier: Modifier = Modifier.size(22.dp)) {
+    val icon = remember(title) {
+        val name = title.lowercase()
+        when {
+            "keyboard" in name || "key range" in name -> Icons.Outlined.Piano
+            "kit" in name || "voice" in name -> Icons.Outlined.Layers
+            "envelope" in name -> Icons.AutoMirrored.Outlined.ShowChart
+            "lfo" in name || "oscillator" in name || "resonance" in name -> Icons.Outlined.Waves
+            "filter" in name || "formant" in name -> Icons.Outlined.FilterAlt
+            "frequency" in name || "harmonic" in name -> Icons.Outlined.GraphicEq
+            "amp" in name -> Icons.AutoMirrored.Outlined.VolumeUp
+            "fx" in name || "effect" in name -> Icons.Outlined.AutoAwesome
+            "performance" in name -> Icons.Outlined.Speed
+            else -> Icons.Outlined.Tune
+        }
+    }
+    Box(modifier.background(remember(color) {
+        Brush.radialGradient(listOf(color.copy(alpha = .28f), color.copy(alpha = .08f), Color.Transparent))
+    }), contentAlignment = Alignment.Center) {
+        Icon(icon, contentDescription = null, tint = color, modifier = Modifier.fillMaxSize().padding(2.dp))
+    }
+}
+
+@Composable
+internal fun SectionBanner(title: String, gradient: Boolean = true, textColor: Color = Color(0xFF8CF5F1), actions: @Composable () -> Unit = {}) {
     Row(
         Modifier.fillMaxWidth().then(if (gradient) Modifier.background(
-            Brush.horizontalGradient(listOf(Color(0xFF24545A), Color.Transparent)),
-            RoundedCornerShape(4.dp),
+            remember(textColor) { Brush.horizontalGradient(listOf(textColor.copy(alpha = .13f), Color.Transparent)) },
+            RoundedCornerShape(7.dp),
         ) else Modifier).padding(horizontal = 6.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(5.dp),
     ) {
-        Text(title.uppercase(), color = textColor,
-            style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Spacer(Modifier.weight(1f).height(1.dp).background(Color(0xFF234A53)))
+        Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            NeonHeaderIcon(title, textColor)
+            Text(title.uppercase(), color = textColor,
+                style = MaterialTheme.typography.labelSmall.copy(
+                    shadow = Shadow(textColor.copy(alpha = .65f), blurRadius = 12f),
+                ),
+                modifier = Modifier.semantics { heading() },
+                maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Box(Modifier.weight(1f).height(9.dp).background(remember(textColor) {
+                Brush.verticalGradient(listOf(Color.Transparent, textColor.copy(alpha = .12f), Color.Transparent))
+            }), contentAlignment = Alignment.Center) {
+                Spacer(Modifier.fillMaxWidth().height(1.dp).background(remember(textColor) {
+                    Brush.horizontalGradient(listOf(textColor.copy(alpha = .65f), textColor.copy(alpha = .10f)))
+                }))
+            }
+        }
         actions()
     }
 }
@@ -286,7 +339,7 @@ internal fun CompactModuleActions(
     onWrite: ((SynthEngine.ParameterValue, Double) -> Unit)? = null,
     clipboardEnabled: Boolean = true,
     sectionHeading: Boolean = false,
-    textColor: Color = Color(0xFFFFC857),
+    textColor: Color = Color(0xFF8CF5F1),
 ) {
     SectionBanner(title, gradient = sectionHeading, textColor = textColor) {
         if (enabledParameter != null && onWrite != null) {

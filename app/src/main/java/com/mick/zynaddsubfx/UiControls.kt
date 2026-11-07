@@ -81,15 +81,7 @@ const val LedSlotWidth = 53
 
 @Composable
 fun EditorSectionHeader(title: String) {
-    Row(Modifier.fillMaxWidth().padding(horizontal = 3.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(title.uppercase(), color = Color(0xFFFFC857), style = MaterialTheme.typography.labelSmall,
-            modifier = Modifier.padding(vertical = 2.dp))
-        Spacer(Modifier.width(7.dp))
-        Surface(modifier = Modifier.weight(1f), color = Color(0xFF234A53),
-            shape = RoundedCornerShape(99.dp)) {
-            Spacer(Modifier.fillMaxWidth().height(1.dp))
-        }
-    }
+    SectionBanner(title, gradient = false)
 }
 
 @Composable
@@ -378,15 +370,24 @@ fun ZynClassicKeyboardStrip(
                     .height(23.dp)
                     .background(Color(0xFF10272C)),
             ) {
-                Text(
-                    "KEYBOARD",
-                    modifier = Modifier.align(Alignment.CenterStart).padding(start = 8.dp),
-                    color = Color(0xFF71EEE5),
-                    fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 9.sp,
-                    letterSpacing = 1.4.sp,
-                )
+                Row(
+                    Modifier.align(Alignment.CenterStart).padding(start = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    NeonHeaderIcon("Keyboard", Color(0xFF71EEE5), Modifier.size(17.dp))
+                    Text(
+                        "KEYBOARD",
+                        color = Color(0xFF71EEE5),
+                        style = androidx.compose.ui.text.TextStyle(
+                            shadow = androidx.compose.ui.graphics.Shadow(Color(0xAA71EEE5), blurRadius = 12f),
+                        ),
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 9.sp,
+                        letterSpacing = 1.4.sp,
+                    )
+                }
                 Text(
                     "OCT ${if (octaveShift >= 0) "+" else ""}$octaveShift",
                     modifier = Modifier.align(Alignment.CenterEnd).padding(end = 8.dp),
