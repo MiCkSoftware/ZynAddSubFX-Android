@@ -126,7 +126,7 @@ T array_max(const T *data, size_t len)
 //Random number generator
 
 typedef uint32_t prng_t;
-extern prng_t prng_state;
+extern thread_local prng_t prng_state;
 
 // Portable Pseudo-Random Number Generator
 inline prng_t prng_r(prng_t &p)

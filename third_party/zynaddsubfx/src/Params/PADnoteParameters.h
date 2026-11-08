@@ -20,6 +20,7 @@
 #include <string>
 #include <functional>
 #include <cstdint>
+#include <atomic>
 namespace zyn {
 
 /**
@@ -45,6 +46,15 @@ class PADnoteParameters:public Presets
 
         void paste(PADnoteParameters &p);
         void pasteRT(PADnoteParameters &p);
+        void pasteProfile(const PADnoteParameters &p);
+        void pasteOvertones(const PADnoteParameters &p);
+
+        // Parameter revisions are owned here; samples are committed separately.
+        std::atomic<uint64_t> structureRevision{1}, appliedRevision{0};
+        void markStructureChanged() { structureRevision.fetch_add(1); }
+        int sampleCount() const;
+        int sampleSize() const;
+        uint64_t sampleBytes() const;
 
         //returns a value between 0.0f-1.0f that represents the estimation perceived bandwidth
         float getprofile(float *smp, int size);
@@ -172,6 +182,10 @@ class PADnoteParameters:public Presets
             float  basefreq;
             float *smp;
         };
+
+        // Swap only when the Part reports no PAD notes using the current bank.
+        // The caller retains the old buffers for destruction off the audio thread.
+        void swapSamples(Sample *replacement, uint64_t revision);
 
         //! RT sample data
         Sample sample[PAD_MAX_SAMPLES];

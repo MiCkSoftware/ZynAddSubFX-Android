@@ -1256,6 +1256,14 @@ void Part::setkititemstatus(unsigned kititem, bool Penabled_)
 
 // Parameter ownership stays with Part: enabling a synth must make its data
 // available, including kit zero where construction only allocates ADD.
+bool Part::hasActivePadNotes(unsigned kititem)
+{
+    for (auto &descriptor : notePool.activeDesc())
+        for (auto &note : notePool.activeNotes(descriptor))
+            if (note.type == 2 && note.kit == kititem) return true;
+    return false;
+}
+
 bool Part::setKitSynthEnabled(unsigned kititem, int engine, bool enabled)
 {
     if(kititem >= NUM_KIT_ITEMS || engine < 0 || engine > 2)
@@ -1427,11 +1435,11 @@ void Part::applyparameters(void)
     applyparameters([]{return false;});
 }
 
-void Part::applyparameters(std::function<bool()> do_abort)
+void Part::applyparameters(std::function<bool()> do_abort, unsigned max_threads)
 {
     for(int n = 0; n < NUM_KIT_ITEMS; ++n)
         if(kit[n].Ppadenabled && kit[n].padpars)
-            kit[n].padpars->applyparameters(do_abort);
+            kit[n].padpars->applyparameters(do_abort, max_threads);
 }
 
 void Part::initialize_rt(void)

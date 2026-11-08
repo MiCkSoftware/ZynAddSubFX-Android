@@ -71,7 +71,7 @@ class AddSynthRoundTripInstrumentedTest {
             add(ModuleAddress.Voice(0) to "add/voice/0/")
             add(ModuleAddress.Oscillator(0) to "add/voice/0/osc/")
             add(ModuleAddress.Oscillator(0, true) to "add/voice/0/modOsc/")
-            EnvelopeRole.entries.forEach {
+            EnvelopeRole.entries.filter { it != EnvelopeRole.BANDWIDTH }.forEach {
                 val section = listOf("ampEnvelope", "freqEnvelope", "filterEnvelope", "modAmpEnvelope", "modFreqEnvelope")[it.code]
                 add(ModuleAddress.Envelope(0, it) to "add/voice/0/$section/")
             }

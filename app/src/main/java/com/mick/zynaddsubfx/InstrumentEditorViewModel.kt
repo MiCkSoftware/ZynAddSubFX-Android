@@ -15,11 +15,15 @@ data class InstrumentEditorState(
     val selectedVoice: Int = 0,
     val snapshot: SynthEngine.ParameterSnapshot? = null,
     val dirty: Boolean = false,
+    val padGeneration: PadGenerationStatus = PadGenerationStatus(),
     val revision: Long = 0,
     val operation: SynthEngine.OperationState = SynthEngine.OperationState.Idle,
 )
 
 interface InstrumentEditorEngine {
+    fun startPadGeneration(part: Int, kit: Int): Boolean = false
+    fun cancelPadGeneration() {}
+    fun padGenerationStatus(part: Int, kit: Int): PadGenerationStatus = PadGenerationStatus()
     fun parameterSnapshot(partIndex: Int, kitIndex: Int): SynthEngine.ParameterSnapshot
     fun writeParameter(partIndex: Int, kitIndex: Int, write: SynthEngine.ParameterWrite): Boolean
     fun preview(partIndex: Int, kitIndex: Int, address: ModuleAddress, resolution: Int = 128): PreviewSeries
@@ -30,10 +34,12 @@ interface InstrumentEditorEngine {
 
 class InstrumentEditorViewModel(private val engine: InstrumentEditorEngine) : ViewModel() {
     companion object {
+        val padSubsections = listOf("Spectrum", "Quality")
+
         fun tabsFor(engineName: String): List<String> = when (engineName) {
             "ADD" -> listOf("Frequency", "Amp", "Filter", "Resonance", "Voices")
             "SUB" -> listOf("Amp", "Harmonics", "Frequency", "Bandwidth", "Filter")
-            "PAD" -> listOf("Global", "Amp", "Frequency", "Filter", "Profile", "Spectrum", "Quality")
+            "PAD" -> listOf("Amp", "PAD", "Frequency", "Filter")
             "FX" -> listOf("Routing", "FX 1", "FX 2", "FX 3")
             else -> listOf("Global")
         }
@@ -60,6 +66,7 @@ class InstrumentEditorViewModel(private val engine: InstrumentEditorEngine) : Vi
     fun open(partIndex: Int, kitIndex: Int = state.kitIndex) {
         val safePart = partIndex.coerceIn(0, 15)
         val safeKit = kitIndex.coerceIn(0, 15)
+        if (safePart != state.partIndex || safeKit != state.kitIndex) engine.cancelPadGeneration()
         state = state.copy(
             partIndex = safePart,
             kitIndex = safeKit,
@@ -69,9 +76,26 @@ class InstrumentEditorViewModel(private val engine: InstrumentEditorEngine) : Vi
         )
     }
 
+    fun refreshPadGeneration() {
+        val status = engine.padGenerationStatus(state.partIndex, state.kitIndex)
+        if (status != state.padGeneration) state = state.copy(padGeneration = status)
+    }
+
+    fun applyPadGeneration() {
+        finishParameterDrag()
+        engine.startPadGeneration(state.partIndex, state.kitIndex)
+        refreshPadGeneration()
+    }
+
+    fun cancelPadGeneration() {
+        engine.cancelPadGeneration()
+        refreshPadGeneration()
+    }
+
     fun selectKit(kitIndex: Int) = open(state.partIndex, kitIndex)
 
     fun selectEngine(engineName: String) {
+        if (state.selectedEngine == "PAD" && engineName != "PAD") engine.cancelPadGeneration()
         finishParameterDrag()
         state = state.copy(
             selectedEngine = engineName,

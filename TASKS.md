@@ -139,17 +139,19 @@ ADsynth est termine fonctionnellement dans le perimetre Android retenu. Les vali
 
 Contexte, dependances et criteres detailles : [index du backlog](docs/backlog/README.md). Les tests locaux restent propres a chaque lot ; seule la campagne finale globale est differee. Les numeros ordonnent le travail sans exiger une nouvelle analyse generale.
 
-**Conception UX avec Mick requise avant implementation** pour les nouveaux composants des lots 014, 015, 016, 018 (EQ) et 019 : proposition concrete, echange et validation explicite. Les prompts precisent le perimetre ; reutiliser le design ADD existant.
+**Conception UX avec Mick requise avant implementation** pour les nouveaux composants des lots 016, 018 (EQ) et 019 (designs 014/015 valides puis implementes le 8 novembre) : proposition concrete, echange et validation explicite. Les prompts precisent le perimetre ; reutiliser le design ADD existant.
 
 - [x] 010 — Modules communs SUB/PAD implementes : adressage moteur, enveloppes (dont bandwidth), filtres, LFO PAD, previews et clipboard natifs ; activation des parametres par Part. 27 tests JVM et contrat natif hote OK, builds Android ARM64/x86_64 OK. [Rapport et limites](docs/qa_common_modules_sub_pad.md) ; audio/appareil differe au lot 021, persistance transverse au lot 020.
 - [x] 011 — Mapping SUB complet Amp/Frequency/Bandwidth/Filter, controles ADD et enums knob/popup ; 29 tests JVM, contrat natif hote et builds ARM64/x86_64 OK. [Rapport et limites](docs/qa_subsynth_011_012.md). QA appareil/audio differee (021).
 - [x] 012 — UX harmonique ADD adaptee aux 64 rangs SUB, magnitude/largeur, Overtones complet, preview natif, Clear et clipboard isole ; proposition validee par Mick le 8 novembre avec knobs/popup pour les enums. [Preuves et limites](docs/qa_subsynth_011_012.md).
 
-Cloture de la serie SUBsynth 010–012 acceptee par Mick le 8 novembre 2026, apres les iterations UX. [Bilan final et limites](docs/qa_subsynth_011_012.md). Suite fonctionnelle : PADsynth (013–015), puis FX ; persistance transverse 020 et campagne finale audio/appareil 021 restent ouvertes.
+Cloture de la serie SUBsynth 010–012 acceptee par Mick le 8 novembre 2026, apres les iterations UX. [Bilan final et limites](docs/qa_subsynth_011_012.md). PADsynth 013–015 est implemente et teste localement sur ADB ; suite fonctionnelle : FX ; persistance transverse 020 et campagne finale audio/appareil 021 restent ouvertes.
 
-- [ ] [013 — Completer les parametres de jeu PADsynth](docs/backlog/013_feat_padsynth_parametres.md)
-- [ ] [014 — Porter profil, spectre, oscillateur et resonance PAD](docs/backlog/014_feat_padsynth_spectre_profil.md)
-- [ ] [015 — Terminer qualite et regeneration des samples PAD](docs/backlog/015_feat_padsynth_generation.md)
+- [x] 013 — parametres de jeu PAD complets ; [rapport, tests ADB et limites](docs/qa_padsynth_013_015.md).
+- [x] 014 — profil, positions, oscillateur et resonance PAD ; [rapport, tests ADB et limites](docs/qa_padsynth_013_015.md).
+- [x] 015 — qualite et regeneration PAD asynchrone avec Apply/annulation ; [rapport, tests ADB et limites](docs/qa_padsynth_013_015.md).
+
+Iteration UX PAD : Amp / PAD / Frequency / Filter ; Spectrum puis Quality dans PAD, sans sous-onglets ; Oscillator/Resonance/Overtones/Profile en cartes graphiques compactes apres les trois knobs Spectrum. Apply commun colore/clignotant a droite de l’entete PAD ; fonds harmonises. 32 tests JVM et parcours Compose Nokia passes ; Pixel conserve pendant les essais de Mick. [Details](docs/qa_padsynth_013_015.md#regroupement-des-parametres-pad--8-novembre-2026).
 - [ ] [016 — Brancher les slots FX et leur contrat natif](docs/backlog/016_feat_fx_contrat_slots.md)
 - [ ] [017 — Porter les effets Reverb, Echo, Chorus, Phaser, Alienwah et Distortion](docs/backlog/017_feat_fx_parametres.md)
 - [ ] [018 — Porter EQ, Dynamic Filter, Sympathetic et Reverse](docs/backlog/018_feat_fx_avances.md)
@@ -193,7 +195,7 @@ Chaque lot termine met a jour TASKS.md, TODO.md et l'index, conserve les preuves
 | LFOUI | Controleur | Variable | `/Amplitude|Frequency|Filter/LFO` | **Implemente** | ADD/PAD branches ; pas de LFO SUB natif ; validation finale commune differee (021) |
 | FilterUI | Section reutilisable | Variable | `/Filter` | **Implemente** | ADD et Formant branches ; extension SUB/PAD/FX suivie dans le backlog |
 | SUBnoteUI | Ecran moteur | `Main.Part.Part[1..16]` | `.Sub` | **Implemente** | Lots 010/011/012 : mapping, modules, harmoniques/overtones ; QA finale appareil/audio differee (021) |
-| PADnoteUI | Ecran moteur | `Main.Part.Part[1..16]` | `.Pad` | **Partiel** | Lots 010, 013 a 015 : modules, structure, qualite et generation |
+| PADnoteUI | Ecran moteur | `Main.Part.Part[1..16]` | `.Pad` | **Implemente** | Lots 010/013/014/015 ; [QA et limites](docs/qa_padsynth_013_015.md), validations transverses 020/021 conservees |
 
 ### Effets et outils graphiques
 
@@ -210,15 +212,15 @@ Chaque lot termine met a jour TASKS.md, TODO.md et l'index, conserve les preuves
 | EffUI - Sympathetic strings | Section FX | `Main.Part.Part[1..16].Fx` | `/Fx[1..3]/Sympathetic` | **Partiel** | Lot 018 : UI specialisee et presets |
 | EffUI - Reverse | Section FX | Main / Part selon scope | `/Fx/Reverse` | **Absent** | Type natif 10 ; lot 018 |
 | Formant Filter window | Editeur integre | Ecran Filter concerne | `/Formant` | **Implemente** | Voyelles, formants et sequence presents ; QA audio et gestes restante |
-| PAD harmonic profile / overtone graph | Controleur graphique | `Main.Part.Part[1..16].Pad` | `/Profile`, `/Spectrum` | **Absent** | Lot 014 : profil, positions et previews natifs |
+| PAD harmonic profile / overtone graph | Controleur graphique | `Main.Part.Part[1..16].Pad` | `/Profile`, `/Spectrum` | **Implemente** | Lot 014 : profil/positions natifs, sous-ecrans avec preview reduite au scroll ; [QA](docs/qa_padsynth_013_015.md) |
 
 ### Avancement et priorites UI
 
 
 Priorites suivantes :
 
-1. SUB termine fonctionnellement (010/011/012) ; poursuivre PAD et conserver la QA finale differee (021).
-2. Terminer PAD, ses graphes et la regeneration effective des samples (013 a 015).
+1. SUB et PAD termines fonctionnellement (010 a 015) ; conserver persistance transverse 020 et QA finale 021.
+2. Poursuivre les FX (016 a 019), puis validations transverses 020/021.
 3. Terminer les dix effets et leurs routages Part/Insert/System (016 a 019).
 4. Verifier automatiquement contrats, clipboard et persistance (020), puis executer la validation finale audio/appareil commune (021).
 5. Reprendre les autres sujets M5 : adaptations ecrans, Settings, About/Licences, microtonalite et banques. MIDI reste reporte a M7.
@@ -239,7 +241,7 @@ Priorites suivantes :
 - [ ] Tests latence / notes bloquees
 
 ### M8 - Portage fonctionnel avance / parite
-- [ ] Completer SUB/PAD : [lots 010 a 015](docs/backlog/README.md)
+- [x] Completer SUB/PAD : lots 010 a 015 ; [bilan PAD et limites 020/021](docs/qa_padsynth_013_015.md)
 - [ ] Remplacer le shim `fftw3f` temporaire par une solution FFT production (FFTW Android buildable ou alternative compatible)
 - [x] Tenter integration `FFTW3F_NATIVE` via `third_party/fftw3` et documenter le blocage actuel (vendor incomplet: codelets generes manquants, symboles `solvtab_*` au link)
 - [x] Preparer un switch CMake pour selectionner le backend FFT (shim actuel vs futur backend prod)

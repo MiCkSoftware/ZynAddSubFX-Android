@@ -40,7 +40,7 @@ namespace zyn {
 
 bool isPlugin = false;
 
-prng_t prng_state = 0x1234;
+thread_local prng_t prng_state = 0x1234;
 
 /*
  * Transform the velocity according the scaling parameter (velocity sensing)

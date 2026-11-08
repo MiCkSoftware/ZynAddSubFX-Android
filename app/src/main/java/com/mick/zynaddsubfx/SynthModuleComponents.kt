@@ -98,6 +98,8 @@ internal fun DrawScope.drawNeonCurve(path: Path, color: Color) {
     }
 }
 
+internal val SynthGraphBackground = Color(0xFF050A0C)
+
 @Composable
 private fun FormantResponsePreview(
     model: FilterModel,
@@ -119,7 +121,7 @@ private fun FormantResponsePreview(
     val gain = model.parameters.firstOrNull { it.descriptor.path.endsWith("/gain") ||
         it.descriptor.path.endsWith("filterGain") }?.value ?: 64.0
     val markerDb = -80.0 * (1.0 - amplitude / 127.0) + (gain / 64.0 - 1.0) * 30.0
-    Canvas(modifier.background(Color(0xFF09191D), RoundedCornerShape(7.dp))) {
+    Canvas(modifier.background(SynthGraphBackground, RoundedCornerShape(7.dp))) {
         val labelPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
             color = android.graphics.Color.rgb(145, 179, 183)
             textSize = 10.dp.toPx()
@@ -196,9 +198,10 @@ fun ModulePreview(
     modifier: Modifier = Modifier,
     accent: Color = Color(0xFF66F0E9),
     sustainFraction: Float? = null,
+    unipolar: Boolean = false,
 ) {
     Canvas(
-        modifier.background(Color(0xFF09191D), RoundedCornerShape(7.dp)),
+        modifier.background(SynthGraphBackground, RoundedCornerShape(7.dp)),
     ) {
         drawLine(Color(0xFF214047), Offset(0f, size.height / 2f), Offset(size.width, size.height / 2f))
         for (division in 1..3) {
@@ -214,7 +217,7 @@ fun ModulePreview(
             series.values.forEachIndexed { index, value ->
                 val point = Offset(
                     size.width * index / (series.values.size - 1f),
-                    size.height * (.5f - value.coerceIn(-1f, 1f) * .45f),
+                    size.height * (if (unipolar) .95f - value.coerceIn(0f, 1f) * .9f else .5f - value.coerceIn(-1f, 1f) * .45f),
                 )
                 if (index == 0) path.moveTo(point.x, point.y) else path.lineTo(point.x, point.y)
             }

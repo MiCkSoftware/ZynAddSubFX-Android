@@ -19,6 +19,17 @@ class InstrumentEditorGestureTest {
         var writes = 0
         var previews = 0
         var failWrites = false
+        var generation = PadGenerationStatus(phase = "pending")
+        var generationRequests = 0
+        override fun padGenerationStatus(part: Int, kit: Int) = generation
+        override fun startPadGeneration(part: Int, kit: Int): Boolean {
+            generationRequests++
+            generation = generation.copy(phase = "generating")
+            return true
+        }
+        override fun cancelPadGeneration() {
+            if (generation.busy) generation = generation.copy(phase = "cancelled")
+        }
         override fun parameterSnapshot(partIndex: Int, kitIndex: Int): SynthEngine.ParameterSnapshot {
             snapshots++
             return SynthEngine.ParameterSnapshot(partIndex, kitIndex,
@@ -132,23 +143,58 @@ class InstrumentEditorGestureTest {
         assertEquals(80.0, model.state.snapshot!!.values[0].value, 0.0)
     }
 
-    @Test fun subHarmonicGestureReconcilesOnlyAtTheEnd() {
-        val engine = Engine("sub/harmonic")
+    @Test fun subAndPadGesturesReconcileOnlyAtTheEnd() {
+        for (module in listOf("SUB", "PAD")) {
+            val engine = Engine(if (module == "SUB") "sub/harmonic" else "pad/ampEnvelope/point")
+            val model = InstrumentEditorViewModel(engine)
+            model.open(2, 3)
+            model.selectEngine(module)
+            val snapshot = model.state.snapshot
+            val revision = model.state.revision
+            repeat(256) { model.dragParameter(engine.parameters[63], (it % 128).toDouble()) }
+            assertSame(snapshot, model.state.snapshot)
+            assertEquals(1, engine.snapshots)
+            assertEquals(0, engine.previews)
+            assertEquals(revision, model.state.revision)
+            assertEquals(127.0, model.parameterValue(engine.parameters[63]), 0.0)
+            model.finishParameterDrag()
+            assertEquals(2, engine.snapshots)
+            assertEquals(revision + 1, model.state.revision)
+            assertEquals(2, model.state.partIndex)
+            assertEquals(3, model.state.kitIndex)
+        }
+    }
+    @Test fun padProgressPollingDoesNotReadSnapshotsOrAdvanceParameterRevision() {
+        val engine = Engine()
         val model = InstrumentEditorViewModel(engine)
         model.open(2, 3)
-        model.selectEngine("SUB")
-        val snapshot = model.state.snapshot
         val revision = model.state.revision
-        repeat(256) { model.dragParameter(engine.parameters[63], (it % 128).toDouble()) }
-        assertSame(snapshot, model.state.snapshot)
+        repeat(100) { model.refreshPadGeneration() }
         assertEquals(1, engine.snapshots)
-        assertEquals(0, engine.previews)
         assertEquals(revision, model.state.revision)
-        assertEquals(127.0, model.parameterValue(engine.parameters[63]), 0.0)
-        model.finishParameterDrag()
-        assertEquals(2, engine.snapshots)
-        assertEquals(revision + 1, model.state.revision)
-        assertEquals(2, model.state.partIndex)
-        assertEquals(3, model.state.kitIndex)
+        assertEquals("pending", model.state.padGeneration.phase)
+        model.applyPadGeneration()
+        assertEquals(1, engine.generationRequests)
+        assertEquals("generating", model.state.padGeneration.phase)
+        model.cancelPadGeneration()
+        assertEquals("cancelled", model.state.padGeneration.phase)
+        assertEquals(1, engine.snapshots)
+        assertEquals(revision, model.state.revision)
     }
+
+    @Test fun changingPadKitOrEngineCancelsTheNativeJob() {
+        val engine = Engine()
+        val model = InstrumentEditorViewModel(engine)
+        model.open(0, 0)
+        model.selectEngine("PAD")
+        model.applyPadGeneration()
+        model.selectKit(2)
+        model.refreshPadGeneration()
+        assertEquals("cancelled", model.state.padGeneration.phase)
+        model.applyPadGeneration()
+        model.selectEngine("SUB")
+        model.refreshPadGeneration()
+        assertEquals("cancelled", model.state.padGeneration.phase)
+    }
+
 }

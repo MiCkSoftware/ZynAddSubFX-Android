@@ -90,7 +90,7 @@ class Part
         void defaultsinstrument();
 
         void applyparameters(void) NONREALTIME;
-        void applyparameters(std::function<bool()> do_abort) NONREALTIME;
+        void applyparameters(std::function<bool()> do_abort, unsigned max_threads = 0) NONREALTIME;
 
         void initialize_rt(void) REALTIME;
         void kill_rt(void) REALTIME;
@@ -126,6 +126,7 @@ class Part
         void setvoicelimit(unsigned char Pvoicelimit);
         void setkititemstatus(unsigned kititem, bool Penabled_);
         bool setKitSynthEnabled(unsigned kititem, int engine, bool enabled);
+        bool hasActivePadNotes(unsigned kititem);
 
         unsigned char partno; /**<the part number in Master*/
         bool          Penabled; /**<if the part is enabled*/

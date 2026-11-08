@@ -22,6 +22,7 @@
 #include "../Misc/Time.h"
 #include <cstdio>
 #include <thread>
+#include <memory>
 
 #include <rtosc/ports.h>
 #include <rtosc/port-sugar.h>
@@ -374,6 +375,8 @@ PADnoteParameters::~PADnoteParameters()
 
 void PADnoteParameters::defaults()
 {
+    markStructureChanged();
+    appliedRevision.store(0);
     Pmode = pad_mode::bandwidth;
     Php.base.type      = 0;
     Php.base.par1      = 80;
@@ -853,6 +856,31 @@ void PADnoteParameters::generatespectrum_otherModes(float *spectrum,
 /*
  * Applies the parameters (i.e. computes all the samples, based on parameters);
  */
+int PADnoteParameters::sampleCount() const
+{
+    if (Pquality.oct > 7 || Pquality.smpoct > 6 || Pquality.basenote > 9) return 0;
+    int perOctave = Pquality.smpoct;
+    if (perOctave == 5) perOctave = 6;
+    if (perOctave == 6 && Pquality.smpoct == 6) perOctave = 12;
+    return std::min(PAD_MAX_SAMPLES, perOctave ? (Pquality.oct + 1) * perOctave : (Pquality.oct + 1) / 2 + 1);
+}
+
+int PADnoteParameters::sampleSize() const
+{
+    return Pquality.samplesize <= 6 ? 1 << (Pquality.samplesize + 14) : 0;
+}
+
+uint64_t PADnoteParameters::sampleBytes() const
+{
+    return static_cast<uint64_t>(sampleCount()) * (sampleSize() + 5) * sizeof(float);
+}
+
+void PADnoteParameters::swapSamples(Sample *replacement, uint64_t revision)
+{
+    for (int n = 0; n < PAD_MAX_SAMPLES; ++n) std::swap(sample[n], replacement[n]);
+    appliedRevision.store(revision);
+}
+
 void PADnoteParameters::applyparameters()
 {
     applyparameters([]{return false;});
@@ -861,7 +889,7 @@ void PADnoteParameters::applyparameters()
 void PADnoteParameters::applyparameters(std::function<bool()> do_abort,
                                         unsigned max_threads)
 {
-    if(do_abort())
+    if(do_abort() || !sampleCount() || !sampleSize() || sampleBytes() > 128u * 1024 * 1024)
         return;
     unsigned num = sampleGenerator([this]
                        (unsigned N, PADnoteParameters::Sample&& smp) {
@@ -869,6 +897,8 @@ void PADnoteParameters::applyparameters(std::function<bool()> do_abort,
                            sample[N] = std::move(smp);
                        },
                        do_abort, max_threads);
+
+    if (!do_abort()) appliedRevision.store(structureRevision.load());
 
     //Delete remaining unused samples
     for(unsigned i = num; i < PAD_MAX_SAMPLES; ++i)
@@ -888,7 +918,8 @@ int PADnoteParameters::sampleGenerator(PADnoteParameters::callback cb,
     if(!max_threads)
         max_threads = std::numeric_limits<unsigned>::max();
 
-    const int samplesize   = (((int) 1) << (Pquality.samplesize + 14));
+    if (!sampleCount() || !sampleSize() || sampleBytes() > 128u * 1024 * 1024) return 0;
+    const int samplesize = sampleSize();
     const int spectrumsize = samplesize / 2;
     const int profilesize = 512;
 
@@ -900,21 +931,7 @@ int PADnoteParameters::sampleGenerator(PADnoteParameters::callback cb,
     if(Pquality.basenote % 2 == 1)
         basefreq *= 1.5f;
 
-    int samplemax = Pquality.oct + 1;
-    int smpoct    = Pquality.smpoct;
-    if(Pquality.smpoct == 5)
-        smpoct = 6;
-    if(Pquality.smpoct == 6)
-        smpoct = 12;
-    if(smpoct != 0)
-        samplemax *= smpoct;
-    else
-        samplemax = samplemax / 2 + 1;
-    if(samplemax == 0)
-        samplemax = 1;
-
-    if(samplemax > PAD_MAX_SAMPLES)
-        samplemax = PAD_MAX_SAMPLES;
+    const int samplemax = sampleCount();
 
     //this is used to compute frequency relation to the base frequency
     STACKALLOC(float, adj, samplemax);
@@ -932,9 +949,11 @@ int PADnoteParameters::sampleGenerator(PADnoteParameters::callback cb,
                       unsigned nthreads, unsigned threadno)
     {
         //prepare a BIG IFFT
-        FFTwrapper    *fft      = new FFTwrapper(samplesize);
-        FFTfreqBuffer  fftfreqs = fft->allocFreqBuf();
-        float         *spectrum = new float[spectrumsize];
+        auto fft = std::make_unique<FFTwrapper>(samplesize);
+        FFTfreqBuffer fftfreqs = fft->allocFreqBuf();
+        std::unique_ptr<fft_t[]> frequencyStorage(fftfreqs.data);
+        auto spectrumStorage = std::make_unique<float[]>(spectrumsize);
+        float *spectrum = spectrumStorage.get();
 
         for(int nsample = 0; nsample < samplemax; ++nsample)
         if(nsample % nthreads == threadno)
@@ -959,7 +978,8 @@ int PADnoteParameters::sampleGenerator(PADnoteParameters::callback cb,
             //(used for linear/cubic interpolation)
             const int extra_samples = 5;
             PADnoteParameters::Sample newsample;
-            newsample.smp = new float[samplesize + extra_samples];
+            auto sampleStorage = std::make_unique<float[]>(samplesize + extra_samples);
+            newsample.smp = sampleStorage.get();
 
             newsample.smp[0] = 0.0f;
             fftfreqs[0] = fft_t(0, 0);
@@ -988,24 +1008,28 @@ int PADnoteParameters::sampleGenerator(PADnoteParameters::callback cb,
             newsample.size     = samplesize;
             newsample.basefreq = basefreq * basefreqadjust;
             cb(nsample, std::move(newsample));
+            sampleStorage.release();
         }
 
         //Cleanup
-        delete (fft);
-        delete[] fftfreqs.data;
-        delete[] spectrum;
+        // All temporary buffers are reclaimed by their owners.
     };
 
     if(oscilgen->needPrepare())
         oscilgen->prepare();
+
+    if (max_threads == 1) {
+        thread_cb(1, 0);
+        return samplemax;
+    }
 
 #ifdef WIN32
     //Temporarily disable multi-threading here as C++11 threads are broken on
     //mingw cross compilation
     thread_cb(1,0);
 #else
-    unsigned nthreads = std::min(max_threads,
-                                 std::thread::hardware_concurrency());
+    unsigned nthreads = std::max(1u, std::min(max_threads,
+                                 std::thread::hardware_concurrency()));
     std::vector<std::thread> threads(nthreads);
     for(unsigned i = 0; i < nthreads; ++i)
         threads[i] = std::thread(thread_cb, nthreads, i);
@@ -1141,6 +1165,7 @@ void PADnoteParameters::add2XML(XMLwrapper& xml)
 
 void PADnoteParameters::getfromXML(XMLwrapper& xml)
 {
+    markStructureChanged();
     PStereo    = xml.getparbool("stereo", PStereo);
     Pmode      = (pad_mode)xml.getpar127("mode", 0);
     Pbandwidth = xml.getpar("bandwidth", Pbandwidth, 0, 1000);
@@ -1261,8 +1286,21 @@ void PADnoteParameters::getfromXML(XMLwrapper& xml)
 }
 
 #define COPY(y) this->y = x.y
+void PADnoteParameters::pasteProfile(const PADnoteParameters &p)
+{
+    Php = p.Php;
+    markStructureChanged();
+}
+
+void PADnoteParameters::pasteOvertones(const PADnoteParameters &p)
+{
+    Phrpos = p.Phrpos;
+    markStructureChanged();
+}
+
 void PADnoteParameters::paste(PADnoteParameters &x)
 {
+    markStructureChanged();
     COPY(Pmode);
 
     COPY(Php.base.type);

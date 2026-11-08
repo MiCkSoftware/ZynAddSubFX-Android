@@ -8,6 +8,8 @@
 #include <chrono>
 #include <string_view>
 #include <variant>
+#include <thread>
+#include <stdexcept>
 #ifdef __ANDROID__
 #include <android/log.h>
 #endif
@@ -32,7 +34,7 @@
 
 namespace {
 constexpr double kTwoPi = 6.28318530717958647692;
-constexpr auto kInstrumentApplyTimeout = std::chrono::milliseconds(1200);
+constexpr auto kInstrumentApplyTimeout = std::chrono::seconds(30);
 
 constexpr struct FilterTypeControl {
     int maximum;
@@ -104,9 +106,41 @@ constexpr struct OscillatorControl {
     {"ampRandomPower", "Randomness power", &zyn::OscilGen::Pamprandpower, 0, 127, 64},
 };
 
+struct PadStructureControl {
+    const char *field, *label, *section;
+    int (*read)(const zyn::PADnoteParameters &);
+    void (*write)(zyn::PADnoteParameters &, int);
+    int minimum, maximum, defaultValue;
+    const char *options;
+};
+#define PAD_CONTROL(field, label, section, member, minimum, maximum, def, options) \
+    {field, label, section, [](const zyn::PADnoteParameters &p) -> int { return p.member; }, \
+     [](zyn::PADnoteParameters &p, int value) { p.member = value; }, minimum, maximum, def, options}
+const PadStructureControl kPadStructureControls[] = {
+    PAD_CONTROL("profile/baseType", "Shape", "Profile / Base", Php.base.type, 0, 2, 0, "Gaussian,Rectangular,Double exponential"),
+    PAD_CONTROL("profile/baseParameter", "Shape parameter", "Profile / Base", Php.base.par1, 0, 127, 80, nullptr),
+    PAD_CONTROL("profileWidth", "Width", "Profile / Base", Php.width, 0, 127, 127, nullptr),
+    PAD_CONTROL("profile/side", "Side", "Profile / Base", Php.onehalf, 0, 2, 0, "Full,Upper half,Lower half"),
+    PAD_CONTROL("profileAutoScale", "Auto-scale", "Profile / Base", Php.autoscale, 0, 1, 1, "Off,On"),
+    PAD_CONTROL("profile/frequencyMultiplier", "Frequency multiplier", "Profile / Modulation", Php.freqmult, 0, 127, 0, nullptr),
+    PAD_CONTROL("profile/modulatorAmount", "Modulator amount", "Profile / Modulation", Php.modulator.par1, 0, 127, 0, nullptr),
+    PAD_CONTROL("profile/modulatorFrequency", "Modulator frequency", "Profile / Modulation", Php.modulator.freq, 0, 127, 30, nullptr),
+    PAD_CONTROL("profile/amplitudeType", "Amplitude type", "Profile / Amplitude", Php.amp.type, 0, 3, 0, "Off,Gauss,Sine,Flat"),
+    PAD_CONTROL("profile/amplitudeMode", "Amplitude mode", "Profile / Amplitude", Php.amp.mode, 0, 3, 0, "Sum,Mult,Div1,Div2"),
+    PAD_CONTROL("profile/amplitudeParameter1", "Parameter 1", "Profile / Amplitude", Php.amp.par1, 0, 127, 80, nullptr),
+    PAD_CONTROL("profile/amplitudeParameter2", "Parameter 2", "Profile / Amplitude", Php.amp.par2, 0, 127, 64, nullptr),
+    PAD_CONTROL("overtone/type", "Positions", "Spectrum / Overtones", Phrpos.type, 0, 7, 0, "Harmonic,ShiftU,ShiftL,PowerU,PowerL,Sine,Power,Shift"),
+    PAD_CONTROL("overtone/par1", "Parameter 1", "Spectrum / Overtones", Phrpos.par1, 0, 255, 0, nullptr),
+    PAD_CONTROL("overtone/par2", "Parameter 2", "Spectrum / Overtones", Phrpos.par2, 0, 255, 0, nullptr),
+    PAD_CONTROL("overtone/par3", "Force harmonics", "Spectrum / Overtones", Phrpos.par3, 0, 255, 0, nullptr),
+    PAD_CONTROL("qualityBaseNote", "Base note", "Quality", Pquality.basenote, 0, 9, 4, "C2,G2,C3,G3,C4,G4,C5,G5,C6,G6"),
+};
+#undef PAD_CONTROL
+
 // Module engine codes are shared with ModuleEngine in Kotlin: ADD=0, SUB=1, PAD=2.
 bool supportsModule(int engine, int kind, int role) {
-    if (engine < 0 || engine > 2 || kind < 0 || kind > 9) return false;
+    if (engine < 0 || engine > 2 || kind < 0 || kind > 11) return false;
+    if (kind == 10 || kind == 11) return engine == 2 && role == 0;
     if (kind == 9) return engine == 1 && role == 0;
     if (kind == 2) return role >= 0 && (engine == 0 ? role <= 4 :
         engine == 1 ? (role <= 2 || role == 5) : role <= 2);
@@ -168,6 +202,7 @@ bool hasModule(const zyn::Part::Kit &kit, const ResolvedModule &module, int kind
         case 3: return module.lfo != nullptr;
         case 4: case 6: return module.filter != nullptr;
         case 5: return module.resonance != nullptr;
+        case 10: case 11: return kit.padpars && index == -1;
         case 9: return kit.subpars && index == -1;
         default: return false;
     }
@@ -239,6 +274,15 @@ ParameterMetadata parameterMetadata(std::string_view path, std::string_view grou
             } else {
                 metadata.section = "voice";
             }
+        } else if (metadata.module == std::string_view("pad") && field.rfind("profile", 0) == 0) {
+            metadata.section = "profile";
+        } else if (metadata.module == std::string_view("pad") &&
+                   (field == "mode" || field.rfind("bandwidth", 0) == 0 || field.rfind("overtone/", 0) == 0)) {
+            metadata.section = "spectrum";
+        } else if (metadata.module == std::string_view("pad") && field.rfind("quality", 0) == 0) {
+            metadata.section = "quality";
+        } else if (metadata.module == std::string_view("pad") && field.rfind("osc/", 0) == 0) {
+            metadata.section = "oscillator";
         } else if (metadata.module == std::string_view("sub") &&
                    (field.rfind("bandwidth", 0) == 0 || field == "stages")) {
             metadata.section = "bandwidth";
@@ -260,7 +304,7 @@ ParameterMetadata parameterMetadata(std::string_view path, std::string_view grou
         } else {
             metadata.section = "global";
         }
-        sectionFromPath = path.rfind("add/", 0) == 0 || path.rfind("sub/", 0) == 0 || field.find("Envelope") != std::string_view::npos ||
+        sectionFromPath = path.rfind("add/", 0) == 0 || path.rfind("sub/", 0) == 0 || path.rfind("pad/", 0) == 0 || field.find("Envelope") != std::string_view::npos ||
             field.find("Lfo") != std::string_view::npos || field.rfind("filter", 0) == 0;
     }
     if (!sectionFromPath) {
@@ -319,7 +363,11 @@ bool applyAndInitPartWithTimeout(
             return true;
         }
         return false;
-    });
+    }, 1);
+    for (const auto &kit : part->kit) {
+        if (kit.Ppadenabled && kit.padpars &&
+            kit.padpars->structureRevision.load() != kit.padpars->appliedRevision.load()) return false;
+    }
     if (aborted) {
         return false;
     }
@@ -328,10 +376,176 @@ bool applyAndInitPartWithTimeout(
 }
 }
 
+struct ZynAndroidEngine::PadGeneration {
+    int part, kit, total, frames;
+    uint64_t revision, bytes;
+    std::atomic<int> phase{1}, completed{0}; // generating, ready, applied, cancelled, failed
+    std::atomic<bool> abort{false}, finished{false};
+    std::atomic<float> peak{0};
+    std::atomic<int64_t> elapsedMs{0};
+    std::array<zyn::PADnoteParameters::Sample, PAD_MAX_SAMPLES> samples{};
+    std::string error;
+    std::thread worker;
+    ~PadGeneration() {
+        abort.store(true);
+        if (worker.joinable()) worker.join();
+        for (auto &sample : samples) delete[] sample.smp;
+    }
+};
+
+void ZynAndroidEngine::resetPadGeneration() {
+    std::unique_ptr<PadGeneration> previous;
+    {
+        std::lock_guard<std::mutex> lock(padGenerationMutex_);
+        if (padGeneration_) padGeneration_->abort.store(true);
+        previous = std::move(padGeneration_);
+    }
+    // Join and reclaim buffers away from the renderer and without holding its try-lock.
+    previous.reset();
+}
+
+void ZynAndroidEngine::invalidatePadStructure(int part, int kit) {
+    master_->part[part]->kit[kit].padpars->markStructureChanged();
+    std::lock_guard<std::mutex> lock(padGenerationMutex_);
+    if (padGeneration_ && padGeneration_->part == part && padGeneration_->kit == kit &&
+        padGeneration_->phase.load() <= 2) {
+        padGeneration_->abort.store(true);
+        padGeneration_->phase.store(4);
+    }
+}
+
+void ZynAndroidEngine::cancelPadGeneration() {
+    std::lock_guard<std::mutex> lock(padGenerationMutex_);
+    if (padGeneration_ && padGeneration_->phase.load() <= 2) {
+        padGeneration_->abort.store(true);
+        padGeneration_->phase.store(4);
+    }
+}
+
+bool ZynAndroidEngine::startPadGeneration(int part, int kit) {
+    if (!master_ || !synth_ || part < 0 || part >= NUM_MIDI_PARTS || kit < 0 || kit >= NUM_KIT_ITEMS ||
+        !master_->part[part] || !master_->part[part]->kit[kit].padpars) return false;
+    {
+        std::lock_guard<std::mutex> lock(padGenerationMutex_);
+        if (padGeneration_ && !padGeneration_->finished.load()) return false;
+    }
+    resetPadGeneration();
+    auto &parameters = *master_->part[part]->kit[kit].padpars;
+    auto job = std::make_unique<PadGeneration>();
+    job->part = part; job->kit = kit;
+    job->total = parameters.sampleCount(); job->frames = parameters.sampleSize();
+    job->bytes = parameters.sampleBytes(); job->revision = parameters.structureRevision.load();
+    if (!job->total || !job->frames || job->bytes > 128u * 1024 * 1024) {
+        job->error = "PAD bank exceeds the 128 MiB limit or has invalid quality settings";
+        job->phase.store(5); job->finished.store(true);
+        std::lock_guard<std::mutex> lock(padGenerationMutex_);
+        padGeneration_ = std::move(job);
+        return false;
+    }
+    zyn::XMLwrapper xml;
+    xml.minimal = false;
+    xml.beginbranch("PAD"); parameters.add2XML(xml); xml.endbranch();
+    char *raw = xml.getXMLdata();
+    if (!raw) return false;
+    std::string snapshot(raw); free(raw);
+    const auto rate = synth_->samplerate;
+    const auto buffer = synth_->buffersize;
+    const auto oscillator = synth_->oscilsize;
+    auto *task = job.get();
+    task->worker = std::thread([task, snapshot = std::move(snapshot), rate, buffer, oscillator]() {
+        const auto started = std::chrono::steady_clock::now();
+        const auto deadline = started + std::chrono::seconds(30);
+        int resultPhase = 5;
+        try {
+            zyn::SYNTH_T synth;
+            synth.samplerate = rate; synth.buffersize = buffer; synth.oscilsize = oscillator;
+            synth.alias(false);
+            zyn::FFTwrapper fft(oscillator);
+            zyn::PADnoteParameters source(synth, &fft);
+            zyn::XMLwrapper xml;
+            if (!xml.putXMLdata(snapshot.c_str()) || !xml.enterbranch("PAD"))
+                throw std::runtime_error("Cannot read PAD generation snapshot");
+            source.getfromXML(xml);
+            const auto doAbort = [&]() {
+                return task->abort.load() || std::chrono::steady_clock::now() >= deadline;
+            };
+            bool finite = true;
+            source.sampleGenerator([&](int n, zyn::PADnoteParameters::Sample &&sample) {
+                task->samples[n] = sample;
+                float peak = task->peak.load();
+                for (int i = 0; i < sample.size; ++i) {
+                    if (!std::isfinite(sample.smp[i])) finite = false;
+                    peak = std::max(peak, std::fabs(sample.smp[i]));
+                }
+                task->peak.store(peak);
+                task->completed.fetch_add(1);
+            }, doAbort, 1);
+            if (task->abort.load()) resultPhase = 4;
+            else if (std::chrono::steady_clock::now() >= deadline) {
+                task->error = "PAD generation timed out after 30 seconds"; resultPhase = 5;
+            } else if (!finite || task->completed.load() != task->total || task->peak.load() <= 0) {
+                task->error = "PAD generation returned an incomplete or silent bank"; resultPhase = 5;
+            } else resultPhase = 2;
+        } catch (const std::exception &error) {
+            task->error = error.what(); resultPhase = 5;
+        }
+        task->elapsedMs.store(std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - started).count());
+        task->finished.store(true);
+        task->phase.store(task->abort.load() ? 4 : resultPhase);
+    });
+    std::lock_guard<std::mutex> lock(padGenerationMutex_);
+    padGeneration_ = std::move(job);
+    return true;
+}
+
+void ZynAndroidEngine::servicePadGeneration() {
+    std::unique_lock<std::mutex> lock(padGenerationMutex_, std::try_to_lock);
+    if (!lock || !padGeneration_ || padGeneration_->phase.load() != 2 || !master_) return;
+    auto &job = *padGeneration_;
+    auto *part = master_->part[job.part];
+    auto *parameters = part ? part->kit[job.kit].padpars : nullptr;
+    if (!parameters || job.abort.load() || parameters->structureRevision.load() != job.revision) {
+        job.phase.store(4); return;
+    }
+    if (part->hasActivePadNotes(job.kit)) return;
+    parameters->swapSamples(job.samples.data(), job.revision);
+    job.phase.store(3);
+}
+
+std::string ZynAndroidEngine::padGenerationStatus(int part, int kit) {
+    if (!master_ || part < 0 || part >= NUM_MIDI_PARTS || kit < 0 || kit >= NUM_KIT_ITEMS ||
+        !master_->part[part] || !master_->part[part]->kit[kit].padpars) return "unavailable|0|0|0|0|0|0|PAD is unavailable";
+    const auto &parameters = *master_->part[part]->kit[kit].padpars;
+    const char *state = parameters.structureRevision.load() == parameters.appliedRevision.load() ? "done" : "pending";
+    std::lock_guard<std::mutex> lock(padGenerationMutex_);
+    if (padGeneration_ && padGeneration_->part == part && padGeneration_->kit == kit) {
+        auto &job = *padGeneration_;
+        const auto phase = job.phase.load();
+        if (phase == 1) state = "generating";
+        else if (phase == 2) state = "ready";
+        else if (phase == 4) state = job.finished.load() ? "cancelled" : "cancelling";
+        else if (phase == 5 && job.revision == parameters.structureRevision.load()) state = "failed";
+        std::ostringstream out;
+        const bool current = job.revision == parameters.structureRevision.load();
+        out << state << '|' << job.completed.load() << '|' << (current ? job.total : parameters.sampleCount()) << '|'
+            << (current ? job.frames : parameters.sampleSize()) << '|'
+            << (current ? job.bytes : parameters.sampleBytes()) << '|' << job.peak.load() << '|' << job.elapsedMs.load() << '|';
+        // Error text is published before finished; never read while the worker writes it.
+        if (job.finished.load()) out << job.error;
+        return out.str();
+    }
+    std::ostringstream out;
+    out << state << "|0|" << parameters.sampleCount() << '|' << parameters.sampleSize() << '|'
+        << parameters.sampleBytes() << "|0|0|";
+    return out.str();
+}
+
 ZynAndroidEngine::ZynAndroidEngine() = default;
-ZynAndroidEngine::~ZynAndroidEngine() = default;
+ZynAndroidEngine::~ZynAndroidEngine() { resetPadGeneration(); }
 
 bool ZynAndroidEngine::initialize(int sampleRate, int framesPerBurst) {
+    resetPadGeneration();
     if (sampleRate <= 0 || framesPerBurst <= 0) {
         initialized_.store(false);
         zynReady_.store(false);
@@ -393,6 +607,7 @@ bool ZynAndroidEngine::initialize(int sampleRate, int framesPerBurst) {
 }
 
 void ZynAndroidEngine::shutdown() {
+    resetPadGeneration();
     testToneEnabled_.store(false);
     noteHeld_.store(false);
     zynReady_.store(false);
@@ -439,6 +654,7 @@ bool ZynAndroidEngine::loadMasterXml(const std::string &path) {
         presetLoadFailCount_.fetch_add(1);
         return false;
     }
+    resetPadGeneration();
     master_->ShutUp();
     noteHeld_.store(false);
     const int rc = master_->loadXML(path.c_str());
@@ -471,6 +687,7 @@ bool ZynAndroidEngine::loadPresetFile(const std::string &path, int partIndex) {
         presetLoadFailCount_.fetch_add(1);
         return false;
     }
+    resetPadGeneration();
     master_->ShutUp();
     noteHeld_.store(false);
 
@@ -917,6 +1134,41 @@ std::string ZynAndroidEngine::parameterSnapshot(int partIndex, int kitIndex) con
     add("kit/addEnabled", "ADsynth enabled", "Kit", "bool", kit.Padenabled, 0, 1, kitIndex == 0);
     add("kit/subEnabled", "SUBsynth enabled", "Kit", "bool", kit.Psubenabled, 0, 1, 0);
     add("kit/padEnabled", "PADsynth enabled", "Kit", "bool", kit.Ppadenabled, 0, 1, 0);
+            auto addOscillator = [&](const zyn::OscilGen &o, const std::string &oscPrefix, const std::string &oscGroup) {
+                for (const auto &control : kOscillatorControls) {
+                    const int value = std::visit([&](auto member) -> int { return o.*member; }, control.member);
+                    const char *type = control.options ? "enum" :
+                        std::holds_alternative<bool zyn::OscilGen::*>(control.member) ? "bool" : "int";
+                    add((oscPrefix + control.field).c_str(), control.label, oscGroup.c_str(), type,
+                        value, control.minimum, control.maximum, control.defaultValue,
+                        control.options ? control.options : "");
+                }
+                for (int h = 0; h < MAX_AD_HARMONICS; ++h) {
+                    add((oscPrefix + "harmonic/" + std::to_string(h) + "/magnitude").c_str(),
+                        ("Harmonic " + std::to_string(h + 1)).c_str(), (oscGroup + " harmonics").c_str(),
+                        "int", o.Phmag[h], 0, 127, h == 0 ? 127 : 64);
+                    add((oscPrefix + "harmonic/" + std::to_string(h) + "/phase").c_str(),
+                        ("Phase " + std::to_string(h + 1)).c_str(), (oscGroup + " phases").c_str(),
+                        "int", o.Phphase[h], 0, 127, 64);
+                }
+            };
+    auto addResonance = [&](const zyn::Resonance &resonance, const std::string &prefix, const std::string &group) {
+            add((prefix + "/enabled").c_str(), "Enabled", group.c_str(), "bool",
+                resonance.Penabled, 0, 1, 0);
+            add((prefix + "/maxDb").c_str(), "Maximum resonance", group.c_str(), "int",
+                resonance.PmaxdB, 0, 127, 20);
+            add((prefix + "/center").c_str(), "Center frequency", group.c_str(), "int",
+                resonance.Pcenterfreq, 0, 127, 64);
+            add((prefix + "/octaves").c_str(), "Octave span", group.c_str(), "int",
+                resonance.Poctavesfreq, 0, 127, 64);
+            add((prefix + "/protectFundamental").c_str(), "Protect fundamental", group.c_str(), "bool",
+                resonance.Pprotectthefundamental, 0, 1, 0);
+            for (int point = 0; point < N_RES_POINTS; ++point) {
+                add((prefix + "/point/" + std::to_string(point)).c_str(),
+                    ("Point " + std::to_string(point + 1)).c_str(), (group + " points").c_str(), "int",
+                    resonance.Prespoints[point], 0, 127, 64);
+            }
+    };
     if (kit.adpars) {
         const auto &g = kit.adpars->GlobalPar;
         add("add/stereo", "Stereo", "ADD / Global", "bool", g.PStereo, 0, 1, 1);
@@ -958,24 +1210,7 @@ std::string ZynAndroidEngine::parameterSnapshot(int partIndex, int kitIndex) con
         if (g.FilterLfo)
             lfoValue("add/filterLfo", "ADD / Filter / LFO", *g.FilterLfo);
         add("add/randomGrouping", "Random grouping", "ADD / Global", "bool", g.Hrandgrouping, 0, 1, 0);
-        if (g.Reson) {
-            const auto &resonance = *g.Reson;
-            add("add/resonance/enabled", "Enabled", "ADD / Resonance", "bool",
-                resonance.Penabled, 0, 1, 0);
-            add("add/resonance/maxDb", "Maximum resonance", "ADD / Resonance", "int",
-                resonance.PmaxdB, 0, 127, 20);
-            add("add/resonance/center", "Center frequency", "ADD / Resonance", "int",
-                resonance.Pcenterfreq, 0, 127, 64);
-            add("add/resonance/octaves", "Octave span", "ADD / Resonance", "int",
-                resonance.Poctavesfreq, 0, 127, 64);
-            add("add/resonance/protectFundamental", "Protect fundamental", "ADD / Resonance", "bool",
-                resonance.Pprotectthefundamental, 0, 1, 0);
-            for (int point = 0; point < N_RES_POINTS; ++point) {
-                add(("add/resonance/point/" + std::to_string(point)).c_str(),
-                    ("Point " + std::to_string(point + 1)).c_str(), "ADD / Resonance points", "int",
-                    resonance.Prespoints[point], 0, 127, 64);
-            }
-        }
+        if (g.Reson) addResonance(*g.Reson, "add/resonance", "ADD / Resonance");
         for (int voice = 0; voice < NUM_VOICES; ++voice) {
             const auto &v = kit.adpars->VoicePar[voice];
             const std::string prefix = "add/voice/" + std::to_string(voice) + "/";
@@ -1128,24 +1363,6 @@ std::string ZynAndroidEngine::parameterSnapshot(int partIndex, int kitIndex) con
                 if (filter.Pcategory == 1)
                     formantValue((prefix + "filter").c_str(), (filterGroup + " / Formant").c_str(), filter);
             }
-            auto addOscillator = [&](const zyn::OscilGen &o, const std::string &oscPrefix, const std::string &oscGroup) {
-                for (const auto &control : kOscillatorControls) {
-                    const int value = std::visit([&](auto member) -> int { return o.*member; }, control.member);
-                    const char *type = control.options ? "enum" :
-                        std::holds_alternative<bool zyn::OscilGen::*>(control.member) ? "bool" : "int";
-                    add((oscPrefix + control.field).c_str(), control.label, oscGroup.c_str(), type,
-                        value, control.minimum, control.maximum, control.defaultValue,
-                        control.options ? control.options : "");
-                }
-                for (int h = 0; h < MAX_AD_HARMONICS; ++h) {
-                    add((oscPrefix + "harmonic/" + std::to_string(h) + "/magnitude").c_str(),
-                        ("Harmonic " + std::to_string(h + 1)).c_str(), (oscGroup + " harmonics").c_str(),
-                        "int", o.Phmag[h], 0, 127, h == 0 ? 127 : 64);
-                    add((oscPrefix + "harmonic/" + std::to_string(h) + "/phase").c_str(),
-                        ("Phase " + std::to_string(h + 1)).c_str(), (oscGroup + " phases").c_str(),
-                        "int", o.Phphase[h], 0, 127, 64);
-                }
-            };
             if (v.OscilGn) addOscillator(*v.OscilGn, prefix + "osc/", group + " / Oscillator");
             if (v.FmGn) addOscillator(*v.FmGn, prefix + "modOsc/", group + " / Modulator oscillator");
         }
@@ -1214,19 +1431,42 @@ std::string ZynAndroidEngine::parameterSnapshot(int partIndex, int kitIndex) con
     }
     if (kit.padpars) {
         const auto &p = *kit.padpars;
+        addOscillator(*p.oscilgen, "pad/osc/", "PAD / Oscillator");
+        addResonance(*p.resonance, "pad/resonance", "PAD / Resonance");
         add("pad/filterVelocity", "Velocity amount", "PAD / Filter / Parameters", "int", p.PFilterVelocityScale, 0, 127, 0);
         add("pad/filterVelocitySense", "Velocity sensitivity", "PAD / Filter / Parameters", "int", p.PFilterVelocityScaleFunction, 0, 127, 64);
         add("pad/stereo", "Stereo", "PAD / Global", "bool", p.PStereo, 0, 1, 1);
         add("pad/panning", "Panning", "PAD / Amplitude", "int", p.PPanning, 0, 127, 64);
         add("pad/volume", "Volume", "PAD / Amplitude", "int", p.PVolume, 0, 127, 90);
-        add("pad/bandwidth", "Bandwidth", "PAD / Harmonics", "int", p.Pbandwidth, 0, 1000, 500);
-        add("pad/bandwidthScale", "Bandwidth scale", "PAD / Harmonics", "int", p.Pbwscale, 0, 127, 64);
-        add("pad/mode", "Synthesis mode", "PAD / Harmonics", "enum", static_cast<int>(p.Pmode), 0, 2, 0, "Bandwidth,Discrete,Continuous");
-        add("pad/profileWidth", "Profile width", "PAD / Profile", "int", p.Php.width, 0, 127, 127);
-        add("pad/profileAutoScale", "Profile auto-scale", "PAD / Profile", "bool", p.Php.autoscale, 0, 1, 1);
-        add("pad/qualitySize", "Sample size", "PAD / Quality", "int", p.Pquality.samplesize, 0, 6, 3);
-        add("pad/qualityOctaves", "Octaves", "PAD / Quality", "int", p.Pquality.oct, 0, 7, 3);
-        add("pad/qualitySamplesPerOctave", "Samples per octave", "PAD / Quality", "int", p.Pquality.smpoct, 0, 6, 2);
+        add("pad/velocity", "Velocity", "PAD / Amplitude", "int", p.PAmpVelocityScaleFunction, 0, 127, 64);
+        add("pad/fadeIn", "Fade-in adjustment", "PAD / Amplitude", "int", p.Fadein_adjustment, 0, 127, FADEIN_ADJUSTMENT_SCALE);
+        add("pad/punchStrength", "Punch strength", "PAD / Amplitude / Punch", "int", p.PPunchStrength, 0, 127, 0);
+        add("pad/punchTime", "Punch time", "PAD / Amplitude / Punch", "int", p.PPunchTime, 0, 127, 60);
+        add("pad/punchStretch", "Punch stretch", "PAD / Amplitude / Punch", "int", p.PPunchStretch, 0, 127, 64);
+        add("pad/punchVelocity", "Punch velocity", "PAD / Amplitude / Punch", "int", p.PPunchVelocitySensing, 0, 127, 72);
+        add("pad/detune", "Fine detune", "PAD / Frequency", "int", p.PDetune, 0, 16383, 8192);
+        add("pad/detuneType", "Detune type", "PAD / Frequency", "enum", p.PDetuneType, 1, 4, 1,
+            "Default,L35 cents,L10 cents,E100 cents,E1200 cents");
+        int octave = p.PCoarseDetune / 1024;
+        if (octave >= 8) octave -= 16;
+        int coarse = p.PCoarseDetune % 1024;
+        if (coarse >= 512) coarse -= 1024;
+        add("pad/octave", "Octave", "PAD / Frequency", "int", octave, -8, 7, 0);
+        add("pad/coarse", "Coarse detune", "PAD / Frequency", "int", coarse, -64, 63, 0);
+        add("pad/bend", "Bend", "PAD / Frequency", "int", static_cast<int>(p.PBendAdjust) - 64, -64, 63, 24);
+        add("pad/offsetHz", "Offset Hz", "PAD / Frequency", "int", static_cast<int>(p.POffsetHz) - 64, -64, 63, 0);
+        add("pad/fixedFreqEt", "Equal temperament", "PAD / Frequency", "int", p.PfixedfreqET, 0, 127, 0);
+        add("pad/bandwidth", "Bandwidth", "PAD / Spectrum", "int", p.Pbandwidth, 0, 1000, 500);
+        add("pad/bandwidthScale", "Bandwidth scale", "PAD / Spectrum", "enum", p.Pbwscale, 0, 7, 0, "Normal,Equal Hz,Quarter,Half,75%,150%,Double,Inverse half");
+        add("pad/mode", "Synthesis mode", "PAD / Spectrum", "enum", static_cast<int>(p.Pmode), 0, 2, 0, "Bandwidth,Discrete,Continuous");
+        for (const auto &control : kPadStructureControls) {
+            add(("pad/" + std::string(control.field)).c_str(), control.label,
+                ("PAD / " + std::string(control.section)).c_str(), std::string_view(control.field) == "profileAutoScale" ? "bool" : control.options ? "enum" : "int",
+                control.read(p), control.minimum, control.maximum, control.defaultValue, control.options ? control.options : "");
+        }
+        add("pad/qualitySize", "Sample size", "PAD / Quality", "enum", p.Pquality.samplesize, 0, 6, 3, "16k,32k,64k,128k,256k,512k,1M");
+        add("pad/qualityOctaves", "Octaves", "PAD / Quality", "enum", p.Pquality.oct, 0, 7, 3, "1,2,3,4,5,6,7,8");
+        add("pad/qualitySamplesPerOctave", "Samples per octave", "PAD / Quality", "enum", p.Pquality.smpoct, 0, 6, 2, "0.5,1,2,3,4,6,12");
         add("pad/fixedFreq", "Fixed frequency", "PAD / Frequency", "bool", p.Pfixedfreq, 0, 1, 0);
     }
     return out.str();
@@ -1243,6 +1483,53 @@ bool ZynAndroidEngine::setParameter(int partIndex, int kitIndex, const std::stri
     auto &kit = part->kit[kitIndex];
     auto i = [&](int min, int max) { return std::clamp(static_cast<int>(std::lround(value)), min, max); };
     auto b = [&]() { return value >= 0.5; };
+    auto writeResonance = [&](zyn::Resonance &resonance, const std::string &field) {
+            if (field == "enabled") resonance.Penabled = b();
+            else if (field == "maxDb") resonance.PmaxdB = i(0, 127);
+            else if (field == "center") resonance.Pcenterfreq = i(0, 127);
+            else if (field == "octaves") resonance.Poctavesfreq = i(0, 127);
+            else if (field == "protectFundamental") resonance.Pprotectthefundamental = b();
+            else if (field == "zero") resonance.zero();
+            else if (field == "smooth") resonance.smooth();
+            else if (field == "interpolateSmooth") resonance.interpolatepeaks(0);
+            else if (field == "interpolateLinear") resonance.interpolatepeaks(1);
+            else if (field.rfind("random/", 0) == 0) resonance.randomize(
+                std::clamp(std::atoi(field.substr(7).c_str()), 0, 2));
+            else if (field.rfind("point/", 0) == 0) {
+                const int point = std::atoi(field.substr(6).c_str());
+                if (point < 0 || point >= N_RES_POINTS) return false;
+                resonance.setpoint(point, i(0, 127));
+            } else return false;
+        return true;
+    };
+    auto writeOscillator = [&](zyn::OscilGen &o, const std::string &oscField) {
+                const auto control = std::find_if(std::begin(kOscillatorControls), std::end(kOscillatorControls),
+                    [&](const auto &candidate) { return oscField == candidate.field; });
+                if (control != std::end(kOscillatorControls)) {
+                    std::visit([&](auto member) { o.*member = i(control->minimum, control->maximum); }, control->member);
+                } else if (oscField == "action/useAsBase") {
+                    o.useasbase();
+                    return true;
+                } else if (oscField == "action/convertToSine") {
+                    o.convert2sine();
+                    return true;
+                } else if (oscField == "action/clearHarmonics") {
+                    std::fill(std::begin(o.Phmag), std::end(o.Phmag), 64);
+                    std::fill(std::begin(o.Phphase), std::end(o.Phphase), 64);
+                    o.Phmag[0] = 127;
+                } else if (oscField.rfind("harmonic/", 0) == 0) {
+                    const auto harmonic = oscField.substr(9);
+                    const auto harmonicSlash = harmonic.find('/');
+                    if (harmonicSlash == std::string::npos) return false;
+                    const int h = std::atoi(harmonic.substr(0, harmonicSlash).c_str());
+                    if (h < 0 || h >= MAX_AD_HARMONICS) return false;
+                    const auto harmonicField = harmonic.substr(harmonicSlash + 1);
+                    if (harmonicField == "magnitude") o.Phmag[h] = i(0, 127);
+                    else if (harmonicField == "phase") o.Phphase[h] = i(0, 127);
+                    else return false;
+                } else return false;
+        return true;
+    };
     auto writeEnvelope = [&](zyn::EnvelopeParams &env, const std::string &field) {
         auto seconds = [&](int raw) { return (std::pow(2.0f, raw / 127.0f * 12.0f) - 1.0f) / 100.0f; };
         if (field == "attackValue") env.PA_val = i(0, 127);
@@ -1413,7 +1700,10 @@ bool ZynAndroidEngine::setParameter(int partIndex, int kitIndex, const std::stri
     else if (path == "part/keyLimit") part->setkeylimit(i(0, POLYPHONY));
     else if (path == "part/portamentoTime") return setPartPortamentoTime127(partIndex, i(0, 127));
     else if (path == "part/portamentoStretch") return setPartPortamentoStretch127(partIndex, i(0, 127));
-    else if (path == "kit/enabled") part->setkititemstatus(kitIndex, b());
+    else if (path == "kit/enabled") {
+        if (kit.padpars && kit.Penabled != b()) invalidatePadStructure(partIndex, kitIndex);
+        part->setkititemstatus(kitIndex, b());
+    }
     else if (path == "kit/muted") kit.Pmuted = b();
     else if (path == "kit/minKey") kit.Pminkey = i(0, 127);
     else if (path == "kit/maxKey") kit.Pmaxkey = i(0, 127);
@@ -1461,24 +1751,7 @@ bool ZynAndroidEngine::setParameter(int partIndex, int kitIndex, const std::stri
             return writeFilter(filter, path.substr(11));
         }
         else if (path.rfind("add/resonance/", 0) == 0 && g.Reson) {
-            auto &resonance = *g.Reson;
-            const auto field = path.substr(14);
-            if (field == "enabled") resonance.Penabled = b();
-            else if (field == "maxDb") resonance.PmaxdB = i(0, 127);
-            else if (field == "center") resonance.Pcenterfreq = i(0, 127);
-            else if (field == "octaves") resonance.Poctavesfreq = i(0, 127);
-            else if (field == "protectFundamental") resonance.Pprotectthefundamental = b();
-            else if (field == "zero") resonance.zero();
-            else if (field == "smooth") resonance.smooth();
-            else if (field == "interpolateSmooth") resonance.interpolatepeaks(0);
-            else if (field == "interpolateLinear") resonance.interpolatepeaks(1);
-            else if (field.rfind("random/", 0) == 0) resonance.randomize(
-                std::clamp(std::atoi(field.substr(7).c_str()), 0, 2));
-            else if (field.rfind("point/", 0) == 0) {
-                const int point = std::atoi(field.substr(6).c_str());
-                if (point < 0 || point >= N_RES_POINTS) return false;
-                resonance.setpoint(point, i(0, 127));
-            } else return false;
+            return writeResonance(*g.Reson, path.substr(14));
         }
         else if (path == "add/randomGrouping") g.Hrandgrouping = b();
         else if (path.rfind("add/voice/", 0) == 0) {
@@ -1590,32 +1863,7 @@ bool ZynAndroidEngine::setParameter(int partIndex, int kitIndex, const std::stri
                      (field.rfind("modOsc/", 0) == 0 && v.FmGn)) {
                 auto &o = field.rfind("modOsc/", 0) == 0 ? *v.FmGn : *v.OscilGn;
                 const auto oscField = field.rfind("modOsc/", 0) == 0 ? field.substr(7) : field.substr(4);
-                const auto control = std::find_if(std::begin(kOscillatorControls), std::end(kOscillatorControls),
-                    [&](const auto &candidate) { return oscField == candidate.field; });
-                if (control != std::end(kOscillatorControls)) {
-                    std::visit([&](auto member) { o.*member = i(control->minimum, control->maximum); }, control->member);
-                } else if (oscField == "action/useAsBase") {
-                    o.useasbase();
-                    return true;
-                } else if (oscField == "action/convertToSine") {
-                    o.convert2sine();
-                    return true;
-                } else if (oscField == "action/clearHarmonics") {
-                    std::fill(std::begin(o.Phmag), std::end(o.Phmag), 64);
-                    std::fill(std::begin(o.Phphase), std::end(o.Phphase), 64);
-                    o.Phmag[0] = 127;
-                } else if (oscField.rfind("harmonic/", 0) == 0) {
-                    const auto harmonic = oscField.substr(9);
-                    const auto harmonicSlash = harmonic.find('/');
-                    if (harmonicSlash == std::string::npos) return false;
-                    const int h = std::atoi(harmonic.substr(0, harmonicSlash).c_str());
-                    if (h < 0 || h >= MAX_AD_HARMONICS) return false;
-                    const auto harmonicField = harmonic.substr(harmonicSlash + 1);
-                    if (harmonicField == "magnitude") o.Phmag[h] = i(0, 127);
-                    else if (harmonicField == "phase") o.Phphase[h] = i(0, 127);
-                    else return false;
-                } else return false;
-                o.prepare();
+                return writeOscillator(o, oscField);
             } else return false;
         } else return false;
     } else if (path.rfind("sub/", 0) == 0 && kit.subpars) {
@@ -1669,21 +1917,52 @@ bool ZynAndroidEngine::setParameter(int partIndex, int kitIndex, const std::stri
         if (s.time) s.last_update_timestamp = s.time->time();
     } else if (path.rfind("pad/", 0) == 0 && kit.padpars) {
         auto &p = *kit.padpars;
+        for (const auto &control : kPadStructureControls) if (path == "pad/" + std::string(control.field)) {
+            control.write(p, i(control.minimum, control.maximum));
+            invalidatePadStructure(partIndex, kitIndex);
+            return true;
+        }
+        if (path.rfind("pad/osc/", 0) == 0 || path.rfind("pad/resonance/", 0) == 0) {
+            const bool ok = path.rfind("pad/osc/", 0) == 0 ? writeOscillator(*p.oscilgen, path.substr(8)) :
+                writeResonance(*p.resonance, path.substr(14));
+            if (ok) invalidatePadStructure(partIndex, kitIndex);
+            return ok;
+        }
         if (path == "pad/filterVelocity") p.PFilterVelocityScale = i(0, 127);
         else if (path == "pad/filterVelocitySense") p.PFilterVelocityScaleFunction = i(0, 127);
         else if (path == "pad/stereo") p.PStereo = b();
         else if (path == "pad/panning") p.PPanning = i(0, 127);
         else if (path == "pad/volume") p.PVolume = i(0, 127);
+        else if (path == "pad/velocity") p.PAmpVelocityScaleFunction = i(0, 127);
+        else if (path == "pad/fadeIn") p.Fadein_adjustment = i(0, 127);
+        else if (path == "pad/punchStrength") p.PPunchStrength = i(0, 127);
+        else if (path == "pad/punchTime") p.PPunchTime = i(0, 127);
+        else if (path == "pad/punchStretch") p.PPunchStretch = i(0, 127);
+        else if (path == "pad/punchVelocity") p.PPunchVelocitySensing = i(0, 127);
+        else if (path == "pad/detune") p.PDetune = i(0, 16383);
+        else if (path == "pad/detuneType") p.PDetuneType = i(1, 4);
+        else if (path == "pad/octave") {
+            int octave = i(-8, 7);
+            if (octave < 0) octave += 16;
+            p.PCoarseDetune = octave * 1024 + p.PCoarseDetune % 1024;
+        } else if (path == "pad/coarse") {
+            int coarse = i(-64, 63);
+            if (coarse < 0) coarse += 1024;
+            p.PCoarseDetune = coarse + (p.PCoarseDetune / 1024) * 1024;
+        }
+        else if (path == "pad/bend") p.PBendAdjust = i(-64, 63) + 64;
+        else if (path == "pad/offsetHz") p.POffsetHz = i(-64, 63) + 64;
+        else if (path == "pad/fixedFreqEt") p.PfixedfreqET = i(0, 127);
         else if (path == "pad/bandwidth") p.Pbandwidth = i(0, 1000);
-        else if (path == "pad/bandwidthScale") p.Pbwscale = i(0, 127);
+        else if (path == "pad/bandwidthScale") p.Pbwscale = i(0, 7);
         else if (path == "pad/mode") p.Pmode = static_cast<zyn::PADnoteParameters::pad_mode>(i(0, 2));
-        else if (path == "pad/profileWidth") p.Php.width = i(0, 127);
-        else if (path == "pad/profileAutoScale") p.Php.autoscale = b();
         else if (path == "pad/qualitySize") p.Pquality.samplesize = i(0, 6);
         else if (path == "pad/qualityOctaves") p.Pquality.oct = i(0, 7);
         else if (path == "pad/qualitySamplesPerOctave") p.Pquality.smpoct = i(0, 6);
         else if (path == "pad/fixedFreq") p.Pfixedfreq = b();
         else return false;
+        if (path == "pad/mode" || path.rfind("pad/bandwidth", 0) == 0 || path.rfind("pad/quality", 0) == 0)
+            invalidatePadStructure(partIndex, kitIndex);
     } else return false;
     return true;
 }
@@ -1700,6 +1979,8 @@ const char *moduleKindName(int kind) {
         case 6: return "vowel";
         case 7: return "voice-amplitude";
         case 9: return "sub-harmonics";
+        case 10: return "pad-profile";
+        case 11: return "pad-overtones";
         default: return "";
     }
 }
@@ -1747,6 +2028,14 @@ bool ZynAndroidEngine::copyModule(int partIndex, int kitIndex, int kind, int ind
         xml.addpar("panning", voice.PPanning);
         xml.endbranch();
         char type[] = "VoiceAmplitude";
+        presetsStore_->copyclipboard(xml, type);
+    } else if (kind == 10 || kind == 11) {
+        zyn::XMLwrapper xml;
+        xml.minimal = false;
+        xml.beginbranch("PADStructure");
+        kit.padpars->add2XML(xml);
+        xml.endbranch();
+        char type[] = "PADStructure";
         presetsStore_->copyclipboard(xml, type);
     } else if (kind == 9) {
         zyn::XMLwrapper xml;
@@ -1820,12 +2109,19 @@ bool ZynAndroidEngine::pasteModule(int partIndex, int kitIndex, int kind, int in
         voice.volume = xml.getparreal("volume", voice.volume, -60.0f, 0.0f);
         voice.PAmpVelocityScaleFunction = xml.getpar127("velocity", voice.PAmpVelocityScaleFunction);
         voice.PPanning = xml.getpar127("panning", voice.PPanning);
+    } else if (kind == 10 || kind == 11) {
+        zyn::PADnoteParameters source(*synth_, master_->fft);
+        source.getfromXML(xml);
+        if (kind == 10) kit.padpars->pasteProfile(source);
+        else kit.padpars->pasteOvertones(source);
     } else if (kind == 9) {
         zyn::SUBnoteParameters source;
         source.getfromXML(xml);
         kit.subpars->pasteHarmonics(source);
     } else return false;
     xml.exitbranch();
+    if (engine == 2 && (kind == 1 || kind == 5 || kind == 10 || kind == 11))
+        invalidatePadStructure(partIndex, kitIndex);
     return true;
 }
 
@@ -1841,6 +2137,15 @@ std::string ZynAndroidEngine::modulePreview(
     auto &kit = master_->part[partIndex]->kit[kitIndex];
     const auto module = resolveModule(kit, engine, index, role);
     if (!supportsModule(engine, kind, role) || !hasModule(kit, module, kind, index)) return {};
+    if (kind == 10 || kind == 11) {
+        const int count = kind == 10 ? std::clamp(resolution, 16, 512) : 64;
+        std::vector<float> points(count);
+        if (kind == 10) kit.padpars->getprofile(points.data(), count);
+        else for (int h = 0; h < count; ++h) points[h] = kit.padpars->getNhr(h + 1);
+        std::ostringstream out;
+        for (int n = 0; n < count; ++n) { if (n) out << ','; out << points[n]; }
+        return out.str();
+    }
     if (kind == 9) {
         // Fixed 64 triples: multiplier, linear magnitude (zero means inactive), bandwidth
         // in octaves at the requested equal-tempered reference note (A4 by default).
@@ -2313,6 +2618,7 @@ void ZynAndroidEngine::renderInterleavedFloat(
         return;
     }
 
+    servicePadGeneration();
     applyQueuedCommands();
     float blockPeak = 0.0f;
     if (zynReady_.load() && master_) {

@@ -5,6 +5,8 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#include <thread>
+#include <chrono>
 
 static double read(const ZynAndroidEngine &engine, int part, int kit, const std::string &path) {
     std::istringstream snapshot(engine.parameterSnapshot(part, kit));
@@ -17,6 +19,19 @@ static double read(const ZynAndroidEngine &engine, int part, int kit, const std:
     }
     std::cerr << "Missing path: " << path << '\n';
     std::abort();
+}
+
+static void assertPreviewNear(const std::string &expected, const std::string &actual) {
+    std::istringstream left(expected), right(actual);
+    std::string a, b;
+    while (std::getline(left, a, ',')) {
+        assert(static_cast<bool>(std::getline(right, b, ',')));
+        if (std::fabs(std::stof(a) - std::stof(b)) > .0001f) {
+            std::cerr << "Preview difference: " << a << " vs " << b << std::endl;
+            std::abort();
+        }
+    }
+    assert(!std::getline(right, b, ','));
 }
 
 int main() {
@@ -162,6 +177,95 @@ int main() {
     assert(read(engine, 2, 2, "sub/filter/combHpf") == 21);
     assert(read(engine, 2, 2, "sub/filter/combLpf") == 106);
     // Complete SUB mapping and native reset/clipboard/preview contracts.
+    // PAD playing parameters are independent from ADD and sample generation.
+    write(5, 0, "kit/padEnabled", 1);
+    write(5, 0, "kit/addEnabled", 0);
+    const std::vector<std::pair<std::string, double>> padDefaults = {
+        {"volume", 90}, {"velocity", 64}, {"fadeIn", 20},
+        {"punchStrength", 0}, {"punchTime", 60}, {"punchStretch", 64}, {"punchVelocity", 72},
+        {"detune", 8192}, {"detuneType", 1}, {"octave", 0}, {"coarse", 0},
+        {"bend", 24}, {"offsetHz", 0}, {"fixedFreq", 0}, {"fixedFreqEt", 0},
+        {"filterVelocity", 0}, {"filterVelocitySense", 64},
+    };
+    for (const auto &[field, value] : padDefaults)
+        assert(read(engine, 5, 0, "pad/" + field) == value);
+    const auto padInitial = engine.parameterSnapshot(5, 0);
+    for (const auto &flag : {"ampEnvelopeEnabled", "freqEnvelopeEnabled", "filterEnvelopeEnabled",
+                             "ampLfoEnabled", "freqLfoEnabled", "filterLfoEnabled", "filterEnabled"}) {
+        assert(padInitial.find("pad/" + std::string(flag) + "|") == std::string::npos);
+        assert(!engine.setParameter(5, 0, "pad/" + std::string(flag), 1));
+    }
+    // Both signed components retain their neighbour's packed bits, including extremes.
+    for (int octave : {-8, -1, 0, 7}) for (int coarse : {-64, -1, 0, 63}) {
+        write(5, 0, "pad/octave", octave);
+        write(5, 0, "pad/coarse", coarse);
+        assert(read(engine, 5, 0, "pad/octave") == octave);
+        assert(read(engine, 5, 0, "pad/coarse") == coarse);
+        write(5, 0, "pad/octave", -1);
+        assert(read(engine, 5, 0, "pad/coarse") == coarse);
+    }
+    const std::vector<std::pair<std::string, double>> padEdits = {
+        {"volume", 113}, {"velocity", 91}, {"panning", 0}, {"fadeIn", 37},
+        {"punchStrength", 82}, {"punchTime", 31}, {"punchStretch", 109}, {"punchVelocity", 19},
+        {"detune", 12345}, {"detuneType", 4}, {"octave", -3}, {"coarse", -57},
+        {"bend", -11}, {"offsetHz", 47}, {"fixedFreq", 1}, {"fixedFreqEt", 93},
+        {"filterVelocity", 31}, {"filterVelocitySense", 112},
+        {"ampEnvelope/attackTime", 53}, {"freqEnvelope/attackTime", 72}, {"filterEnvelope/attackTime", 96},
+        {"ampLfo/depth", 41}, {"freqLfo/depth", 58}, {"filterLfo/depth", 69},
+        {"filter/category", 4}, {"filter/type", 3}, {"filter/combHpf", 26}, {"filter/combLpf", 102},
+        // Smallest quality bounds this persistence test; full production generation is lot 015.
+        {"qualitySize", 0}, {"qualityOctaves", 0}, {"qualitySamplesPerOctave", 0},
+    };
+    const auto untouchedAdd = read(engine, 5, 0, "add/volume");
+    const auto untouchedPad = read(engine, 1, 0, "pad/volume");
+    for (const auto &[field, value] : padEdits) write(5, 0, "pad/" + field, value);
+    for (const auto &[field, value] : padEdits)
+        assert(read(engine, 5, 0, "pad/" + field) == value);
+    assert(read(engine, 5, 0, "add/volume") == untouchedAdd);
+    assert(read(engine, 1, 0, "pad/volume") == untouchedPad);
+    // PAD envelope/LFO/filter module addressing, previews and cross-engine clipboard.
+    for (int role = 0; role < 3; ++role) for (int kind : {2, 3, 4}) {
+        const auto previewBefore = engine.modulePreview(5, 0, kind, -1, role, 64, 2);
+        assert(!previewBefore.empty());
+        assert(engine.copyModule(5, 0, kind, -1, role, 2));
+        assert(engine.pasteModule(1, 2, kind, -1, role, 2));
+        assert(engine.modulePreview(1, 2, kind, -1, role, 64, 2) == previewBefore);
+    }
+    assert(engine.exportInstrument(5, "pad-only.xiz"));
+    assert(engine.loadPresetFile("pad-only.xiz", 6));
+    for (const auto &[field, value] : padEdits)
+        assert(read(engine, 6, 0, "pad/" + field) == value);
+    assert(read(engine, 6, 0, "kit/addEnabled") == 0);
+    assert(read(engine, 6, 0, "kit/padEnabled") == 1);
+    write(7, 0, "kit/padEnabled", 1);
+    write(7, 0, "kit/subEnabled", 1);
+    write(7, 0, "part/kitMode", 1);
+    write(7, 2, "kit/enabled", 1);
+    write(7, 2, "kit/padEnabled", 1);
+    write(7, 2, "kit/subEnabled", 1);
+    write(7, 2, "kit/addEnabled", 1);
+    for (int kitIndex : {0, 2}) for (const auto &[field, value] : padEdits)
+        write(7, kitIndex, "pad/" + field, value);
+    write(7, 2, "add/volume", 71);
+    write(7, 2, "sub/volume", 81);
+    assert(engine.exportInstrument(7, "pad-mixed.xiz"));
+    assert(engine.loadPresetFile("pad-mixed.xiz", 8));
+    for (int kitIndex : {0, 2}) for (const auto &[field, value] : padEdits)
+        assert(read(engine, 8, kitIndex, "pad/" + field) == value);
+    assert(read(engine, 8, 2, "add/volume") == 71);
+    assert(read(engine, 8, 2, "sub/volume") == 81);
+    const std::vector<std::pair<std::string, std::pair<int, int>>> padBounds = {
+        {"volume", {0, 127}}, {"velocity", {0, 127}}, {"fadeIn", {0, 127}},
+        {"punchStrength", {0, 127}}, {"punchTime", {0, 127}}, {"punchStretch", {0, 127}}, {"punchVelocity", {0, 127}},
+        {"detune", {0, 16383}}, {"detuneType", {1, 4}}, {"octave", {-8, 7}}, {"coarse", {-64, 63}},
+        {"bend", {-64, 63}}, {"offsetHz", {-64, 63}}, {"fixedFreqEt", {0, 127}},
+    };
+    for (const auto &[field, bounds] : padBounds) {
+        write(5, 0, "pad/" + field, -99999);
+        assert(read(engine, 5, 0, "pad/" + field) == bounds.first);
+        write(5, 0, "pad/" + field, 99999);
+        assert(read(engine, 5, 0, "pad/" + field) == bounds.second);
+    }
     engine.shutdown();
     assert(engine.initialize(48000, 256));
     assert(engine.isZynReady());
@@ -311,6 +415,116 @@ int main() {
     for (int note : {0, 127}) for (float value : noteBands(note)) assert(std::isfinite(value));
     assert(engine.modulePreview(1, 2, 9, -1, 0, 64, 1, -1).empty());
     assert(engine.modulePreview(1, 2, 9, -1, 0, 64, 1, 128).empty());
+    // Profile and positions preserve hidden values and typed ownership.
+    write(9, 0, "kit/padEnabled", 1);
+    const std::vector<std::pair<std::string, double>> structureEdits = {
+        {"profile/baseType", 2}, {"profile/baseParameter", 91}, {"profileWidth", 69},
+        {"profile/side", 1}, {"profileAutoScale", 0}, {"profile/frequencyMultiplier", 17},
+        {"profile/modulatorAmount", 35}, {"profile/modulatorFrequency", 44},
+        {"profile/amplitudeType", 0}, {"profile/amplitudeMode", 3},
+        {"profile/amplitudeParameter1", 83}, {"profile/amplitudeParameter2", 115},
+        {"overtone/type", 5}, {"overtone/par1", 131}, {"overtone/par2", 213}, {"overtone/par3", 93},
+        {"qualityBaseNote", 9}, {"bandwidthScale", 7},
+        {"osc/baseFunction", 3}, {"osc/harmonic/2/magnitude", 91}, {"osc/harmonic/2/phase", 13},
+        {"resonance/enabled", 1}, {"resonance/point/17", 94},
+        {"qualitySize", 0}, {"qualityOctaves", 0}, {"qualitySamplesPerOctave", 0},
+    };
+    for (const auto &[field, value] : structureEdits) write(9, 0, "pad/" + field, value);
+    const auto profileCurve = engine.modulePreview(9, 0, 10, -1, 0, 512, 2);
+    const auto overtoneCurve = engine.modulePreview(9, 0, 11, -1, 0, 64, 2);
+    assert(!profileCurve.empty() && !overtoneCurve.empty());
+    assert(engine.modulePreview(9, 0, 10, 0, 0, 512, 2).empty());
+    assert(engine.modulePreview(9, 0, 10, -1, 0, 512, 0).empty());
+    assert(engine.copyModule(9, 0, 10, -1, 0, 2));
+    assert(!engine.canPasteModule(11, 0, 2));
+    assert(engine.pasteModule(1, 2, 10, -1, 0, 2));
+    assert(engine.modulePreview(1, 2, 10, -1, 0, 512, 2) == profileCurve);
+    assert(read(engine, 1, 2, "pad/profile/amplitudeParameter2") == 115);
+    assert(read(engine, 1, 2, "pad/volume") != 113);
+    assert(engine.copyModule(9, 0, 11, -1, 0, 2));
+    assert(engine.pasteModule(1, 2, 11, -1, 0, 2));
+    assert(engine.modulePreview(1, 2, 11, -1, 0, 64, 2) == overtoneCurve);
+    write(9, 0, "pad/osc/action/useAsBase", 1);
+    assert(engine.copyModule(9, 0, 1, -1, 0, 2));
+    assert(engine.pasteModule(1, 2, 1, -1, 0, 2));
+    const auto customBase = engine.modulePreview(9, 0, 8, -1, 0, 256, 2);
+    assertPreviewNear(customBase, engine.modulePreview(1, 2, 8, -1, 0, 256, 2));
+    write(9, 0, "kit/addEnabled", 0);
+    write(9, 0, "pad/mode", 2);
+    assert(engine.exportInstrument(9, "pad-structure.xiz"));
+    assert(engine.loadPresetFile("pad-structure.xiz", 10));
+    for (const auto &[field, value] : structureEdits) {
+        if (field.rfind("osc/", 0) != 0) assert(read(engine, 10, 0, "pad/" + field) == value);
+    }
+    assertPreviewNear(customBase, engine.modulePreview(10, 0, 8, -1, 0, 256, 2));
+    for (int type = 0; type <= 7; ++type) {
+        write(10, 0, "pad/overtone/type", type);
+        write(10, 0, "pad/overtone/par3", 255);
+        std::istringstream stream(engine.modulePreview(10, 0, 11, -1, 0, 64, 2));
+        std::string field; int n = 1;
+        while (std::getline(stream, field, ',')) {
+            const auto value = std::stof(field);
+            assert(std::isfinite(value) && std::fabs(value - std::round(value)) < .001);
+            if (!type) assert(std::fabs(value - n) < .001);
+            n++;
+        }
+        assert(n == 65);
+    }
+    // A completed isolated bank is committed only at an audio boundary.
+    write(11, 0, "kit/padEnabled", 1);
+    write(11, 0, "kit/addEnabled", 0);
+    write(11, 0, "pad/qualitySize", 0);
+    write(11, 0, "pad/qualityOctaves", 0);
+    write(11, 0, "pad/qualitySamplesPerOctave", 0);
+    write(11, 0, "pad/ampEnvelope/releaseTime", 0);
+    assert(engine.startPadGeneration(11, 0));
+    for (int n = 0; n < 10000 && engine.padGenerationStatus(11, 0).rfind("generating|", 0) == 0; ++n)
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    assert(engine.padGenerationStatus(11, 0).rfind("ready|", 0) == 0);
+    std::vector<float> pcm(512);
+    engine.renderInterleavedFloat(pcm.data(), 256, 2, 48000);
+    assert(engine.padGenerationStatus(11, 0).rfind("done|", 0) == 0);
+    write(11, 0, "part/enabled", 1);
+    write(11, 0, "part/channel", 11);
+    engine.noteOn(11, 69, 100);
+    engine.renderInterleavedFloat(pcm.data(), 256, 2, 48000);
+    write(11, 0, "pad/bandwidth", 601);
+    assert(engine.startPadGeneration(11, 0));
+    for (int n = 0; n < 10000 && engine.padGenerationStatus(11, 0).rfind("generating|", 0) == 0; ++n)
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    engine.renderInterleavedFloat(pcm.data(), 256, 2, 48000);
+    assert(engine.padGenerationStatus(11, 0).rfind("ready|", 0) == 0); // held note owns old PCM
+    engine.noteOff(11, 69);
+    for (int n = 0; n < 1000 && engine.padGenerationStatus(11, 0).rfind("done|", 0) != 0; ++n)
+        engine.renderInterleavedFloat(pcm.data(), 256, 2, 48000);
+    assert(engine.padGenerationStatus(11, 0).rfind("done|", 0) == 0);
+    write(11, 0, "pad/qualitySize", 6);
+    write(11, 0, "pad/qualityOctaves", 7);
+    write(11, 0, "pad/qualitySamplesPerOctave", 6);
+    assert(!engine.startPadGeneration(11, 0));
+    assert(engine.padGenerationStatus(11, 0).rfind("failed|", 0) == 0);
+    write(11, 0, "pad/qualitySize", 0);
+    write(11, 0, "pad/qualityOctaves", 0);
+    write(11, 0, "pad/qualitySamplesPerOctave", 0);
+    assert(engine.startPadGeneration(11, 0));
+    write(11, 0, "pad/bandwidth", 777);
+    engine.renderInterleavedFloat(pcm.data(), 256, 2, 48000);
+    assert(engine.padGenerationStatus(11, 0).rfind("done|", 0) != 0);
+    engine.cancelPadGeneration();
+    assert(engine.loadPresetFile("pad-structure.xiz", 11)); // joins interrupted worker before deleting owners
+    assert(engine.padGenerationStatus(11, 0).rfind("done|", 0) == 0);
+    // Removing/recreating a kit invalidates the job even if a new owner's revision matches.
+    write(11, 2, "kit/enabled", 1);
+    write(11, 2, "kit/padEnabled", 1);
+    write(11, 2, "pad/qualitySize", 0);
+    write(11, 2, "pad/qualityOctaves", 0);
+    write(11, 2, "pad/qualitySamplesPerOctave", 0);
+    assert(engine.startPadGeneration(11, 2));
+    write(11, 2, "kit/enabled", 0);
+    write(11, 2, "kit/enabled", 1);
+    engine.servicePadGeneration();
+    assert(engine.padGenerationStatus(11, 2).rfind("done|", 0) != 0);
+    assert(read(engine, 11, 2, "pad/qualitySize") == 3);
     engine.shutdown();
     std::cout << "Common ADD/SUB/PAD native modules: PASS\n";
 }

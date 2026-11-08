@@ -31,6 +31,9 @@ object NativeSynthBridge {
     external fun nativeGetCurrentPartsSummary(): String
     external fun nativeGetCurrentMixerSummary(): String
     external fun nativeGetParameterSnapshot(partIndex: Int, kitIndex: Int): String
+    external fun nativeStartPadGeneration(part: Int, kit: Int): Boolean
+    external fun nativeCancelPadGeneration()
+    external fun nativeGetPadGenerationStatus(part: Int, kit: Int): String
     external fun nativeFineDetuneCents(type: Int, value: Int): Float
     external fun nativeSetParameter(partIndex: Int, kitIndex: Int, path: String, value: Double): Boolean
     external fun nativeGetModulePreview(

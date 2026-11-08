@@ -6,6 +6,7 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <mutex>
 
 namespace zyn {
 struct SYNTH_T;
@@ -45,6 +46,10 @@ public:
     std::string mixerSummary() const;
     std::string parameterSnapshot(int partIndex, int kitIndex) const;
     static float fineDetuneCents(int type, int value);
+    bool startPadGeneration(int part, int kit);
+    void cancelPadGeneration();
+    void servicePadGeneration(); // Audio boundary, or while the stream is stopped.
+    std::string padGenerationStatus(int part, int kit);
     bool setParameter(int partIndex, int kitIndex, const std::string &path, double value);
     std::string modulePreview(int partIndex, int kitIndex, int kind, int index, int role,
                               int resolution, int engine = 0, int referenceNote = 69);
@@ -83,6 +88,11 @@ public:
     void renderInterleavedFloat(float *out, int32_t numFrames, int32_t channelCount, int32_t streamSampleRate);
 
 private:
+    struct PadGeneration;
+    std::unique_ptr<PadGeneration> padGeneration_;
+    std::mutex padGenerationMutex_;
+    void resetPadGeneration();
+    void invalidatePadStructure(int part, int kit);
     enum class CommandType : uint8_t {
         NoteOn,
         NoteOff,

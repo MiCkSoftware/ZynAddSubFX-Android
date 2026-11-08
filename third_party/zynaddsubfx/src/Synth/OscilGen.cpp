@@ -1295,6 +1295,7 @@ void OscilGen::getspectrum(int n, float *spc, int what)
 void OscilGen::useasbase()
 {
     OscilGenBuffers& bfrs = myBuffers();
+    if (needPrepare(bfrs)) prepare(bfrs);
 
     for(int i = 0; i < synth.oscilsize / 2; ++i)
         bfrs.basefuncFFTfreqs[i] = bfrs.oscilFFTfreqs[i];
@@ -1311,6 +1312,7 @@ void OscilGen::useasbase()
 void OscilGen::getcurrentbasefunction(FFTsampleBuffer smps)
 {
     OscilGenBuffers& bfrs = myBuffers();
+    if (needPrepare(bfrs)) prepare(bfrs);
     if(Pcurrentbasefunc != 0)
         fft->freqs2smps(bfrs.basefuncFFTfreqs, smps, bfrs.scratchFreqs);
     else

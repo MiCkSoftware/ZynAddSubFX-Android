@@ -5,6 +5,11 @@
 
 package com.mick.zynaddsubfx
 
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.BackHandler
 import androidx.activity.result.contract.ActivityResultContracts
@@ -68,6 +73,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -79,6 +85,7 @@ import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -102,6 +109,7 @@ import java.io.File
 import kotlin.math.roundToInt
 import kotlin.math.pow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 
 private enum class OscillatorEditorKind { Voice, Modulator }
 private val LocalEnumContext = compositionLocalOf<Any?> { null }
@@ -109,11 +117,13 @@ private val LocalEnumContext = compositionLocalOf<Any?> { null }
 private data class OscillatorEditorTarget(
     val kind: OscillatorEditorKind,
     val ownerVoice: Int,
+    val engine: ModuleEngine = ModuleEngine.ADD,
 )
 
 private sealed interface InstrumentEditorDestination {
     data object VoiceDetail : InstrumentEditorDestination
     data object Resonance : InstrumentEditorDestination
+    data class PadStructure(val profile: Boolean) : InstrumentEditorDestination
     data object SubHarmonics : InstrumentEditorDestination
     data class Oscillator(val target: OscillatorEditorTarget) : InstrumentEditorDestination
     data class Envelope(val address: ModuleAddress.Envelope) : InstrumentEditorDestination
@@ -124,9 +134,10 @@ private sealed interface InstrumentEditorDestination {
 private fun InstrumentEditorDestination.encode(): String = when (this) {
     InstrumentEditorDestination.VoiceDetail -> "voice"
     InstrumentEditorDestination.Resonance -> "resonance"
+    is InstrumentEditorDestination.PadStructure -> if (profile) "pad-profile" else "pad-overtones"
     InstrumentEditorDestination.SubHarmonics -> "sub-harmonics"
     is InstrumentEditorDestination.Oscillator ->
-        "osc:${target.kind.name}:${target.ownerVoice}"
+        "osc:${target.kind.name}:${target.ownerVoice}:${target.engine.name}"
     is InstrumentEditorDestination.Envelope ->
         "env:${address.index}:${address.envelopeRole.name}:${address.engine.name}"
     is InstrumentEditorDestination.Lfo -> "lfo:${address.index}:${address.lfoRole.name}:${address.engine.name}"
@@ -136,13 +147,16 @@ private fun InstrumentEditorDestination.encode(): String = when (this) {
 private fun decodeDestination(value: String): InstrumentEditorDestination? {
     val fields = value.split(':')
     return when (fields.firstOrNull()) {
+        "pad-profile" -> InstrumentEditorDestination.PadStructure(true)
+        "pad-overtones" -> InstrumentEditorDestination.PadStructure(false)
         "voice" -> InstrumentEditorDestination.VoiceDetail
         "resonance" -> InstrumentEditorDestination.Resonance
         "sub-harmonics" -> InstrumentEditorDestination.SubHarmonics
         "osc" -> InstrumentEditorDestination.Oscillator(
             OscillatorEditorTarget(
                 runCatching { OscillatorEditorKind.valueOf(fields[1]) }.getOrDefault(OscillatorEditorKind.Voice),
-                fields.getOrNull(2)?.toIntOrNull()?.coerceIn(0, 7) ?: 0,
+                fields.getOrNull(2)?.toIntOrNull()?.coerceIn(-1, 7) ?: 0,
+                runCatching { ModuleEngine.valueOf(fields[3]) }.getOrDefault(ModuleEngine.ADD),
             )
         )
         "env" -> InstrumentEditorDestination.Envelope(
@@ -180,7 +194,8 @@ private fun decodeDestination(value: String): InstrumentEditorDestination? {
 private fun parentDestination(destination: InstrumentEditorDestination): InstrumentEditorDestination? = when (destination) {
     InstrumentEditorDestination.VoiceDetail, InstrumentEditorDestination.Resonance,
     InstrumentEditorDestination.SubHarmonics -> null
-    is InstrumentEditorDestination.Oscillator -> InstrumentEditorDestination.VoiceDetail
+    is InstrumentEditorDestination.PadStructure -> null
+    is InstrumentEditorDestination.Oscillator -> if (destination.target.engine == ModuleEngine.PAD) null else InstrumentEditorDestination.VoiceDetail
     is InstrumentEditorDestination.Envelope ->
         if (destination.address.index >= 0) InstrumentEditorDestination.VoiceDetail else null
     is InstrumentEditorDestination.Lfo ->
@@ -298,8 +313,17 @@ fun FullInstrumentEditor(
     val state = model.state
     var referenceNote by rememberSaveable(partIndex, kitIndex) { mutableStateOf(69) }
     val pressKeyboardNote: (Int) -> Unit = { note ->
-        if (module == "SUB" && note in 0..127) referenceNote = note
+        if (module in setOf("SUB", "PAD") && note in 0..127) referenceNote = note
         onPressKeyboardNote(note)
+    }
+    DisposableEffect(engine, partIndex, kitIndex, module) {
+        onDispose { if (module == "PAD") model.cancelPadGeneration() }
+    }
+    LaunchedEffect(engine, partIndex, kitIndex, module) {
+        if (module == "PAD") while (true) {
+            model.refreshPadGeneration()
+            delay(150)
+        }
     }
     CompositionLocalProvider(LocalEnumContext provides listOf(partIndex, kitIndex, module, state.partIndex, state.kitIndex, state.selectedVoice)) {
     var savedVoice by rememberSaveable { mutableStateOf(0) }
@@ -357,6 +381,32 @@ fun FullInstrumentEditor(
     } else baseContextPath
     val navigateBack: () -> Unit = { destination = destination?.let(::parentDestination) }
     BackHandler(enabled = currentDestination != null) { navigateBack() }
+    if (currentDestination is InstrumentEditorDestination.PadStructure) {
+        val profile = currentDestination.profile
+        val address = if (profile) ModuleAddress.PadProfile else ModuleAddress.PadOvertones
+        val tabs = if (profile) listOf("Preview", "Base", "Modulation", "Amplitude") else listOf("Preview", "Positions")
+        SynthEditorScaffold(
+            title = if (profile) "Harmonic profile" else "Overtones", contextPath = contextPath,
+            navigationLabel = "‹ PAD", onNavigateUp = navigateBack, tabs = tabs,
+            selectedTab = activeAnchor(subHarmonicsScroll.value +
+                if (subHarmonicsScroll.value > 0) oscillatorPreviewOcclusion else 0, tabs, subHarmonicsOffsets.value),
+            onTabSelected = { section -> scope.launch {
+                subHarmonicsScroll.animateScrollTo(if (section == "Preview") 0 else
+                    ((subHarmonicsOffsets.value[section] ?: 0) - oscillatorPreviewOcclusion).coerceAtLeast(0))
+            } },
+            dirty = state.dirty, onActions = null, heldNotes = heldNotes,
+            keyboardOctaveShift = keyboardOctaveShift, onPressKeyboardNote = pressKeyboardNote,
+            onReleaseKeyboardNote = onReleaseKeyboardNote, modifier = modifier,
+            headerActions = { ModuleClipboardActions(if (profile) "Profile" else "Overtones",
+                { model.copyModule(address) }, { model.pasteModule(address) }, model.canPasteModule(address)) },
+        ) { contentModifier ->
+            PadStructureEditor(model, profile, referenceNote, subHarmonicsScroll, contentModifier) { section, offset ->
+                if (subHarmonicsOffsets.value[section] != offset)
+                    subHarmonicsOffsets.value = subHarmonicsOffsets.value + (section to offset)
+            }
+        }
+        return@CompositionLocalProvider
+    }
     if (currentDestination == InstrumentEditorDestination.SubHarmonics) {
         val tabs = listOf("Preview", "Harmonics", "Overtones")
         SynthEditorScaffold(
@@ -390,11 +440,11 @@ fun FullInstrumentEditor(
     if (currentDestination is InstrumentEditorDestination.Oscillator) {
         val oscillatorTitle = if (currentDestination.target.kind == OscillatorEditorKind.Modulator) {
             "Modulator oscillator"
-        } else "Voice oscillator"
+        } else if (currentDestination.target.engine == ModuleEngine.PAD) "PAD oscillator" else "Voice oscillator"
         SynthEditorScaffold(
             title = oscillatorTitle,
             contextPath = contextPath,
-            navigationLabel = "‹ Voice ${state.selectedVoice + 1}",
+            navigationLabel = if (currentDestination.target.engine == ModuleEngine.PAD) "‹ PAD" else "‹ Voice ${state.selectedVoice + 1}",
             onNavigateUp = navigateBack,
             tabs = oscillatorEditorSections,
             selectedTab = if (oscillatorScroll.value > 0 && oscillatorScroll.value == oscillatorScroll.maxValue) {
@@ -440,9 +490,9 @@ fun FullInstrumentEditor(
     }
     if (currentDestination == InstrumentEditorDestination.Resonance) {
         SynthEditorScaffold(
-            title = "ADsynth Resonance",
+            title = "$module Resonance",
             contextPath = contextPath,
-            navigationLabel = "‹ ADD",
+            navigationLabel = "‹ $module",
             onNavigateUp = navigateBack,
             tabs = emptyList(),
             selectedTab = "",
@@ -455,7 +505,7 @@ fun FullInstrumentEditor(
             onReleaseKeyboardNote = onReleaseKeyboardNote,
             modifier = modifier,
             headerActions = {
-                val address = ModuleAddress.Resonance
+                val address = ModuleAddress.EngineResonance(ModuleEngine.valueOf(module))
                 ModuleClipboardActions(
                     title = "Resonance",
                     onCopy = { model.copyModule(address) },
@@ -466,6 +516,7 @@ fun FullInstrumentEditor(
         ) { contentModifier ->
             AddResonanceEditorScreen(
                 model = model,
+                engine = ModuleEngine.valueOf(module),
                 modifier = contentModifier,
                 scrollState = resonanceScroll,
             )
@@ -484,7 +535,7 @@ fun FullInstrumentEditor(
             contextPath = contextPath,
             navigationLabel = if (currentDestination.address.index >= 0) {
                 "‹ Voice ${currentDestination.address.index + 1}"
-            } else "‹ ADD",
+            } else "‹ ${currentDestination.address.engine.name}",
             onNavigateUp = navigateBack,
             tabs = emptyList(),
             selectedTab = "",
@@ -521,7 +572,7 @@ fun FullInstrumentEditor(
             contextPath = contextPath,
             navigationLabel = if (currentDestination.address.index >= 0) {
                 "‹ Voice ${currentDestination.address.index + 1}"
-            } else "‹ ADD",
+            } else "‹ ${currentDestination.address.engine.name}",
             onNavigateUp = navigateBack,
             tabs = emptyList(),
             selectedTab = "",
@@ -557,7 +608,7 @@ fun FullInstrumentEditor(
             contextPath = contextPath,
             navigationLabel = if (currentDestination.address.index >= 0) {
                 "‹ Voice ${currentDestination.address.index + 1}"
-            } else "‹ ADD",
+            } else "‹ ${currentDestination.address.engine.name}",
             onNavigateUp = navigateBack,
             tabs = emptyList(),
             selectedTab = "",
@@ -702,11 +753,30 @@ fun FullInstrumentEditor(
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     items(sectionNames, key = { it }) { section ->
-                        if (module == "SUB") {
-                            SubSynthSection(model, section, referenceNote,
+                        if (module == "SUB" || (module == "PAD" && section in setOf("Amp", "Frequency", "Filter"))) {
+                            SynthPlaySection(model, ModuleEngine.valueOf(module), section, referenceNote,
                                 onOpenEnvelope = { destination = InstrumentEditorDestination.Envelope(it) },
+                                onOpenLfo = { destination = InstrumentEditorDestination.Lfo(it) },
                                 onOpenFilter = { destination = InstrumentEditorDestination.Filter(it) },
                                 onOpenHarmonics = { destination = InstrumentEditorDestination.SubHarmonics })
+                            return@items
+                        }
+                        if (module == "PAD" && section == "PAD") {
+                            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                                SectionBanner("PAD") { PadGenerationActions(model) }
+                                PadGenerationControls(model)
+                                InstrumentEditorViewModel.padSubsections.forEach { subsection ->
+                                    if (subsection == "Quality") {
+                                        PadQualitySection(model)
+                                    } else {
+                                        PadSpectrumSection(model, referenceNote,
+                                            onOpenStructure = { destination = InstrumentEditorDestination.PadStructure(it) },
+                                            onOpenOscillator = { destination = InstrumentEditorDestination.Oscillator(
+                                                OscillatorEditorTarget(OscillatorEditorKind.Voice, -1, ModuleEngine.PAD)) },
+                                            onOpenResonance = { destination = InstrumentEditorDestination.Resonance })
+                                    }
+                                }
+                            }
                             return@items
                         }
                         val rawParameters = parametersFor(
@@ -887,7 +957,7 @@ private fun VoiceMatrixRow(
             // Activation and navigation remain separate, including when the voice is off.
             Box(
                 Modifier.width(50.dp).height(58.dp)
-                    .background(Color(0xFF09191D), RoundedCornerShape(7.dp))
+                    .background(SynthGraphBackground, RoundedCornerShape(7.dp))
                     .toggleable(
                         value = active,
                         role = Role.Switch,
@@ -1409,7 +1479,7 @@ private fun AddOscillatorEditorScreen(
         it.descriptor.path == "add/voice/${target.ownerVoice}/externalOscillator"
     }?.value?.toInt() ?: 0
     val oscillatorEditable = modulator || externalCarrier == 0
-    val oscillatorAddress = ModuleAddress.Oscillator(target.ownerVoice, modulator)
+    val oscillatorAddress = ModuleAddress.Oscillator(target.ownerVoice, modulator, target.engine)
     val previewOscillator = oscillatorAddress.copy(
         index = if (oscillatorEditable) target.ownerVoice else externalCarrier - 1,
     )
@@ -1419,7 +1489,8 @@ private fun AddOscillatorEditorScreen(
     val exactPreview = remember(model.state.revision, previewAddress) {
         model.preview(previewAddress, if (previewView != null && previewView != OscillatorPreviewView.BASE_WAVE) 128 else 256)
     }
-    val actionPrefix = "add/voice/${target.ownerVoice}/${if (modulator) "modOsc" else "osc"}/action"
+    val actionPrefix = if (target.engine == ModuleEngine.PAD) "pad/osc/action" else
+        "add/voice/${target.ownerVoice}/${if (modulator) "modOsc" else "osc"}/action"
     var pendingAction by remember(target) { mutableStateOf<Pair<String, String>?>(null) }
     if (oscillatorEditable) pendingAction?.let { (label, action) ->
         AlertDialog(
@@ -1438,11 +1509,11 @@ private fun AddOscillatorEditorScreen(
             dismissButton = { TextButton(onClick = { pendingAction = null }) { Text("Cancel") } },
         )
     }
-    val group = "ADD / Voice ${target.ownerVoice + 1} / " +
+    val group = if (target.engine == ModuleEngine.PAD) "PAD / Oscillator" else "ADD / Voice ${target.ownerVoice + 1} / " +
         if (modulator) "Modulator oscillator" else "Oscillator"
     val controls = remember(values, group) { values.filter { it.descriptor.group == group } }
     val voiceOscillatorControls = remember(values, target) {
-        if (modulator) emptyList() else values.filter {
+        if (modulator || target.engine == ModuleEngine.PAD) emptyList() else values.filter {
             it.descriptor.group == "ADD / Voice ${target.ownerVoice + 1} / Voice Oscillator"
         }
     }
@@ -1484,7 +1555,7 @@ private fun AddOscillatorEditorScreen(
                 modifier = Modifier.padding(horizontal = 7.dp),
             )
 
-            if (target.ownerVoice != model.state.selectedVoice) {
+            if (target.engine == ModuleEngine.ADD && target.ownerVoice != model.state.selectedVoice) {
                 Text(
                     "Shared from Voice ${target.ownerVoice + 1}",
                     color = Color(0xFFFFB74D),
@@ -1690,16 +1761,214 @@ private fun AddOscillatorEditorScreen(
 }
 
 @Composable
-private fun SubSynthSection(
+private fun PadGenerationActions(model: InstrumentEditorViewModel) {
+    val status = model.state.padGeneration
+    val attention = !status.busy && status.phase !in setOf("done", "unavailable")
+    val pulse = if (attention) rememberInfiniteTransition(label = "PAD Apply").animateFloat(
+        initialValue = .35f, targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(700), RepeatMode.Reverse), label = "PAD changes",
+    ) else null
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        LedButton("Apply PAD samples", lit = status.phase != "unavailable", onClick = model::applyPadGeneration,
+            modifier = Modifier.width(76.dp).graphicsLayer { alpha = pulse?.value ?: 1f }.semantics {
+                stateDescription = when {
+                    status.phase == "done" -> "Samples up to date"
+                    status.phase == "failed" -> "Generation failed"
+                    status.busy -> "Generating samples"
+                    status.phase == "unavailable" -> "PAD unavailable"
+                    else -> "Pending changes"
+                }
+            }, hue = when (status.phase) {
+                "failed" -> 0f
+                "done" -> 125f
+                "generating", "ready", "cancelling", "unavailable" -> 180f
+                else -> 35f
+            }, displayLabel = "Apply", enabled = attention, action = true, compact = true)
+        if (status.busy) LedButton("Cancel PAD generation", false, model::cancelPadGeneration,
+            modifier = Modifier.width(65.dp), displayLabel = "Cancel", action = true,
+            enabled = status.phase != "cancelling", compact = true)
+    }
+}
+
+@Composable
+private fun PadGenerationControls(model: InstrumentEditorViewModel) {
+    val status = model.state.padGeneration
+    val message = when (status.phase) {
+        "generating" -> "Generating samples ${status.completed}/${status.total}"
+        "ready" -> "Samples ready · release notes to apply"
+        "cancelling" -> "Cancelling generation…"
+        "failed" -> status.error.ifBlank { "PAD generation failed" }
+        else -> return
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+        Text(message, style = MaterialTheme.typography.labelMedium)
+        if (status.phase == "generating") androidx.compose.material3.LinearProgressIndicator(
+            progress = { status.completed.toFloat() / status.total.coerceAtLeast(1) }, modifier = Modifier.fillMaxWidth())
+    }
+}
+
+@Composable
+private fun PadQualitySection(model: InstrumentEditorViewModel) {
+    val values = model.state.snapshot?.values.orEmpty()
+    val quality = remember(values) { parametersFor(values, "PAD", "Quality", 0) }
+    val status = model.state.padGeneration
+    Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+        SectionBanner("Quality", gradient = false)
+        DenseParameterGrid(quality, model::write, verticalLabels = true, onLongPress = model::reset,
+            onReset = model::reset, onDrag = model::dragParameter, onCommit = model::finishParameterDrag)
+        Text("${status.total} samples · ${"%.2f".format(status.frames / NativeSynthBridge.nativeGetLastSampleRate().coerceAtLeast(1).toDouble())} s/sample · ${"%.1f".format(status.bytes / 1048576.0)} MiB PCM",
+            style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("Limit: 128 MiB per bank · 30 s", style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+private fun PadSpectrumSection(
     model: InstrumentEditorViewModel,
+    referenceNote: Int,
+    onOpenStructure: (Boolean) -> Unit,
+    onOpenOscillator: () -> Unit,
+    onOpenResonance: () -> Unit,
+) {
+    val values = model.state.snapshot?.values.orEmpty()
+    val bandwidthMode = values.firstOrNull { it.descriptor.path == "pad/mode" }?.value == 0.0
+    val controls = remember(values) { values.filter { it.descriptor.path in
+        setOf("pad/mode", "pad/bandwidth", "pad/bandwidthScale") } }
+    val oscillator = remember(model.state.revision) {
+        model.preview(ModuleAddress.Oscillator(-1, engine = ModuleEngine.PAD), 128)
+    }
+    val profile = remember(model.state.revision) { model.preview(ModuleAddress.PadProfile, 128) }
+    val positions = remember(model.state.revision) { model.preview(ModuleAddress.PadOvertones, 64) }
+    val resonance = remember(values) { values.filter { it.descriptor.group == "PAD / Resonance points" } }
+    val titles = remember { listOf("Oscillator", "Resonance", "Overtones", "Profile") }
+    val descriptions = remember { listOf("PAD oscillator", "PAD resonance", "PAD overtones", "PAD harmonic profile") }
+    val referenceHz = remember(referenceNote) { 440.0 * 2.0.pow((referenceNote - 69) / 12.0) }
+    Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+        CompactModuleActions("Spectrum", { model.copyModule(ModuleAddress.PadOvertones) },
+            { model.pasteModule(ModuleAddress.PadOvertones) }, model.canPasteModule(ModuleAddress.PadOvertones))
+        // PAD alone composes its three parameter knobs and four editor previews
+        // in the same four-column grid; ADD/SUB grids and graph surfaces are unchanged.
+        (0 until controls.size + titles.size).toList().chunked(4).forEach { row ->
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                row.forEach { index ->
+                    Box(Modifier.weight(1f)) {
+                        if (index < controls.size) {
+                            val parameter = controls[index]
+                            DenseParameterControl(parameter, model::write, model::reset, verticalLabel = true,
+                                onReset = model::reset, onDrag = model::dragParameter, onCommit = model::finishParameterDrag,
+                                enabled = parameter.descriptor.path == "pad/mode" || bandwidthMode,
+                                valueText = { if (it.descriptor.path == "pad/bandwidth")
+                                    "%.1f ct".format(.25 * 10.0.pow(4.0 * (it.value / 1000.0).pow(1.1)))
+                                    else it.value.roundToInt().toString() })
+                        } else {
+                            val graph = index - controls.size
+                            DenseControlCard(titles[graph], Color.hsv(188f, .30f, .22f),
+                                modifier = Modifier.semantics { contentDescription = descriptions[graph] },
+                                onClick = { when (graph) {
+                                    0 -> onOpenOscillator()
+                                    1 -> onOpenResonance()
+                                    else -> onOpenStructure(graph == 3)
+                                } }) {
+                                val graphModifier = Modifier.fillMaxWidth().height(62.dp)
+                                when (graph) {
+                                    0 -> ModulePreview(oscillator, graphModifier)
+                                    1 -> ResonanceCurve(resonance, graphModifier)
+                                    2 -> Canvas(graphModifier.clip(RoundedCornerShape(7.dp)).background(SynthGraphBackground)) {
+                                        positions.values.forEachIndexed { harmonic, ratio ->
+                                            val hz = referenceHz * ratio
+                                            if (hz in 20.0..20_000.0) {
+                                                val x = (kotlin.math.ln(hz / 20.0) / kotlin.math.ln(1000.0)).toFloat() * size.width
+                                                drawLine(Color.hsv(subHarmonicHue(harmonic), .65f, .95f),
+                                                    androidx.compose.ui.geometry.Offset(x, size.height * .12f),
+                                                    androidx.compose.ui.geometry.Offset(x, size.height * .9f), 1.dp.toPx())
+                                            }
+                                        }
+                                    }
+                                    else -> ModulePreview(profile, graphModifier.alpha(if (bandwidthMode) 1f else .45f), unipolar = true)
+                                }
+                            }
+                        }
+                    }
+                }
+                repeat(4 - row.size) { Spacer(Modifier.weight(1f)) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PadPositionsPreview(preview: PreviewSeries, referenceNote: Int, modifier: Modifier = Modifier) {
+    val positions = remember(preview) { PreviewSeries(preview.values.flatMap { listOf(it, 1f, 0f) }) }
+    SubHarmonicPreview(positions, -1, referenceNote, modifier, positionsOnly = true)
+}
+
+@Composable
+private fun PadStructureEditor(
+    model: InstrumentEditorViewModel,
+    profile: Boolean,
+    referenceNote: Int,
+    scrollState: ScrollState,
+    modifier: Modifier,
+    onSectionPosition: (String, Int) -> Unit,
+) {
+    val values = model.state.snapshot?.values.orEmpty()
+    val address = if (profile) ModuleAddress.PadProfile else ModuleAddress.PadOvertones
+    val preview = remember(model.state.revision, address) { model.preview(address, 512) }
+    val controls = remember(values, profile) { values.filter { if (profile)
+        it.descriptor.section == SynthEngine.ParameterSection.PROFILE && it.descriptor.module == SynthEngine.ParameterModule.PAD
+        else it.descriptor.path.startsWith("pad/overtone/") }.groupBy {
+            if (profile) it.descriptor.group.substringAfterLast(" / ") else "Positions"
+        } }
+    val bandwidthMode = values.firstOrNull { it.descriptor.path == "pad/mode" }?.value == 0.0
+    val amplitude = values.firstOrNull { it.descriptor.path == "pad/profile/amplitudeType" }?.value?.toInt() ?: 0
+    val mode = values.firstOrNull { it.descriptor.path == "pad/overtone/type" }?.value?.toInt() ?: 0
+    CollapsingPreviewLayout(scrollState, modifier, expandedTop = 4.dp, maskBehindPreview = true,
+        preview = { previewModifier ->
+            if (profile) Box(previewModifier.alpha(if (bandwidthMode) 1f else .45f)) {
+                ModulePreview(preview, Modifier.fillMaxSize(), unipolar = true)
+                Text("0                 Relative width                 1", fontSize = 9.sp,
+                    color = Color(0xFF91B3B7), modifier = Modifier.align(Alignment.BottomCenter))
+            } else PadPositionsPreview(preview, referenceNote, previewModifier)
+        }) { bottomPadding ->
+        Spacer(Modifier.fillMaxWidth().height(218.dp).onGloballyPositioned {
+            onSectionPosition("Preview", it.positionInParent().y.roundToInt())
+        })
+        controls.forEach { (section, parameters) ->
+            Box(Modifier.onGloballyPositioned { onSectionPosition(section, it.positionInParent().y.roundToInt()) }) {
+                SectionBanner(section)
+            }
+            DenseParameterGrid(parameters, model::write, verticalLabels = true,
+                onLongPress = model::reset, onReset = model::reset,
+                onDrag = model::dragParameter, onCommit = model::finishParameterDrag,
+                enabled = { parameter ->
+                    val path = parameter.descriptor.path
+                    if (profile) bandwidthMode && (!path.startsWith("pad/profile/amplitude") ||
+                        path.endsWith("amplitudeType") || amplitude != 0)
+                    else when (path.substringAfterLast('/')) {
+                        "par1", "par3" -> mode != 0
+                        "par2" -> mode in 1..6
+                        else -> true
+                    }
+                })
+        }
+        Spacer(Modifier.height(bottomPadding))
+    }
+}
+
+@Composable
+private fun SynthPlaySection(
+    model: InstrumentEditorViewModel,
+    engine: ModuleEngine,
     section: String,
     referenceNote: Int,
     onOpenEnvelope: (ModuleAddress.Envelope) -> Unit,
+    onOpenLfo: (ModuleAddress.Lfo) -> Unit,
     onOpenFilter: (ModuleAddress.Filter) -> Unit,
     onOpenHarmonics: () -> Unit,
 ) {
     val values = model.state.snapshot?.values.orEmpty()
-    if (section == "Harmonics") {
+    if (engine == ModuleEngine.SUB && section == "Harmonics") {
         val preview = remember(model.state.revision, model.state.partIndex, model.state.kitIndex, referenceNote) {
             model.preview(ModuleAddress.SubHarmonicsPreview(referenceNote), 64)
         }
@@ -1712,42 +1981,54 @@ private fun SubSynthSection(
         }
         return
     }
-    val parameters = remember(values, section) {
-        parametersFor(values, "SUB", section, 0).filterNot {
+    val parameters = remember(values, engine, section) {
+        parametersFor(values, engine.name, section, 0).filterNot {
             section == "Filter" || it.descriptor.family in setOf(
                 SynthEngine.ParameterFamily.ENVELOPE, SynthEngine.ParameterFamily.LFO)
         }
     }
-    val fixed = values.firstOrNull { it.descriptor.path == "sub/fixedFreq" }?.value == 1.0
-    val detuneType = values.firstOrNull { it.descriptor.path == "sub/detuneType" }?.value?.toInt() ?: 1
+    val prefix = engine.path
+    val fixed = values.firstOrNull { it.descriptor.path == "$prefix/fixedFreq" }?.value == 1.0
+    val detuneType = values.firstOrNull { it.descriptor.path == "$prefix/detuneType" }?.value?.toInt() ?: 1
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(7.dp)) {
         if (section != "Filter") SectionBanner(section)
-        DenseParameterGrid(
-            parameters, model::write, verticalLabels = true,
-            onLongPress = model::reset, onReset = model::reset,
-            onDrag = model::dragParameter, onCommit = model::finishParameterDrag,
-            enabled = { it.descriptor.path != "sub/fixedFreqEt" || fixed },
-            valueText = { parameter ->
-                val value = parameter.value
-                when (parameter.descriptor.path) {
-                    "sub/panning" -> if (value == 0.0) "Rnd" else value.roundToInt().toString()
-                    "sub/volume" -> "%.1f dB".format(60.0 * (value / 96.0 - 1.0))
-                    "sub/detune" -> "%.2f ct".format(SynthEngine.fineDetuneCents(detuneType, value.roundToInt()))
-                    "sub/bend" -> "%.2f×".format(value / 24.0)
-                    "sub/offsetHz" -> "%.2f Hz".format((value / 64.0).let { 15.0 * it * kotlin.math.sqrt(kotlin.math.abs(it)) })
-                    "sub/bandwidthScale" -> (value.roundToInt() - 64).toString()
-                    else -> value.roundToInt().toString()
-                }
-            },
-        )
+        parameters.groupBy { it.descriptor.group }.forEach { (group, controls) ->
+            if (group.endsWith("/ Punch")) {
+                Text("Punch", color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.labelMedium)
+            }
+            DenseParameterGrid(
+                controls, model::write, verticalLabels = true,
+                onLongPress = model::reset, onReset = model::reset,
+                onDrag = model::dragParameter, onCommit = model::finishParameterDrag,
+                enabled = { it.descriptor.path != "$prefix/fixedFreqEt" || fixed },
+                valueText = { parameter ->
+                    val value = parameter.value
+                    when (parameter.descriptor.path.substringAfter('/')) {
+                        "panning" -> if (value == 0.0) "Rnd" else value.roundToInt().toString()
+                        // PADnote multiplies the volume gain by four, like global ADD.
+                        "volume" -> "%.1f dB".format(60.0 * (value / 96.0 - 1.0) +
+                            if (engine == ModuleEngine.PAD) 12.0412 else 0.0)
+                        "detune" -> "%.2f ct".format(SynthEngine.fineDetuneCents(detuneType, value.roundToInt()))
+                        "bend" -> "%.2f×".format(value / 24.0)
+                        "offsetHz" -> "%.2f Hz".format((value / 64.0).let { 15.0 * it * kotlin.math.sqrt(kotlin.math.abs(it)) })
+                        "bandwidthScale" -> (value.roundToInt() - 64).toString()
+                        "punchTime" -> "%.2f ms".format(10.0.pow(3.0 * value / 127.0) / 10.0)
+                        "fadeIn" -> "%.2f×".format((value / parameter.descriptor.defaultValue).pow(2))
+                        "velocity", "punchVelocity" -> if (value == 127.0) "Off" else value.roundToInt().toString()
+                        else -> value.roundToInt().toString()
+                    }
+                },
+            )
+        }
         CommonSynthModules(
             model, when (section) {
                 "Amp" -> SynthEngine.ParameterSection.AMPLITUDE
                 "Frequency" -> SynthEngine.ParameterSection.FREQUENCY
                 "Bandwidth" -> SynthEngine.ParameterSection.BANDWIDTH
                 else -> SynthEngine.ParameterSection.FILTER
-            }, engine = ModuleEngine.SUB,
-            onOpenEnvelope = onOpenEnvelope, onOpenLfo = {}, onOpenFilter = onOpenFilter,
+            }, engine = engine,
+            onOpenEnvelope = onOpenEnvelope, onOpenLfo = onOpenLfo, onOpenFilter = onOpenFilter,
         )
     }
 }
@@ -1847,7 +2128,7 @@ private fun SubHarmonicsEditor(
 }
 
 @Composable
-private fun SubHarmonicPreview(preview: PreviewSeries, selected: Int, referenceNote: Int, modifier: Modifier = Modifier) {
+private fun SubHarmonicPreview(preview: PreviewSeries, selected: Int, referenceNote: Int, modifier: Modifier = Modifier, positionsOnly: Boolean = false) {
     val referenceHz = remember(referenceNote) { 440.0 * 2.0.pow((referenceNote - 69) / 12.0) }
     val noteLabel = remember(referenceNote) {
         val names = listOf("C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B")
@@ -1859,7 +2140,7 @@ private fun SubHarmonicPreview(preview: PreviewSeries, selected: Int, referenceN
     val maximumHz = 20_000.0
     val octaves = kotlin.math.log2(maximumHz / minimumHz)
     val band = bands.getOrNull(selected)
-    val selectedLabel = if (band == null) "64 harmonic bands" else {
+    val selectedLabel = if (band == null) { if (positionsOnly) "64 overtone positions" else "64 harmonic bands" } else {
         val frequency = referenceHz * band[0]
         val frequencyLabel = if (frequency < 1000) "%.0f Hz".format(frequency) else "%.3g kHz".format(frequency / 1000)
         "#${selected + 1} · $frequencyLabel · ×${"%.3g".format(band[0])} f₀"
@@ -1868,11 +2149,11 @@ private fun SubHarmonicPreview(preview: PreviewSeries, selected: Int, referenceN
         typeface = android.graphics.Typeface.MONOSPACE
         color = android.graphics.Color.rgb(145, 179, 183)
     } }
-    Surface(modifier, color = Color(0xFF050A0C), shape = RoundedCornerShape(7.dp),
+    Surface(modifier, color = SynthGraphBackground, shape = RoundedCornerShape(7.dp),
         border = BorderStroke(1.dp, Color(0xFF2E6973))) {
         Box {
             Canvas(Modifier.fillMaxSize().semantics {
-                contentDescription = "$selectedLabel, 20 Hz to 20 kHz, positions and bandwidths at reference $noteLabel"
+                contentDescription = "$selectedLabel, 20 Hz to 20 kHz, ${if (positionsOnly) "positions" else "positions and bandwidths"} at reference $noteLabel"
             }) {
                 val leftMargin = 10.dp.toPx()
                 val plotWidth = (size.width - leftMargin * 2).coerceAtLeast(1f)
@@ -2002,7 +2283,7 @@ private fun OscillatorPreviewPanel(
             }
             val graph = Modifier.fillMaxWidth().weight(1f)
             if (view != null && view != OscillatorPreviewView.BASE_WAVE) {
-                Canvas(graph.background(Color(0xFF09191D))) {
+                Canvas(graph.background(SynthGraphBackground)) {
                     val width = size.width / preview.values.size.coerceAtLeast(1)
                     preview.values.forEachIndexed { index, value ->
                         val x = (index + .5f) * width
@@ -2093,7 +2374,7 @@ private fun HarmonicOverview(
             }
         }
     ) {
-        drawRect(Color(0xFF050A0C))
+        drawRect(SynthGraphBackground)
         val centerY = size.height / 2f
         drawLine(
             Color(0xFF31515A),
@@ -2138,12 +2419,13 @@ private fun HarmonicOverview(
 @Composable
 private fun AddResonanceEditorScreen(
     model: InstrumentEditorViewModel,
+    engine: ModuleEngine = ModuleEngine.ADD,
     modifier: Modifier = Modifier,
     scrollState: ScrollState,
 ) {
     val values = model.state.snapshot?.values.orEmpty()
-    val controls = values.filter { it.descriptor.group == "ADD / Resonance" }
-    val points = values.filter { it.descriptor.group == "ADD / Resonance points" }
+    val controls = remember(values, engine) { values.filter { it.descriptor.group == "${engine.name} / Resonance" } }
+    val points = remember(values, engine) { values.filter { it.descriptor.group == "${engine.name} / Resonance points" } }
     val enabled = controls.firstOrNull { it.descriptor.path.endsWith("/enabled") }
     val maxDb = controls.firstOrNull { it.descriptor.path.endsWith("/maxDb") }
     val center = controls.firstOrNull { it.descriptor.path.endsWith("/center") }
@@ -2251,13 +2533,13 @@ private fun AddResonanceEditorScreen(
             }
         }
         val curveActions = listOf(
-            "Zero" to "add/resonance/zero",
-            "Smooth" to "add/resonance/smooth",
-            "Interp." to "add/resonance/interpolateSmooth",
-            "Linear" to "add/resonance/interpolateLinear",
-            "R1" to "add/resonance/random/0",
-            "R2" to "add/resonance/random/1",
-            "R3" to "add/resonance/random/2",
+            "Zero" to "${engine.path}/resonance/zero",
+            "Smooth" to "${engine.path}/resonance/smooth",
+            "Interp." to "${engine.path}/resonance/interpolateSmooth",
+            "Linear" to "${engine.path}/resonance/interpolateLinear",
+            "R1" to "${engine.path}/resonance/random/0",
+            "R2" to "${engine.path}/resonance/random/1",
+            "R3" to "${engine.path}/resonance/random/2",
         )
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
             curveActions.forEach { (label, path) ->
@@ -2302,8 +2584,8 @@ private fun ResonanceCurve(
     modifier: Modifier = Modifier,
     drawingValues: List<Int>? = null,
 ) {
-    Canvas(modifier) {
-        drawRect(Color(0xFF050A0C))
+    Canvas(modifier.clip(RoundedCornerShape(7.dp))) {
+        drawRect(SynthGraphBackground)
         repeat(9) { line ->
             val x = size.width * line / 8f
             drawLine(Color(0xFF31515A), start = androidx.compose.ui.geometry.Offset(x, 0f),
@@ -2350,7 +2632,7 @@ private fun OscillatorPreview(
     Canvas(modifier) {
         val gridColor = Color(0xFF31515A)
         val curveColor = Color(0xFFFF4D57)
-        drawRect(Color(0xFF050A0C))
+        drawRect(SynthGraphBackground)
         repeat(9) { line ->
             val x = size.width * line / 8f
             drawLine(
@@ -2532,6 +2814,12 @@ internal fun parametersFor(
     if (module in setOf("SUB", "PAD")) {
         if (descriptor.module.name != module || descriptor.scope == SynthEngine.ParameterScope.VOICE ||
             descriptor.path == "${module.lowercase()}/stereo") return@filter false
+        if (module == "PAD" && tab == "PAD") return@filter when (descriptor.section) {
+            SynthEngine.ParameterSection.SPECTRUM, SynthEngine.ParameterSection.PROFILE,
+            SynthEngine.ParameterSection.QUALITY, SynthEngine.ParameterSection.OSCILLATOR,
+            SynthEngine.ParameterSection.RESONANCE -> true
+            else -> false
+        }
         val section = when (tab) {
             "Global" -> SynthEngine.ParameterSection.GLOBAL
             "Amp" -> SynthEngine.ParameterSection.AMPLITUDE
@@ -2541,6 +2829,7 @@ internal fun parametersFor(
             "Harmonics" -> SynthEngine.ParameterSection.HARMONICS
             "Profile" -> SynthEngine.ParameterSection.PROFILE
             "Quality" -> SynthEngine.ParameterSection.QUALITY
+            "Spectrum" -> SynthEngine.ParameterSection.SPECTRUM
             else -> return@filter false
         }
         return@filter descriptor.section == section

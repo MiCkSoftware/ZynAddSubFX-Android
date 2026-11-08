@@ -681,3 +681,21 @@ Java_com_mick_zynaddsubfx_NativeSynthBridge_nativePanic(
         jobject /* thiz */) {
     gEngine.panic();
 }
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_mick_zynaddsubfx_NativeSynthBridge_nativeStartPadGeneration(JNIEnv *, jobject, jint part, jint kit) {
+    return gEngine.startPadGeneration(part, kit) ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_mick_zynaddsubfx_NativeSynthBridge_nativeCancelPadGeneration(JNIEnv *, jobject) {
+    gEngine.cancelPadGeneration();
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_mick_zynaddsubfx_NativeSynthBridge_nativeGetPadGenerationStatus(JNIEnv *env, jobject, jint part, jint kit) {
+    std::lock_guard<std::mutex> lock(gAudioMutex);
+    if (!gStream) gEngine.servicePadGeneration();
+    const auto status = gEngine.padGenerationStatus(part, kit);
+    return env->NewStringUTF(status.c_str());
+}

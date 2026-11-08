@@ -104,6 +104,7 @@ class ParameterRoutingTest {
     fun subAndPadUseStructuredModuleAndSectionRouting() {
         val all = listOf("SUB", "PAD").flatMap { module ->
             listOf(
+                "Amp" to SynthEngine.ParameterSection.AMPLITUDE,
                 "Frequency" to SynthEngine.ParameterSection.FREQUENCY,
                 "Filter" to SynthEngine.ParameterSection.FILTER,
                 "Harmonics" to SynthEngine.ParameterSection.HARMONICS,
@@ -113,7 +114,8 @@ class ParameterRoutingTest {
             }
         }
         for (module in listOf("SUB", "PAD")) {
-            for ((tab, section) in listOf("Frequency" to SynthEngine.ParameterSection.FREQUENCY,
+            for ((tab, section) in listOf("Amp" to SynthEngine.ParameterSection.AMPLITUDE,
+                "Frequency" to SynthEngine.ParameterSection.FREQUENCY,
                 "Filter" to SynthEngine.ParameterSection.FILTER, "Harmonics" to SynthEngine.ParameterSection.HARMONICS)) {
                 val selected = parametersFor(all, module, tab, 0)
                 assertEquals(1, selected.size)
@@ -141,4 +143,18 @@ class ParameterRoutingTest {
         assertEquals(listOf("Amp", "Harmonics", "Frequency", "Bandwidth", "Filter"),
             InstrumentEditorViewModel.tabsFor("SUB"))
     }
+    @Test
+    fun padGroupContainsOnlyParametersThatRequireSampleGeneration() {
+        val all = SynthEngine.ParameterSection.entries.map { section ->
+            value("pad/${section.name.lowercase()}", SynthEngine.ParameterScope.GLOBAL, section).let {
+                it.copy(descriptor = it.descriptor.copy(module = SynthEngine.ParameterModule.PAD))
+            }
+        }
+        assertEquals(listOf("Amp", "PAD", "Frequency", "Filter"), InstrumentEditorViewModel.tabsFor("PAD"))
+        assertEquals(listOf("Spectrum", "Quality"), InstrumentEditorViewModel.padSubsections)
+        assertEquals(setOf(SynthEngine.ParameterSection.SPECTRUM, SynthEngine.ParameterSection.PROFILE,
+            SynthEngine.ParameterSection.QUALITY, SynthEngine.ParameterSection.OSCILLATOR,
+            SynthEngine.ParameterSection.RESONANCE), parametersFor(all, "PAD", "PAD", 0).map { it.descriptor.section }.toSet())
+    }
+
 }

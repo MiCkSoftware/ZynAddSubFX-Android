@@ -63,6 +63,20 @@ sealed interface ModuleAddress {
         override val role = 0
     }
 
+    data object PadProfile : ModuleAddress {
+        override val engine = ModuleEngine.PAD
+        override val kind = 10
+        override val index = -1
+        override val role = 0
+    }
+
+    data object PadOvertones : ModuleAddress {
+        override val engine = ModuleEngine.PAD
+        override val kind = 11
+        override val index = -1
+        override val role = 0
+    }
+
     data class Amplitude(override val index: Int) : ModuleAddress {
         override val kind = 7
         override val role = 0
@@ -275,6 +289,30 @@ data class FilterModel(
                     )
                 },
             )
+        }
+    }
+}
+
+data class PadGenerationStatus(
+    val phase: String = "unavailable",
+    val completed: Int = 0,
+    val total: Int = 0,
+    val frames: Int = 0,
+    val bytes: Long = 0,
+    val peak: Float = 0f,
+    val elapsedMs: Long = 0,
+    val error: String = "",
+) {
+    val busy get() = phase in setOf("generating", "ready", "cancelling")
+
+    companion object {
+        fun parse(raw: String): PadGenerationStatus {
+            val fields = raw.split('|', limit = 8)
+            return PadGenerationStatus(fields.getOrElse(0) { "unavailable" },
+                fields.getOrNull(1)?.toIntOrNull() ?: 0, fields.getOrNull(2)?.toIntOrNull() ?: 0,
+                fields.getOrNull(3)?.toIntOrNull() ?: 0, fields.getOrNull(4)?.toLongOrNull() ?: 0,
+                fields.getOrNull(5)?.toFloatOrNull() ?: 0f, fields.getOrNull(6)?.toLongOrNull() ?: 0,
+                fields.getOrElse(7) { "" })
         }
     }
 }

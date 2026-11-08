@@ -363,6 +363,17 @@ class SynthEngine(private val context: Context) : InstrumentEditorEngine {
             if (ok && (!write.path.startsWith("part/") || write.path in setOf("part/kitMode", "part/drumMode"))) instrumentChanged(partIndex)
         }
 
+    override fun startPadGeneration(part: Int, kit: Int): Boolean =
+        runCatching { NativeSynthBridge.nativeStartPadGeneration(part, kit) }.getOrDefault(false)
+
+    override fun cancelPadGeneration() {
+        runCatching { NativeSynthBridge.nativeCancelPadGeneration() }
+    }
+
+    override fun padGenerationStatus(part: Int, kit: Int): PadGenerationStatus =
+        runCatching { PadGenerationStatus.parse(NativeSynthBridge.nativeGetPadGenerationStatus(part, kit)) }
+            .getOrDefault(PadGenerationStatus())
+
     override fun preview(partIndex: Int, kitIndex: Int, address: ModuleAddress, resolution: Int): PreviewSeries =
         runCatching {
             NativeSynthBridge.nativeGetModulePreview(
