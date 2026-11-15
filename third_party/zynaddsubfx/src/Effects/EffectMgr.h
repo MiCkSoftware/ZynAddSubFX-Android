@@ -58,6 +58,7 @@ class EffectMgr:public Presets
         void changepreset(unsigned char npreset) NONREALTIME;
         void changepresetrt(unsigned char npreset, bool avoidSmash=false) REALTIME;
         unsigned char getpreset(void);
+        void setTempoRatio(int numerator_, int denominator_) REALTIME;
         void seteffectparrt(int npar, unsigned char value) REALTIME;
         unsigned char geteffectpar(int npar);
         unsigned char geteffectparrt(int npar) REALTIME;
@@ -76,6 +77,7 @@ class EffectMgr:public Presets
         const AbsTime *time;
         Sync *sync;
 
+        bool bypassed = false;
         int numerator;
         int denominator;
 

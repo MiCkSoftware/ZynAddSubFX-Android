@@ -130,42 +130,7 @@ static const rtosc::Ports local_ports = {
             if(rtosc_narguments(msg)) {
                 int val = rtosc_argument(msg, 0).i;
                 if (val>=0) {
-                    eff->numerator = val;
-                    int Pdelay, Pfreq;
-                    float freq, delay;
-                    if (eff->numerator&&eff->denominator) {
-                        eff->efx->speedfactor = (float)eff->denominator / (4.0f *(float)eff->numerator);
-                        switch(eff->nefx) {
-                        case 2: // Echo
-                        case 10: // Reverse
-                            // invert:
-                            // delay = ((Pdelay+1)/128.0f*MAX_REV_DELAY_SECONDS); //0 .. x sec
-                            // Pdelay = (delay * 128.0f / MAX_REV_DELAY_SECONDS) -1
-                            // delay = 60 / tempo * 4 * numerator / denominator
-                            assert(eff->time->tempo > 0);
-                            delay = 60.0f / ((float)eff->time->tempo * eff->efx->speedfactor);
-                            Pdelay = (unsigned char)(delay * 128.0f / MAX_REV_DELAY_SECONDS)-1;
-                            eff->seteffectparrt(2, Pdelay);
-                            break;
-                        case 3: // Chorus
-                        case 4: // Phaser
-                        case 5: // Alienwah
-                        case 8: // DynamicFilter
-                            freq =  (float)eff->time->tempo * 60.0 * eff->efx->speedfactor;
-                            // invert:
-                            // (powf(2.0f, Pfreq / 127.0f * 10.0f) - 1.0f) * 0.03f
-                            Pfreq = (int)roundf(logf((freq/0.03f)+1.0f)/LOG_2 * 12.7f);
-                            eff->seteffectparrt(2, Pfreq);
-                            break;
-                        case 1: // Reverb
-                        case 6: // Distortion
-                        case 7: // EQ
-                        default:
-                            break;
-                        }
-                    }
-                    else
-                        eff->efx->speedfactor = 0.0f;
+                    eff->setTempoRatio(val, eff->denominator);
                 }
                 d.broadcast(d.loc, "i", val);
             } else {
@@ -180,38 +145,7 @@ static const rtosc::Ports local_ports = {
             if(rtosc_narguments(msg)) {
                 int val = rtosc_argument(msg, 0).i;
                 if (val > 0) {
-                    eff->denominator = val;
-                    int Pdelay, Pfreq;
-                    float freq, delay;
-                    if (eff->numerator&&eff->denominator) {
-                        eff->efx->speedfactor = (float)eff->denominator / (4.0f *(float)eff->numerator);
-                        switch(eff->nefx) {
-                        case 2: // Echo
-                        case 10: // Reverse
-                            assert(eff->time->tempo > 0);
-                            delay = 60.0f / ((float)eff->time->tempo * eff->efx->speedfactor);
-                            Pdelay = (unsigned char)(delay * 128.0f / MAX_REV_DELAY_SECONDS)-1;
-                            eff->seteffectparrt(2, Pdelay);
-                            break;
-                        case 3: // Chorus
-                        case 4: // Phaser
-                        case 5: // Alienwah
-                        case 8: // DynamicFilter
-                            freq =  (float)eff->time->tempo * 60.0 * eff->efx->speedfactor;
-                            // invert:
-                            // (powf(2.0f, Pfreq / 127.0f * 10.0f) - 1.0f) * 0.03f
-                            Pfreq = (int)roundf(logf((freq/0.03f)+1.0f)/LOG_2 * 12.7f);
-                            eff->seteffectparrt(2, Pfreq);
-                            break;
-                        case 1: // Reverb
-                        case 6: // Distortion
-                        case 7: // EQ
-                        default:
-                            break;
-                        }
-                    }
-                    else
-                        eff->efx->speedfactor = 0.0f;
+                    eff->setTempoRatio(eff->numerator, val);
                 }
                 d.broadcast(d.loc, "i", val);
             } else {
@@ -302,6 +236,7 @@ EffectMgr::~EffectMgr()
 
 void EffectMgr::defaults(void)
 {
+    bypassed = false;
     changeeffect(0);
     setdryonly(false);
 }
@@ -318,6 +253,7 @@ void EffectMgr::changeeffectrt(int _nefx, bool avoidSmash)
     memset(efxoutr, 0, synth.bufferbytes);
     if(sync) sync->detach(efx);
     memory.dealloc(efx);
+    efx = nullptr;
 
     int new_loc = (_nefx == 8) ? dynfilter_0 : in_effect;
     if(new_loc != filterpars->loc)
@@ -364,40 +300,7 @@ void EffectMgr::changeeffectrt(int _nefx, bool avoidSmash)
                 break; //no effect (thru)
         }
 
-        // set freq / delay params according to bpm ratio
-        int Pdelay, Pfreq;
-        float freq;
-        if (numerator>0) {
-            switch(nefx) {
-                case 2: // Echo
-                case 10:// Reverse
-                    // invert:
-                    // delay = (Pdelay / 127.0f * 1.5f); //0 .. 1.5 sec
-                    Pdelay = (int)roundf((20320.0f / (float)time->tempo) *
-                                         ((float)numerator / (float)denominator));
-                    if (numerator&&denominator)
-                        seteffectparrt(2, Pdelay);
-                    break;
-                case 3: // Chorus
-                case 4: // Phaser
-                case 5: // Alienwah
-                case 8: // DynamicFilter
-                    freq =  ((float)time->tempo *
-                             (float)denominator /
-                             (240.0f * (float)numerator));
-                    // invert:
-                    // (powf(2.0f, Pfreq / 127.0f * 10.0f) - 1.0f) * 0.03f
-                    Pfreq = (int)roundf(logf((freq/0.03f)+1.0f)/LOG_2 * 12.7f);
-                    if (numerator&&denominator)
-                        seteffectparrt(2, Pfreq);
-                    break;
-                case 1: // Reverb
-                case 6: // Distortion
-                case 7: // EQ
-                default:
-                    break;
-            }
-        }
+        setTempoRatio(numerator, denominator);
 
     } catch (std::bad_alloc &ba) {
         std::cerr << "failed to change effect " << _nefx << ": " << ba.what() << std::endl;
@@ -440,10 +343,12 @@ void EffectMgr::changesettingsrt(const short int *p_value)
 // Initialize An Effect in RT context
 void EffectMgr::init(void)
 {
+    const auto loadedPreset = preset;
     kill();
     changeeffectrt(nefx, true);
-    changepresetrt(preset, true);
+    changepresetrt(loadedPreset, true);
     changesettingsrt(settings);
+    setTempoRatio(numerator, denominator);
 }
 
 //Strip effect manager of it's realtime memory
@@ -485,14 +390,34 @@ void EffectMgr::changepresetrt(unsigned char npreset, bool avoidSmash)
         efx->Ppreset = npreset;
         return;
     }
-    if(efx)
+    if(efx) {
         efx->setpreset(npreset);
+        setTempoRatio(numerator, denominator);
+    }
     if(!avoidSmash)
         for(int i = 0; i != 128; i++)
             settings[i] = geteffectparrt(i);
 }
 
 //Change a parameter of the current effect
+void EffectMgr::setTempoRatio(int numerator_, int denominator_)
+{
+    numerator = std::max(0, std::min(99, numerator_));
+    denominator = std::max(1, std::min(99, denominator_));
+    if (!efx) return;
+    efx->speedfactor = numerator ? float(denominator) / (4.0f * numerator) : 0.0f;
+    if (!numerator || !time || time->tempo <= 0) return;
+    float encoded;
+    if (nefx == 2 || nefx == 10) {
+        const float seconds = 60.0f / (time->tempo * efx->speedfactor);
+        encoded = nefx == 2 ? seconds * 127.0f / 1.5f : seconds * 128.0f / MAX_REV_DELAY_SECONDS - 1.0f;
+    } else if (nefx == 3 || nefx == 4 || nefx == 5 || nefx == 8) {
+        const float hz = time->tempo * efx->speedfactor / 60.0f;
+        encoded = log2f(hz / .03f + 1.0f) * 12.7f;
+    } else return;
+    seteffectparrt(2, std::max(0, std::min(127, int(roundf(encoded)))));
+}
+
 void EffectMgr::seteffectparrt(int npar, unsigned char value)
 {
     if(npar < 0 || npar >= 128)
@@ -518,7 +443,7 @@ unsigned char EffectMgr::geteffectparrt(int npar)
 // Apply the effect
 void EffectMgr::out(float *smpsl, float *smpsr)
 {
-    if(!efx) {
+    if(!efx || bypassed) {
         if(!insertion)
             for(int i = 0; i < synth.buffersize; ++i) {
                 smpsl[i]   = 0.0f;
@@ -613,6 +538,7 @@ void EffectMgr::paste(EffectMgr &e)
     changeeffectrt(e.nefx, true);
     changepresetrt(e.preset, true);
     changesettingsrt(e.settings);
+    setTempoRatio(e.numerator, e.denominator);
     if(dynamic_cast<DynamicFilter*>(efx)) {
         std::swap(filterpars, e.filterpars);
         efx->filterpars = filterpars;
@@ -622,6 +548,7 @@ void EffectMgr::paste(EffectMgr &e)
 
 void EffectMgr::add2XML(XMLwrapper& xml)
 {
+    xml.addparbool("bypass", bypassed);
     xml.addpar("type", geteffect());
 
     if(!geteffect())
@@ -639,8 +566,8 @@ void EffectMgr::add2XML(XMLwrapper& xml)
             par = settings[n];
             def = -1;
         }
-        /* don't store default values */
-        if(par == def)
+        // Full XML (clipboard/session capture) must preserve values across insertion/System defaults.
+        if(xml.minimal && par == def)
             continue;
         xml.beginbranch("par_no", n);
         xml.addpar("par", par);
@@ -661,6 +588,7 @@ void EffectMgr::getfromXML(XMLwrapper& xml)
 {
     constPowerMixing = xml.fileversion() >= version_type(3,0,7);
 
+    bypassed = xml.getparbool("bypass", false);
     changeeffect(xml.getpar127("type", geteffect()));
 
     if(!geteffect())

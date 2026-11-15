@@ -15,6 +15,8 @@ object NativeSynthBridge {
     external fun nativeIsAudioRunning(): Boolean
     external fun nativeNoteOn(channel: Int, note: Int, velocity: Int)
     external fun nativeNoteOff(channel: Int, note: Int)
+    external fun nativeSetPerformanceControl(channel: Int, control: Int, value: Int): Boolean
+    external fun nativeGetPerformanceSnapshot(channel: Int): String
     external fun nativePanic()
     external fun nativeCaptureSession(): Long
     // Consumes a nonzero capture handle, including on failure.
@@ -31,6 +33,10 @@ object NativeSynthBridge {
     external fun nativeGetCurrentPartsSummary(): String
     external fun nativeGetCurrentMixerSummary(): String
     external fun nativeGetParameterSnapshot(partIndex: Int, kitIndex: Int): String
+    external fun nativeGetFxSnapshot(scope: Int, part: Int, slot: Int): String
+    external fun nativeWriteFx(scope: Int, part: Int, slot: Int, expectedType: Int, path: String, value: Double): Boolean
+    external fun nativeFxAction(scope: Int, part: Int, slot: Int, expectedType: Int, action: String, vowel: Int): Boolean
+    external fun nativeGetFxPreview(scope: Int, part: Int, slot: Int, vowel: Int, resolution: Int): String
     external fun nativeStartPadGeneration(part: Int, kit: Int): Boolean
     external fun nativeCancelPadGeneration()
     external fun nativeGetPadGenerationStatus(part: Int, kit: Int): String

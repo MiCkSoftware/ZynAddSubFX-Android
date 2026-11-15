@@ -251,6 +251,7 @@ private fun CommonParameterGrid(
     onCommit: () -> Unit = {},
     enabled: Boolean = true,
     columnsOverride: Int? = null,
+    parameterValue: (SynthEngine.ParameterValue) -> Double = { it.value },
 ) {
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         val columns = columnsOverride ?: if (maxWidth < 350.dp) 3 else 4
@@ -260,7 +261,7 @@ private fun CommonParameterGrid(
                     rowParameters.forEach { parameter ->
                         Box(Modifier.weight(1f)) {
                             DenseParameterControl(
-                                parameter = parameter,
+                                parameter = parameter.copy(value = parameterValue(parameter)),
                                 onWrite = onWrite,
                                 onLongPress = {},
                                 verticalLabel = true,
@@ -698,6 +699,7 @@ fun FilterEditor(
     onPasteVowel: (Int) -> Unit,
     canPasteVowel: (Int) -> Boolean,
     modifier: Modifier = Modifier,
+    parameterValue: (SynthEngine.ParameterValue) -> Double = { it.value },
 ) {
     val scrollState = rememberScrollState()
     var selectedVowel by remember(model.prefix) { mutableIntStateOf(0) }
@@ -720,12 +722,12 @@ fun FilterEditor(
     ) { bottomPadding ->
         Spacer(Modifier.fillMaxWidth().height(210.dp))
         val primary = model.parameters.fields("filter", "category", "type", "cutoff", "q", "gain", "stages", "tracking")
-        CommonParameterGrid(primary, onWrite, onDrag, onCommit)
+        CommonParameterGrid(primary, onWrite, onDrag, onCommit, parameterValue = parameterValue)
         CommonParameterGrid(
             model.parameters.filterNot { parameter ->
                 parameter.descriptor.path.contains("/formant/") || parameter in primary
             },
-            onWrite, onDrag, onCommit,
+            onWrite, onDrag, onCommit, parameterValue = parameterValue,
         )
         if (model.category == 1 && model.formant != null) FormantFilterEditor(
             model = model,
@@ -739,6 +741,7 @@ fun FilterEditor(
             onCopyVowel = onCopyVowel,
             onPasteVowel = onPasteVowel,
             canPasteVowel = canPasteVowel,
+            parameterValue = parameterValue,
         )
         Spacer(Modifier.height(bottomPadding))
     }
@@ -820,6 +823,7 @@ fun FormantFilterEditor(
     onCopyVowel: (Int) -> Unit,
     onPasteVowel: (Int) -> Unit,
     canPasteVowel: (Int) -> Boolean,
+    parameterValue: (SynthEngine.ParameterValue) -> Double = { it.value },
 ) {
     val formant = model.formant ?: return
     val prefix = "${model.prefix}/formant"
@@ -834,7 +838,7 @@ fun FormantFilterEditor(
             listOfNotNull(
                 find("$prefix/count"), find("$prefix/slowness"), find("$prefix/clearness"),
                 find("$prefix/center"), find("$prefix/octaves"),
-            ), onWrite, onDrag, onCommit,
+            ), onWrite, onDrag, onCommit, parameterValue = parameterValue,
         )
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(5.dp)) {
@@ -887,17 +891,17 @@ fun FormantFilterEditor(
                 find("$prefix/vowel/$selectedVowel/$selectedFormant/amplitude"),
                 find("$prefix/vowel/$selectedVowel/$selectedFormant/q"),
             ),
-            onWrite, onDrag, onCommit,
+            onWrite, onDrag, onCommit, parameterValue = parameterValue,
         )
         Text("Vowel sequence", color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.labelMedium)
         CommonParameterGrid(
             listOfNotNull(find("$prefix/sequenceSize"), find("$prefix/sequenceStretch"),
-                find("$prefix/sequenceReversed")), onWrite, onDrag, onCommit,
+                find("$prefix/sequenceReversed")), onWrite, onDrag, onCommit, parameterValue = parameterValue,
         )
         CommonParameterGrid(
             (0 until formant.sequenceSize).mapNotNull { find("$prefix/sequence/$it") },
-            onWrite, onDrag, onCommit,
+            onWrite, onDrag, onCommit, parameterValue = parameterValue,
         )
         Spacer(Modifier.height(40.dp))
     }

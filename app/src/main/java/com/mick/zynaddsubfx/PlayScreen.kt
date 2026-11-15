@@ -27,6 +27,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -59,6 +60,7 @@ data class PlayUiState(
     val parts: List<SynthEngine.PartInspector>,
     val selectedPartIndex: Int,
     val loadedPartIndices: Set<Int> = emptySet(),
+    val performance: PerformanceControls = PerformanceControls(),
 )
 
 @Composable
@@ -70,14 +72,16 @@ private fun PlayChoiceKnob(
     context: Any? = null,
     labelFor: (Int) -> String = { it.toString() },
     knobLabel: (Int) -> String = labelFor,
+    labelColor: Color = Color(0xFF1C474B),
+    accent: Color = Color(0xFF33C8C8),
     onSelect: (Int) -> Unit,
 ) {
     var open by remember(context) { mutableStateOf(false) }
     Box {
-        DenseControlCard(label, Color(0xFF1C474B), onLongClick = { open = true },
+        DenseControlCard(label, labelColor, onLongClick = { open = true },
             longClickLabel = "Choose $title") {
             TinyKnob("", value.toFloat(), range.first.toFloat(), range.last.toFloat(),
-                accessibilityLabel = title,
+                accessibilityLabel = title, accent = accent,
                 valueText = { knobLabel(it.roundToInt()) },
                 onValueChange = { onSelect(it.roundToInt().coerceIn(range)) })
         }
@@ -107,12 +111,20 @@ fun PlayScreen(
     onKeyboardChannelChange: (Int) -> Unit,
     onKeyboardOctaveShiftChange: (Int) -> Unit,
     onPartTapped: (Int, Boolean) -> Unit,
+    onOpenFx: () -> Unit = {},
+    onPerformanceChange: (PerformanceControl, Int) -> Unit = { _, _ -> },
+    onPerformanceCommit: () -> Unit = {},
+    onEditPart: () -> Unit = {},
     onSetSelectedPartChannel: (Int) -> Unit,
     onSetSelectedPartVolume: (Int) -> Unit,
     onSetSelectedPartPan: (Int) -> Unit,
     onSetSelectedPartKeyShift: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    var performanceB by rememberSaveable { mutableStateOf(false) }
+    val performanceHue = subHarmonicHue(if (performanceB) 11 else 2)
+    val performanceAccent = Color.hsv(performanceHue, .65f, .95f)
+    val performanceLabel = Color.hsv(performanceHue, .35f, .22f)
     val partsByIndex = remember(uiState.parts) { uiState.parts.associateBy { it.partIndex } }
     val selectedPart = partsByIndex[uiState.selectedPartIndex]
     val presetDisplayName = uiState.currentPresetName ?: "none"
@@ -208,7 +220,10 @@ fun PlayScreen(
                     }
                 }
                 Spacer(Modifier.height(8.dp))
-                EditorSectionHeader("Part controls")
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.weight(1f)) { EditorSectionHeader("Part controls") }
+                    LedButton("Edit selected part", true, onEditPart, Modifier.width(LedSlotWidth.dp), action = true, displayLabel = "EDIT")
+                }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                     Box(Modifier.weight(1f)) { PlayChoiceKnob("Channel", "Receive channel", (selectedPart?.receiveChannel ?: 0) + 1,
                         1..16, uiState.selectedPartIndex, onSelect = onSetSelectedPartChannel) }
@@ -231,24 +246,57 @@ fun PlayScreen(
                 modifier = Modifier.padding(vertical = 8.dp, horizontal=2.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                EditorSectionHeader("Performance")
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.weight(1f)) { EditorSectionHeader("Performance") }
+                    LedButton("Performance bank ${if (performanceB) "B" else "A"}; switch A/B", true,
+                        { onPerformanceCommit(); performanceB = !performanceB }, Modifier.width(LedSlotWidth.dp),
+                        hue = performanceHue,
+                        action = true, displayLabel = "A/B")
+                    Spacer(Modifier.width(5.dp))
+                    LedButton("Master FX", true, onOpenFx, Modifier.width(LedSlotWidth.dp), action = true, displayLabel = "FX")
+                }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(5.dp)
                 ) {
+                    if (!performanceB) {
                     Box(Modifier.weight(1f)) { DenseKnobCard("Master", uiState.masterVolume * 127f, 0f, 127f,
-                        { onMasterVolumeChange((it / 127f).coerceIn(0f, 1f)) }) }
+                        { onMasterVolumeChange((it / 127f).coerceIn(0f, 1f)) }, labelColor = performanceLabel, accent = performanceAccent) }
                     Box(Modifier.weight(1f)) {
                         PlayChoiceKnob("Channel", "Keyboard channel", uiState.keyboardChannel + 1, 0..16,
                             uiState.selectedPartIndex,
                             labelFor = { if (it == 0) "Auto (channel ${(selectedPart?.receiveChannel ?: 0) + 1})" else it.toString() },
                             knobLabel = { if (it == 0) "A${(selectedPart?.receiveChannel ?: 0) + 1}" else it.toString() },
+                            labelColor = performanceLabel, accent = performanceAccent,
                             onSelect = { onKeyboardChannelChange(it - 1) })
                     }
                     Box(Modifier.weight(1f)) { DenseKnobCard("Velocity", uiState.keyboardVelocity.toFloat(), 1f, 127f,
-                        { onKeyboardVelocityChange(it.roundToInt().coerceIn(1, 127)) }) }
+                        { onKeyboardVelocityChange(it.roundToInt().coerceIn(1, 127)) }, labelColor = performanceLabel, accent = performanceAccent) }
                     Box(Modifier.weight(1f)) { PlayChoiceKnob("Octave", "Octave", uiState.keyboardOctaveShift,
-                        -2..2, onSelect = onKeyboardOctaveShiftChange) }
+                        -2..2, labelColor = performanceLabel, accent = performanceAccent, onSelect = onKeyboardOctaveShiftChange) }
+                    } else {
+                        Box(Modifier.weight(1f)) { DenseKnobCard("Tempo", uiState.performance.tempo.toFloat(), 40f, 200f,
+                            { onPerformanceChange(PerformanceControl.TEMPO, it.roundToInt()) },
+                            labelColor = performanceLabel, accent = performanceAccent, onValueChangeFinished = onPerformanceCommit) }
+                        Box(Modifier.weight(1f)) { DenseControlCard("Pitch", performanceLabel) {
+                            TinyKnob("", uiState.performance.pitch.toFloat(), -8192f, 8191f,
+                                accessibilityLabel = "Pitch bend", accent = performanceAccent, valueText = { "${(it / 8192f * 100f).roundToInt()}%" },
+                                onValueChange = { onPerformanceChange(PerformanceControl.PITCH, it.roundToInt()) },
+                                onValueChangeFinished = {
+                                    onPerformanceChange(PerformanceControl.PITCH, 0)
+                                    onPerformanceCommit()
+                                })
+                        } }
+                        Box(Modifier.weight(1f)) { DenseKnobCard("Modulation", uiState.performance.modulation.toFloat(), 0f, 127f,
+                            { onPerformanceChange(PerformanceControl.MODULATION, it.roundToInt()) },
+                            labelColor = performanceLabel, accent = performanceAccent, onValueChangeFinished = onPerformanceCommit) }
+                        Box(Modifier.weight(1f)) { DenseControlCard("Sustain", performanceLabel) {
+                            LedButton("Sustain", uiState.performance.sustain, {
+                                onPerformanceChange(PerformanceControl.SUSTAIN, if (uiState.performance.sustain) 0 else 127)
+                                onPerformanceCommit()
+                            }, Modifier.size(43.dp), hue = performanceHue, compact = true, displayLabel = if (uiState.performance.sustain) "ON" else "OFF")
+                        } }
+                    }
                 }
                 Row(
                     modifier = Modifier.fillMaxWidth(),

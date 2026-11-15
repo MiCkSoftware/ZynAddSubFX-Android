@@ -34,6 +34,8 @@ static void assertPreviewNear(const std::string &expected, const std::string &ac
     assert(!std::getline(right, b, ','));
 }
 
+#include "fx_contract_tests.h"
+
 int main() {
     ZynAndroidEngine engine;
     assert(engine.initialize(48000, 256));
@@ -267,6 +269,10 @@ int main() {
         assert(read(engine, 5, 0, "pad/" + field) == bounds.second);
     }
     engine.shutdown();
+    ZynAndroidEngine fxEngine;
+    assert(fxEngine.initialize(48000, 256));
+    testFxContract(fxEngine);
+    fxEngine.shutdown();
     assert(engine.initialize(48000, 256));
     assert(engine.isZynReady());
     write(0, 0, "kit/subEnabled", 1);

@@ -210,7 +210,7 @@ private val oscillatorEditorSections =
     listOf("Preview", "Output", "Base", "Shape & filter", "Modulation", "Spectrum", "Harmonics")
 
 @Composable
-private fun SynthEditorScaffold(
+internal fun SynthEditorScaffold(
     title: String,
     contextPath: String,
     navigationLabel: String,
@@ -231,7 +231,13 @@ private fun SynthEditorScaffold(
     Column(modifier.fillMaxSize()) {
         Surface(color = Color(0xFF181818), shadowElevation = 5.dp) {
             Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp)) {
-                Text(contextPath, color = Color(0xFF7AB8BA), style = MaterialTheme.typography.labelSmall)
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(contextPath, color = Color(0xFF7AB8BA), style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Box(Modifier.width(12.dp), contentAlignment = Alignment.Center) {
+                        if (dirty) Text("●", color = Color(0xFFFFC857), style = MaterialTheme.typography.labelSmall)
+                    }
+                }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     TextButton(onClick = onNavigateUp) {
                         Text(navigationLabel, fontFamily = FontFamily(Font(R.font.vt323regular)), fontSize = 15.sp)
@@ -249,10 +255,6 @@ private fun SynthEditorScaffold(
                         )
                     }
                     headerActions()
-                    if (dirty) {
-                        Spacer(Modifier.width(5.dp))
-                        Text("●", color = Color(0xFFFFC857))
-                    }
                     onActions?.let { action ->
                         TextButton(onClick = action) { Text("⋮") }
                     }
@@ -307,6 +309,12 @@ fun FullInstrumentEditor(
     onReleaseKeyboardNote: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    if (module.startsWith("FX")) {
+        FxEditor(engine, partIndex, heldNotes, keyboardOctaveShift, onBack,
+            onPressKeyboardNote, onReleaseKeyboardNote, modifier,
+            FxAddress(part = partIndex, slot = module.substringAfter(':', "0").toIntOrNull()?.coerceIn(0, 2) ?: 0))
+        return
+    }
     val context = LocalContext.current
     val density = LocalDensity.current
     val model = remember(engine) { InstrumentEditorViewModel(engine) }
@@ -801,8 +809,7 @@ fun FullInstrumentEditor(
                             title = section,
                             parameters = parameters,
                             modifier = Modifier,
-                            complex = section == "Spectrum" ||
-                                (module == "FX" && section != "Routing"),
+                            complex = section == "Spectrum",
                             onComplex = {
                                 model.selectTab(section)
                                 destination = if (section == "Resonance") {
@@ -2692,8 +2699,7 @@ private fun populatedSections(
     val declared = InstrumentEditorViewModel.tabsFor(module)
     return declared.filter { section ->
         parametersFor(all, module, section, 0).isNotEmpty() ||
-            section in setOf("Resonance", "Spectrum") ||
-            (module == "FX" && section != "Routing")
+            section in setOf("Resonance", "Spectrum")
     }
 }
 
@@ -2851,11 +2857,6 @@ internal fun parametersFor(
     }
 }
 
-private fun emptyMessage(module: String, tab: String): String = when {
-    module == "FX" -> "FX $tab is the next native parameter family to connect."
-    tab in setOf("Resonance", "Spectrum") -> "Open the terminal editor above."
-    else -> "No $tab parameters are available for this kit item."
-}
 
 @Composable
 @OptIn(ExperimentalLayoutApi::class)
@@ -2944,11 +2945,15 @@ internal fun DenseControlCard(
         ),
         color = Color(0xFF202020),
         shape = RoundedCornerShape(7.dp),
-        border = BorderStroke(1.dp, Color(0xFF274B54)),
+        border = BorderStroke(1.dp, androidx.compose.ui.graphics.lerp(labelColor, Color.White, .14f)),
     ) {
         Box(Modifier.fillMaxWidth().height(if (verticalLabel) 78.dp else 86.dp)
-            .background(remember {
-                Brush.verticalGradient(listOf(Color(0xFF1D3033), Color(0xFF152124), Color(0xFF10191B)))
+            .background(remember(labelColor) {
+                Brush.verticalGradient(listOf(
+                    androidx.compose.ui.graphics.lerp(Color(0xFF181C1E), labelColor, .65f),
+                    androidx.compose.ui.graphics.lerp(Color(0xFF111416), labelColor, .38f),
+                    androidx.compose.ui.graphics.lerp(Color(0xFF0B0D0E), labelColor, .22f),
+                ))
             })) {
             Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
                 if (verticalLabel) {
@@ -3022,6 +3027,15 @@ internal fun DenseParameterControl(
         onCommit()
         enumOpen = true
     }
+    val openValueMenu = {
+        if (descriptor.type != SynthEngine.ParameterType.INTEGER) openEnum()
+        else {
+            onCommit()
+            draft = parameter.value.toFloat()
+            numberOpen = true
+        }
+    }
+    val fxReset = if (descriptor.path.startsWith("fx/") && onReset != null) ({ onReset(parameter) }) else null
     Box {
     DenseControlCard(
         label = if (descriptor.path.endsWith("/volumeMinus")) "Polarity" else if (verticalLabel) compactAddLabel(descriptor) else descriptor.label,
@@ -3039,17 +3053,11 @@ internal fun DenseParameterControl(
                 onWrite(parameter, if (parameter.value >= .5) 0.0 else 1.0)
             }
         },
-        onLongClick = {
-            if (descriptor.type != SynthEngine.ParameterType.INTEGER) openEnum()
-            else if (descriptor.type == SynthEngine.ParameterType.INTEGER) {
-                onCommit()
-                draft = parameter.value.toFloat()
-                numberOpen = true
-            }
-        },
+        onLongClick = openValueMenu,
     ) {
         when {
                 descriptor.path.endsWith("/volumeMinus") -> TinyKnob(
+                    onDoubleTap = fxReset, onLongPress = openValueMenu,
                     label = "", value = parameter.value.toFloat(), min = 0f, max = 1f,
                     accessibilityLabel = "Polarity",
                     accent = Color.hsv(labelHue, .65f, .90f),
@@ -3070,6 +3078,7 @@ internal fun DenseParameterControl(
                 )
                 descriptor.type == SynthEngine.ParameterType.ENUM -> if (verticalLabel) {
                     TinyKnob(
+                        onDoubleTap = fxReset, onLongPress = openValueMenu,
                         label = "",
                         accessibilityLabel = descriptor.label,
                         accent = Color.hsv(labelHue, .65f, .90f),
@@ -3098,6 +3107,7 @@ internal fun DenseParameterControl(
                     )
                 }
                 else -> TinyKnob(
+                    onDoubleTap = fxReset, onLongPress = openValueMenu,
                     label = "",
                     accessibilityLabel = descriptor.label,
                     accent = Color.hsv(labelHue, .65f, .90f),
@@ -3270,7 +3280,7 @@ private fun compactAddLabel(descriptor: SynthEngine.ParameterDescriptor): String
 }
 
 @Composable
-private fun CompactSelector(label: String, value: String, onClick: () -> Unit) {
+internal fun CompactSelector(label: String, value: String, onClick: () -> Unit) {
     Surface(
         modifier = Modifier.combinedClickable(onClick = onClick),
         color = Color(0xFF252525),

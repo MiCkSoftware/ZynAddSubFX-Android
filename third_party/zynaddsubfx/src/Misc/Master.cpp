@@ -514,7 +514,7 @@ static const Ports master_ports = {
     {"tempo::i", rProp(parameter) rDefault(120) rShort("Tempo") rUnit(BPM) rDoc("Tempo / Beats per minute") rLinear(40, 200), 0,
         rBegin;
         if(!strcmp("i",rtosc_argument_string(msg))) {
-            m->time.tempo = rtosc_argument(msg, 0).i;
+            m->setTempo(rtosc_argument(msg, 0).i);
             d.broadcast(d.loc, "i", m->time.tempo);
         } else
             d.reply(d.loc, "i", m->time.tempo);
@@ -1032,6 +1032,25 @@ void Master::polyphonicAftertouch(char chan, note_t note, char velocity)
 /*
  * Controllers
  */
+bool Master::setInsertionFxSource(int slot, int source)
+{
+    if (slot < 0 || slot >= NUM_INS_EFX || source < -2 || source >= NUM_MIDI_PARTS) return false;
+    Pinsparts[slot] = source;
+    return true;
+}
+
+void Master::setTempo(int bpm)
+{
+    time.tempo = std::max(40, std::min(200, bpm));
+    for (int slot = 0; slot < NUM_INS_EFX; ++slot)
+        insefx[slot]->setTempoRatio(insefx[slot]->numerator, insefx[slot]->denominator);
+    for (int slot = 0; slot < NUM_SYS_EFX; ++slot)
+        sysefx[slot]->setTempoRatio(sysefx[slot]->numerator, sysefx[slot]->denominator);
+    for (int p = 0; p < NUM_MIDI_PARTS; ++p)
+        for (int slot = 0; slot < NUM_PART_EFX; ++slot)
+            part[p]->partefx[slot]->setTempoRatio(part[p]->partefx[slot]->numerator, part[p]->partefx[slot]->denominator);
+}
+
 void Master::setController(char chan, int type, int par)
 {
     if(frozenState)
@@ -1653,6 +1672,7 @@ void Master::initialize_rt(void)
 
 void Master::add2XML(XMLwrapper& xml)
 {
+    xml.addpar("tempo", time.tempo);
     xml.addparreal("volume", Volume);
     xml.addpar("key_shift", Pkeyshift);
     xml.addparbool("nrpn_receive", ctl.NRPN.receive);
@@ -1773,6 +1793,7 @@ int Master::loadXML(const char *filename)
 
 void Master::getfromXML(XMLwrapper& xml)
 {
+    setTempo(xml.getpar("tempo", 120, 40, 200));
     constPowerMixing = xml.fileversion() >= version_type(3,0,7);
 
     if (xml.hasparreal("volume")) {

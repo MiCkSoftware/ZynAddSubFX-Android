@@ -22,6 +22,9 @@
 #include "Misc/Part.h"
 #include "Misc/XMLwrapper.h"
 #include "Effects/EffectMgr.h"
+#include "Effects/Effect.h"
+#include "DSP/Filter.h"
+#include "Misc/Allocator.h"
 #include "Params/ADnoteParameters.h"
 #include "Params/EnvelopeParams.h"
 #include "Params/LFOParams.h"
@@ -136,6 +139,186 @@ const PadStructureControl kPadStructureControls[] = {
     PAD_CONTROL("qualityBaseNote", "Base note", "Quality", Pquality.basenote, 0, 9, 4, "C2,G2,C3,G3,C4,G4,C5,G5,C6,G6"),
 };
 #undef PAD_CONTROL
+
+int parseIndex(std::string_view text, int maximum) {
+    if (text.empty()) return -1;
+    int index = 0;
+    for (char ch : text) {
+        if (ch < '0' || ch > '9') return -1;
+        if (index > maximum / 10) return -1;
+        index = index * 10 + ch - '0';
+        if (index > maximum) return -1;
+    }
+    return index;
+}
+
+template<class Add>
+void addFormantParameters(const char *prefix, const char *group, const zyn::FilterParams &filter, Add &add) {
+        add((std::string(prefix) + "/formant/count").c_str(), "Active formants per vowel", group, "int",
+            filter.Pnumformants, 1, FF_MAX_FORMANTS, 3);
+        add((std::string(prefix) + "/formant/slowness").c_str(), "Formant slowness", group, "int",
+            filter.Pformantslowness, 0, 127, 64);
+        add((std::string(prefix) + "/formant/clearness").c_str(), "Vowel clearness", group, "int",
+            filter.Pvowelclearness, 0, 127, 64);
+        add((std::string(prefix) + "/formant/center").c_str(), "Center frequency", group, "int",
+            filter.Pcenterfreq, 0, 127, 64);
+        add((std::string(prefix) + "/formant/octaves").c_str(), "Octave span", group, "int",
+            filter.Poctavesfreq, 0, 127, 64);
+        add((std::string(prefix) + "/formant/sequenceSize").c_str(), "Sequence size", group, "int",
+            filter.Psequencesize, 1, FF_MAX_SEQUENCE, 3);
+        add((std::string(prefix) + "/formant/sequenceStretch").c_str(), "Sequence stretch", group, "int",
+            filter.Psequencestretch, 0, 127, 40);
+        add((std::string(prefix) + "/formant/sequenceReversed").c_str(), "Reverse sequence", group, "bool",
+            filter.Psequencereversed, 0, 1, 0);
+        for (int vowel = 0; vowel < FF_MAX_VOWELS; ++vowel) {
+            for (int formant = 0; formant < FF_MAX_FORMANTS; ++formant) {
+                const auto item = std::string(prefix) + "/formant/vowel/" + std::to_string(vowel) +
+                    "/" + std::to_string(formant);
+                add((item + "/frequency").c_str(), "Frequency", group, "int",
+                    filter.Pvowels[vowel].formants[formant].freq, 0, 127, 64);
+                add((item + "/amplitude").c_str(), "Amplitude", group, "int",
+                    filter.Pvowels[vowel].formants[formant].amp, 0, 127, 127);
+                add((item + "/q").c_str(), "Q", group, "int",
+                    filter.Pvowels[vowel].formants[formant].q, 0, 127, 64);
+            }
+        }
+        for (int position = 0; position < FF_MAX_SEQUENCE; ++position) {
+            add((std::string(prefix) + "/formant/sequence/" + std::to_string(position)).c_str(),
+                ("Sequence " + std::to_string(position + 1)).c_str(), group, "enum",
+                filter.Psequence[position].nvowel, 0, FF_MAX_VOWELS - 1, 0,
+                "Vowel 1,Vowel 2,Vowel 3,Vowel 4,Vowel 5,Vowel 6");
+        }
+}
+
+template<class Add>
+void addFilterParameters(const std::string &prefix, const std::string &group, const zyn::FilterParams &filter, Add &add) {
+        const int cutoff = std::clamp(static_cast<int>(std::lround(
+            ((std::log2(filter.basefreq) - 9.96578428f) / 5.0f + 1.0f) * 64.0f)), 0, 127);
+        const int q = std::clamp(static_cast<int>(std::lround(
+            127.0f * std::sqrt(std::log(0.9f + filter.baseq) / std::log(1000.0f)))), 0, 127);
+        const int tracking = std::clamp(static_cast<int>(std::lround(filter.freqtracking / 100.0f * 64.0f + 64.0f)), 0, 127);
+        const int gain = std::clamp(static_cast<int>(std::lround((filter.gain / 30.0f + 1.0f) * 64.0f)), 0, 127);
+        add((prefix + "/category").c_str(), "Filter category", (group + " / Parameters").c_str(), "enum",
+            filter.Pcategory, 0, 4, 0, "Analog,Formant,State variable,Moog,Comb");
+        const auto &type = filterTypeControl(filter.Pcategory);
+        if (type.options)
+            add((prefix + "/type").c_str(), "Filter type", (group + " / Parameters").c_str(), "enum",
+                std::min<int>(filter.Ptype, type.maximum), 0, type.maximum, 0, type.options);
+        add((prefix + "/cutoff").c_str(), "Cutoff frequency", (group + " / Parameters").c_str(), "int", cutoff, 0, 127, 94);
+        add((prefix + "/q").c_str(), "Q", (group + " / Parameters").c_str(), "int", q, 0, 127, 40);
+        add((prefix + "/tracking").c_str(), "Frequency tracking", (group + " / Parameters").c_str(), "int", tracking, 0, 127, 64);
+        add((prefix + "/gain").c_str(), "Filter gain", (group + " / Parameters").c_str(), "int", gain, 0, 127, 64);
+        add((prefix + "/stages").c_str(), "Filter stages", (group + " / Parameters").c_str(), "int", filter.Pstages + 1, 1, 6, 1);
+        if (filter.Pcategory == 4) {
+            add((prefix + "/combHpf").c_str(), "Comb high pass", (group + " / Parameters").c_str(), "int",
+                filter.Phpf, 0, 127, 0);
+            add((prefix + "/combLpf").c_str(), "Comb low pass", (group + " / Parameters").c_str(), "int",
+                filter.Plpf, 0, 127, 127);
+        }
+        if (filter.Pcategory == 1)
+            addFormantParameters(prefix.c_str(), (group + " / Formant").c_str(), filter, add);
+}
+
+bool writeFormantParameter(zyn::FilterParams &filter, const std::string &field, double value) {
+    auto i = [&](int lo, int hi) { return std::clamp(static_cast<int>(std::lround(value)), lo, hi); };
+    auto b = [&]() { return value >= .5; };
+        if (field == "count") filter.Pnumformants = i(1, FF_MAX_FORMANTS);
+        else if (field == "slowness") filter.Pformantslowness = i(0, 127);
+        else if (field == "clearness") filter.Pvowelclearness = i(0, 127);
+        else if (field == "center") filter.Pcenterfreq = i(0, 127);
+        else if (field == "octaves") filter.Poctavesfreq = i(0, 127);
+        else if (field == "sequenceSize") filter.Psequencesize = i(1, FF_MAX_SEQUENCE);
+        else if (field == "sequenceStretch") filter.Psequencestretch = i(0, 127);
+        else if (field == "sequenceReversed") filter.Psequencereversed = b();
+        else if (field.rfind("vowel/", 0) == 0) {
+            const auto spec = field.substr(6);
+            const auto first = spec.find('/');
+            const auto second = first == std::string::npos ? std::string::npos : spec.find('/', first + 1);
+            if (second == std::string::npos) return false;
+            const int vowel = parseIndex(spec.substr(0, first), FF_MAX_VOWELS - 1);
+            const int formant = parseIndex(spec.substr(first + 1, second - first - 1), FF_MAX_FORMANTS - 1);
+            if (vowel < 0 || vowel >= FF_MAX_VOWELS || formant < 0 || formant >= FF_MAX_FORMANTS) return false;
+            auto &item = filter.Pvowels[vowel].formants[formant];
+            const auto itemField = spec.substr(second + 1);
+            if (itemField == "frequency") item.freq = i(0, 127);
+            else if (itemField == "amplitude") item.amp = i(0, 127);
+            else if (itemField == "q") item.q = i(0, 127);
+            else return false;
+        }
+        else if (field.rfind("sequence/", 0) == 0) {
+            const int position = parseIndex(field.substr(9), FF_MAX_SEQUENCE - 1);
+            if (position < 0 || position >= FF_MAX_SEQUENCE) return false;
+            filter.Psequence[position].nvowel = i(0, FF_MAX_VOWELS - 1);
+        }
+        else return false;
+        filter.changed = true;
+        return true;
+}
+bool writeFilterParameter(zyn::FilterParams &filter, const std::string &field, double value) {
+    auto i = [&](int lo, int hi) { return std::clamp(static_cast<int>(std::lround(value)), lo, hi); };
+    auto b = [&]() { return value >= .5; };
+        if (field.rfind("formant/", 0) == 0) return writeFormantParameter(filter, field.substr(8), value);
+        else if (field == "category") filter.Pcategory = i(0, 4);
+        else if (field == "type") filter.Ptype = i(0, filterTypeControl(filter.Pcategory).maximum);
+        else if (field == "cutoff") filter.basefreq = zyn::FilterParams::basefreqFromOldPreq(i(0, 127));
+        else if (field == "q") filter.baseq = zyn::FilterParams::baseqFromOldPq(i(0, 127));
+        else if (field == "tracking") filter.freqtracking = 100.0f * (i(0, 127) - 64.0f) / 64.0f;
+        else if (field == "gain") filter.gain = zyn::FilterParams::gainFromOldPgain(i(0, 127));
+        else if (field == "stages") filter.Pstages = i(1, 6) - 1;
+        else if (field == "combHpf") filter.Phpf = i(0, 127);
+        else if (field == "combLpf") filter.Plpf = i(0, 127);
+        else return false;
+        filter.changed = true;
+        return true;
+}
+
+void filterPreview(const zyn::FilterParams &parameters, int role, std::vector<float> &points, float sampleRate) {
+    const auto *filter = &parameters;
+    const int count = static_cast<int>(points.size());
+        for (int n = 0; n < count; ++n) {
+            const float x = n / static_cast<float>(count - 1);
+            if (filter->Pcategory == 1) {
+                // Match the original formant graph's logarithmic frequency scale and
+                // response in dB instead of plotting the raw formant parameter positions.
+                const float frequency = filter->getfreqx(x);
+                const float angle = static_cast<float>(kTwoPi) * frequency / sampleRate;
+                float response = 0.0f;
+                const int vowel = std::clamp(role, 0, FF_MAX_VOWELS - 1);
+                for (int f = 0; f < filter->Pnumformants; ++f) {
+                    const auto &formant = filter->Pvowels[vowel].formants[f];
+                    const float formantHz = filter->getformantfreq(formant.freq);
+                    if (formantHz >= sampleRate / 2.0f - 100.0f) continue;
+                    float q = filter->getformantq(formant.q) * filter->getq();
+                    if (filter->Pstages > 0 && q > 1.0f)
+                        q = std::pow(q, 1.0f / (filter->Pstages + 1));
+                    const float omega = static_cast<float>(kTwoPi) * formantHz / sampleRate;
+                    const float alpha = std::sin(omega) / (2.0f * std::max(q, .001f));
+                    const float scale = 1.0f / (1.0f + alpha);
+                    const float b0 = alpha * scale * std::sqrt(q + 1.0f);
+                    const float b2 = -b0;
+                    const float a1 = -2.0f * std::cos(omega) * scale;
+                    const float a2 = (1.0f - alpha) * scale;
+                    const float numerator = std::pow(b0 + b2 * std::cos(2.0f * angle), 2.0f) +
+                        std::pow(b2 * std::sin(2.0f * angle), 2.0f);
+                    const float denominator = std::pow(1.0f + a1 * std::cos(angle) +
+                        a2 * std::cos(2.0f * angle), 2.0f) +
+                        std::pow(a1 * std::sin(angle) + a2 * std::sin(2.0f * angle), 2.0f);
+                    const float amplitude = std::pow(.1f, (1.0f - formant.amp / 127.0f) * 4.0f);
+                    response += std::pow(numerator / std::max(denominator, 1e-12f),
+                        (filter->Pstages + 1.0f) / 2.0f) * amplitude;
+                }
+                const float decibels = response > 1e-9f ? 20.0f * std::log10(response) +
+                    filter->getgain() : -90.0f;
+                points[n] = std::clamp(decibels / 30.0f, -1.0f, 1.0f);
+            } else {
+                const float cutoff = std::clamp((std::log2(filter->basefreq) - 4.0f) / 11.0f, 0.0f, 1.0f);
+                const float slope = 8.0f + filter->Pstages * 4.0f;
+                const bool highPass = filter->Ptype == 1 || filter->Ptype == 3;
+                const float low = 1.0f / (1.0f + std::exp((x - cutoff) * slope));
+                points[n] = (highPass ? 1.0f - low : low) * 2.0f - 1.0f;
+            }
+        }
+}
 
 // Module engine codes are shared with ModuleEngine in Kotlin: ADD=0, SUB=1, PAD=2.
 bool supportsModule(int engine, int kind, int role) {
@@ -423,6 +606,7 @@ void ZynAndroidEngine::cancelPadGeneration() {
 }
 
 bool ZynAndroidEngine::startPadGeneration(int part, int kit) {
+    EngineAccess engineLock(*this);
     if (!master_ || !synth_ || part < 0 || part >= NUM_MIDI_PARTS || kit < 0 || kit >= NUM_KIT_ITEMS ||
         !master_->part[part] || !master_->part[part]->kit[kit].padpars) return false;
     {
@@ -500,6 +684,8 @@ bool ZynAndroidEngine::startPadGeneration(int part, int kit) {
 }
 
 void ZynAndroidEngine::servicePadGeneration() {
+    std::unique_lock<std::recursive_mutex> engineLock(engineMutex_, std::try_to_lock);
+    if (!engineLock) return;
     std::unique_lock<std::mutex> lock(padGenerationMutex_, std::try_to_lock);
     if (!lock || !padGeneration_ || padGeneration_->phase.load() != 2 || !master_) return;
     auto &job = *padGeneration_;
@@ -514,6 +700,7 @@ void ZynAndroidEngine::servicePadGeneration() {
 }
 
 std::string ZynAndroidEngine::padGenerationStatus(int part, int kit) {
+    EngineAccess engineLock(*this);
     if (!master_ || part < 0 || part >= NUM_MIDI_PARTS || kit < 0 || kit >= NUM_KIT_ITEMS ||
         !master_->part[part] || !master_->part[part]->kit[kit].padpars) return "unavailable|0|0|0|0|0|0|PAD is unavailable";
     const auto &parameters = *master_->part[part]->kit[kit].padpars;
@@ -607,6 +794,7 @@ bool ZynAndroidEngine::initialize(int sampleRate, int framesPerBurst) {
 }
 
 void ZynAndroidEngine::shutdown() {
+    EngineAccess engineLock(*this);
     resetPadGeneration();
     testToneEnabled_.store(false);
     noteHeld_.store(false);
@@ -649,6 +837,7 @@ std::string ZynAndroidEngine::renderBackendName() const {
 }
 
 bool ZynAndroidEngine::loadMasterXml(const std::string &path) {
+    EngineAccess engineLock(*this);
     presetLoadCount_.fetch_add(1);
     if (!zynReady_.load() || !master_ || path.empty()) {
         presetLoadFailCount_.fetch_add(1);
@@ -661,6 +850,7 @@ bool ZynAndroidEngine::loadMasterXml(const std::string &path) {
     if (rc == 0) {
         master_->ShutUp();
         lastLoadedPresetPath_ = path;
+        ++fxRevision_;
     }
     setMasterVolumeNormalized(masterVolumeNorm_.load());
     if (rc != 0) {
@@ -670,6 +860,7 @@ bool ZynAndroidEngine::loadMasterXml(const std::string &path) {
 }
 
 std::unique_ptr<zyn::XMLwrapper> ZynAndroidEngine::captureSession(int &compression) const {
+    EngineAccess engineLock(*this);
     if (!zynReady_.load() || !master_) return {};
     auto xml = std::make_unique<zyn::XMLwrapper>();
     xml->SaveFullXml = true;
@@ -682,6 +873,7 @@ std::unique_ptr<zyn::XMLwrapper> ZynAndroidEngine::captureSession(int &compressi
 }
 
 bool ZynAndroidEngine::loadPresetFile(const std::string &path, int partIndex) {
+    EngineAccess engineLock(*this);
     presetLoadCount_.fetch_add(1);
     if (!zynReady_.load() || !master_ || path.empty() || partIndex < 0 || partIndex >= NUM_MIDI_PARTS) {
         presetLoadFailCount_.fetch_add(1);
@@ -743,6 +935,7 @@ bool ZynAndroidEngine::loadPresetFile(const std::string &path, int partIndex) {
     if (rc == 0) {
         master_->ShutUp();
         lastLoadedPresetPath_ = path;
+        ++fxRevision_;
     }
     setMasterVolumeNormalized(masterVolumeNorm_.load());
     if (rc != 0) {
@@ -782,6 +975,7 @@ std::string ZynAndroidEngine::diagnosticsSummary() const {
         << " burst=" << framesPerBurst_.load()
         << " qDrops=" << queueDrops_.load()
         << " fbCalls=" << fallbackRenderCalls_.load()
+        << " editorSkips=" << editorRenderSkips_.load()
         << " presetLoads=" << presetLoadCount_.load()
         << " presetFails=" << presetLoadFailCount_.load()
         << " presetTimeouts=" << presetLoadTimeoutCount_.load()
@@ -855,6 +1049,7 @@ std::string ZynAndroidEngine::inspectorSummary() const {
 }
 
 std::string ZynAndroidEngine::activeFxSummary() const {
+    EngineAccess engineLock(*this);
     if (!zynReady_.load() || !master_) return {};
     std::ostringstream oss;
     bool first = true;
@@ -880,6 +1075,7 @@ std::string ZynAndroidEngine::activeFxSummary() const {
 }
 
 std::string ZynAndroidEngine::partsSummary() const {
+    EngineAccess engineLock(*this);
     if (!zynReady_.load() || !master_) return {};
     std::ostringstream oss;
     bool firstLine = true;
@@ -946,6 +1142,7 @@ std::string ZynAndroidEngine::partsSummary() const {
 }
 
 std::string ZynAndroidEngine::mixerSummary() const {
+    EngineAccess engineLock(*this);
     if (!zynReady_.load() || !master_) return {};
     std::ostringstream oss;
     bool firstLine = true;
@@ -974,7 +1171,230 @@ std::string ZynAndroidEngine::mixerSummary() const {
     return oss.str();
 }
 
+namespace {
+#include "ZynFxControls.h"
+
+int presetCount(int type) {
+    const std::string_view names(kFxDescriptors[type].presets);
+    return names.empty() ? 0 : 1 + std::count(names.begin(), names.end(), ',');
+}
+
+bool timedFx(int type) { return type == 2 || type == 3 || type == 4 || type == 5 || type == 8 || type == 10; }
+
+
+}
+
+zyn::EffectMgr *ZynAndroidEngine::resolveFx(int scope, int part, int slot) const {
+    if (!zynReady_.load() || !master_ || slot < 0) return nullptr;
+    if (scope == 0) return part >= 0 && part < NUM_MIDI_PARTS && slot < NUM_PART_EFX && master_->part[part]
+        ? master_->part[part]->partefx[slot] : nullptr;
+    // Master addresses are canonical and do not carry a Part owner.
+    if (part != -1) return nullptr;
+    if (scope == 1 && slot < NUM_INS_EFX) return master_->insefx[slot];
+    if (scope == 2 && slot < NUM_SYS_EFX) return master_->sysefx[slot];
+    return nullptr;
+}
+
+std::string ZynAndroidEngine::fxSnapshot(int scope, int part, int slot) const {
+    EngineAccess engineLock(*this);
+    auto *effect = resolveFx(scope, part, slot);
+    if (!effect) return {};
+    const int type = effect->geteffect();
+    if (type < 0 || type > 10) return {};
+    std::ostringstream out;
+    out << "@|" << type << '|' << int(effect->getpreset()) << '|' << fxRevision_ << '|'
+        << (scope == 1 ? int(master_->Pinsparts[slot]) : -1) << '|'
+        << master_->time.tempo << '\n';
+    auto add = [&](const char *path, const char *label, const char *group, const char *kind,
+                   double value, double minimum, double maximum, double def, const char *options = "") {
+        out << path << '|' << label << '|' << group << '|' << kind << '|' << value << '|'
+            << minimum << '|' << maximum << '|' << def << '|' << options
+            << "|FX|EFFECT|" << slot << "|OTHER|BASIC\n";
+    };
+    add("fx/type", "Type", "Slot", "enum", type, 0, 10, 0, kFxTypes);
+    add("fx/bypass", "Bypass", "Slot", "bool", scope == 0 ? master_->part[part]->Pefxbypass[slot] : effect->bypassed, 0, 1, 0);
+    if (scope == 1) {
+        const int source = master_->Pinsparts[slot];
+        add("fx/source", "Source", "Routing", "enum", source == -1 ? 0 : source == -2 ? 1 : source + 2,
+            0, NUM_MIDI_PARTS + 1, 0,
+            "Off,Master,Part 1,Part 2,Part 3,Part 4,Part 5,Part 6,Part 7,Part 8,Part 9,Part 10,Part 11,Part 12,Part 13,Part 14,Part 15,Part 16");
+    }
+    if (scope == 2) {
+        for (int destination = slot + 1; destination < NUM_SYS_EFX; ++destination) {
+            const auto path = "fx/send/" + std::to_string(destination);
+            const auto label = "To Master " + std::to_string(destination + 1);
+            add(path.c_str(), label.c_str(), "Routing", "int", master_->Psysefxsend[slot][destination], 0, 127, 0);
+        }
+    }
+    if (type == 0 || !effect->efx) return out.str();
+    add("fx/preset", "Preset", "Slot", "enum", effect->getpreset(), 0, presetCount(type) - 1, 0, kFxDescriptors[type].presets);
+    const auto &descriptor = kFxDescriptors[type];
+    for (size_t n = 0; n < descriptor.count; ++n) {
+        const auto &control = descriptor.controls[n];
+        auto label = control.label;
+        if (control.index == 0 && type != 7) label = scope == 2 ? "Return level" : "Dry/Wet";
+        if (type == 4 && control.index == 9) label = effect->geteffectparrt(14) ? "Offset" : "L/R cross";
+        if (type == 4 && control.index == 11) label = effect->geteffectparrt(14) ? "Width" : "Phase";
+        const auto path = "fx/parameter/" + std::to_string(control.index);
+        add(path.c_str(), label, control.group, *control.options ? "enum" : "int",
+            effect->geteffectparrt(control.index), control.minimum, control.maximum,
+            effect->efx->getpresetpar(effect->getpreset(), control.index), control.options);
+    }
+    if (timedFx(type)) {
+        add("fx/numerator", "Tempo numerator (0 = free)", "Timing", "int", effect->numerator, 0, 99, 0);
+        add("fx/denominator", "Tempo denominator", "Timing", "int", effect->denominator, 1, 99, 4);
+    }
+    if (type == 8 && effect->filterpars) addFilterParameters("fx/filter", "Filter", *effect->filterpars, add);
+    return out.str();
+}
+
+bool ZynAndroidEngine::writeFx(int scope, int part, int slot, int expectedType, const std::string &path, double value) {
+    if (!std::isfinite(value) || value < -1e6 || value > 1e6) return false;
+    EngineAccess engineLock(*this);
+    auto *effect = resolveFx(scope, part, slot);
+    if (!effect || effect->geteffect() != expectedType || expectedType < 0 || expectedType > 10) return false;
+    const int v = static_cast<int>(std::lround(value));
+    if (path == "fx/type") {
+        if (v < 0 || v > 10) return false;
+        effect->setTempoRatio(0, 4);
+        effect->changeeffectrt(v);
+        if (v && !effect->efx) { effect->changeeffectrt(0); return false; }
+    } else if (path == "fx/source") {
+        if (scope != 1 || v < 0 || v > NUM_MIDI_PARTS + 1) return false;
+        if (!master_->setInsertionFxSource(slot, v == 0 ? -1 : v == 1 ? -2 : v - 2)) return false;
+    } else if (path.rfind("fx/send/", 0) == 0) {
+        const int destination = parseIndex(path.substr(8), NUM_SYS_EFX - 1);
+        if (scope != 2 || destination <= slot || v < 0 || v > 127) return false;
+        master_->setPsysefxsend(slot, destination, static_cast<char>(v));
+    } else if (path == "fx/bypass") {
+        if (v < 0 || v > 1) return false;
+        if (scope == 0) master_->part[part]->Pefxbypass[slot] = v;
+        else effect->bypassed = v;
+    } else {
+        if (!expectedType || !effect->efx) return false;
+        if (path == "fx/preset") {
+            if (v < 0 || v >= presetCount(expectedType)) return false;
+            effect->changepresetrt(v);
+        } else if (path == "fx/numerator" || path == "fx/denominator") {
+            if (!timedFx(expectedType) || v < (path == "fx/numerator" ? 0 : 1) || v > 99) return false;
+            effect->setTempoRatio(path == "fx/numerator" ? v : effect->numerator,
+                                 path == "fx/denominator" ? v : effect->denominator);
+        } else if (path.rfind("fx/filter/", 0) == 0) {
+            if (expectedType != 8 || !effect->filterpars || !writeFilterParameter(*effect->filterpars, path.substr(10), value)) return false;
+        } else {
+            const int index = path.rfind("fx/parameter/", 0) == 0 ? parseIndex(path.substr(13), 127) : -1;
+            const auto &descriptor = kFxDescriptors[expectedType];
+            const auto *control = std::find_if(descriptor.controls, descriptor.controls + descriptor.count,
+                [&](const auto &candidate) { return candidate.index == index; });
+            if (control == descriptor.controls + descriptor.count || v < control->minimum || v > control->maximum) return false;
+            if (index == 2 && effect->numerator && timedFx(expectedType)) return false;
+            effect->seteffectparrt(index, v);
+        }
+    }
+    ++fxRevision_;
+    return true;
+}
+
+bool ZynAndroidEngine::fxAction(int scope, int part, int slot, int expectedType, const std::string &action, int vowel) {
+    EngineAccess engineLock(*this);
+    auto *effect = resolveFx(scope, part, slot);
+    if (!effect || effect->geteffect() != expectedType || !presetsStore_) return false;
+    const bool whole = action == "copy" || action == "paste";
+    const bool filter = action == "copyFilter" || action == "pasteFilter";
+    const bool formant = action == "copyVowel" || action == "pasteVowel";
+    if ((filter || formant) && (expectedType != 8 || !effect->filterpars)) return false;
+    if (formant && (vowel < 0 || vowel >= FF_MAX_VOWELS)) return false;
+    const bool copying = action.rfind("copy", 0) == 0;
+    if (whole || filter || formant) {
+        const std::string kind = whole ? "effect" : filter ? "filter" : "vowel";
+        if (copying) {
+            if (whole) {
+                zyn::XMLwrapper xml;
+                xml.minimal = false;
+                xml.beginbranch("Effect");
+                effect->add2XML(xml);
+                xml.endbranch();
+                char name[] = "Effect";
+                presetsStore_->copyclipboard(xml, name);
+            } else if (filter) effect->filterpars->copy(*presetsStore_, nullptr);
+            else effect->filterpars->copy(*presetsStore_, vowel, nullptr);
+            clipboardKind_ = kind;
+            return !presetsStore_->clipboard.data.empty();
+        }
+        if (clipboardKind_ != kind || presetsStore_->clipboard.data.empty()) return false;
+        zyn::XMLwrapper xml;
+        if (!xml.putXMLdata(presetsStore_->clipboard.data.c_str()) ||
+            !xml.enterbranch(presetsStore_->clipboard.type.c_str())) return false;
+        if (whole) {
+            // A staged manager owns XML settings; paste performs the RT allocation and transfer.
+            zyn::EffectMgr staged(*master_->memory, *synth_, effect->insertion, &master_->time, master_->sync);
+            staged.getfromXML(xml);
+            if (staged.geteffect() < 0 || staged.geteffect() > 10) return false;
+            effect->paste(staged);
+        } else {
+            if (filter) { effect->filterpars->defaults(); effect->filterpars->getfromXML(xml); }
+            else { effect->filterpars->defaults(vowel); effect->filterpars->getfromXMLsection(xml, vowel); }
+            effect->filterpars->changed = true;
+        }
+    } else if (action == "reset") {
+        if (!effect->efx) return false;
+        effect->changepresetrt(effect->getpreset());
+        effect->cleanup();
+    } else if (action == "cleanup") effect->cleanup();
+    else return false;
+    ++fxRevision_;
+    return true;
+}
+
+std::string ZynAndroidEngine::fxPreview(int scope, int part, int slot, int vowel, int resolution) {
+    EngineAccess engineLock(*this);
+    auto *effect = resolveFx(scope, part, slot);
+    if (!effect || !effect->efx || vowel < 0 || vowel >= FF_MAX_VOWELS) return {};
+    const int count = std::clamp(resolution, 16, 512);
+    std::vector<float> points(count);
+    if (effect->geteffect() == 7) {
+        for (int n = 0; n < count; ++n)
+            points[n] = effect->getEQfreqresponse(20.f * std::pow(1000.f, n / float(count - 1)));
+    } else if (effect->geteffect() == 8 && effect->filterpars) {
+        if (effect->filterpars->Pcategory == 1) {
+            filterPreview(*effect->filterpars, vowel, points, synth_->samplerate);
+        } else {
+            // Static small-signal response of an isolated native filter; no live DSP state is consumed.
+            const auto dispose = [&](zyn::Filter *filter) { master_->memory->dealloc(filter); };
+            try {
+                std::unique_ptr<zyn::Filter, decltype(dispose)> filter(
+                    zyn::Filter::generate(*master_->memory, effect->filterpars, synth_->samplerate, synth_->buffersize), dispose);
+                filter->setfreq_and_q(effect->filterpars->basefreq, effect->filterpars->baseq);
+                const int block = synth_->buffersize;
+                const int frames = ((8192 + block - 1) / block) * block;
+                std::vector<float> impulse(frames, 0.f), warmup(block, 0.f);
+                for (int n = 0; n < 4; ++n) filter->filterout(warmup.data());
+                constexpr float amplitude = .001f;
+                impulse[0] = amplitude;
+                for (int offset = 0; offset < frames; offset += block) filter->filterout(impulse.data() + offset);
+                for (int n = 0; n < count; ++n) {
+                    const double hz = 20.0 * std::pow(1000.0, n / double(count - 1));
+                    const double omega = kTwoPi * hz / synth_->samplerate;
+                    const double cosine = std::cos(omega), sine = std::sin(omega);
+                    double real = 0, imaginary = 0, x = 1, y = 0;
+                    for (float sample : impulse) {
+                        real += sample * x; imaginary += sample * y;
+                        const double next = x * cosine - y * sine;
+                        y = y * cosine + x * sine; x = next;
+                    }
+                    const double db = 20.0 * std::log10(std::max(1e-9, std::hypot(real, imaginary) / amplitude));
+                    points[n] = std::isfinite(db) ? std::clamp(float(db / 30.0), -1.f, 1.f) : -1.f;
+                }
+            } catch (const std::bad_alloc &) { return {}; }
+        }
+    } else return {};
+    std::ostringstream out;
+    for (int n = 0; n < count; ++n) { if (n) out << ','; out << points[n]; }
+    return out.str();
+}
+
 std::string ZynAndroidEngine::parameterSnapshot(int partIndex, int kitIndex) const {
+    EngineAccess engineLock(*this);
     if (!zynReady_.load() || !master_ || partIndex < 0 || partIndex >= NUM_MIDI_PARTS ||
         kitIndex < 0 || kitIndex >= NUM_KIT_ITEMS || !master_->part[partIndex]) return {};
     const auto *part = master_->part[partIndex];
@@ -1029,40 +1449,7 @@ std::string ZynAndroidEngine::parameterSnapshot(int partIndex, int kitIndex) con
         }
     };
     auto formantValue = [&](const char *prefix, const char *group, const zyn::FilterParams &filter) {
-        add((std::string(prefix) + "/formant/count").c_str(), "Active formants per vowel", group, "int",
-            filter.Pnumformants, 1, FF_MAX_FORMANTS, 3);
-        add((std::string(prefix) + "/formant/slowness").c_str(), "Formant slowness", group, "int",
-            filter.Pformantslowness, 0, 127, 64);
-        add((std::string(prefix) + "/formant/clearness").c_str(), "Vowel clearness", group, "int",
-            filter.Pvowelclearness, 0, 127, 64);
-        add((std::string(prefix) + "/formant/center").c_str(), "Center frequency", group, "int",
-            filter.Pcenterfreq, 0, 127, 64);
-        add((std::string(prefix) + "/formant/octaves").c_str(), "Octave span", group, "int",
-            filter.Poctavesfreq, 0, 127, 64);
-        add((std::string(prefix) + "/formant/sequenceSize").c_str(), "Sequence size", group, "int",
-            filter.Psequencesize, 1, FF_MAX_SEQUENCE, 3);
-        add((std::string(prefix) + "/formant/sequenceStretch").c_str(), "Sequence stretch", group, "int",
-            filter.Psequencestretch, 0, 127, 40);
-        add((std::string(prefix) + "/formant/sequenceReversed").c_str(), "Reverse sequence", group, "bool",
-            filter.Psequencereversed, 0, 1, 0);
-        for (int vowel = 0; vowel < FF_MAX_VOWELS; ++vowel) {
-            for (int formant = 0; formant < FF_MAX_FORMANTS; ++formant) {
-                const auto item = std::string(prefix) + "/formant/vowel/" + std::to_string(vowel) +
-                    "/" + std::to_string(formant);
-                add((item + "/frequency").c_str(), "Frequency", group, "int",
-                    filter.Pvowels[vowel].formants[formant].freq, 0, 127, 64);
-                add((item + "/amplitude").c_str(), "Amplitude", group, "int",
-                    filter.Pvowels[vowel].formants[formant].amp, 0, 127, 127);
-                add((item + "/q").c_str(), "Q", group, "int",
-                    filter.Pvowels[vowel].formants[formant].q, 0, 127, 64);
-            }
-        }
-        for (int position = 0; position < FF_MAX_SEQUENCE; ++position) {
-            add((std::string(prefix) + "/formant/sequence/" + std::to_string(position)).c_str(),
-                ("Sequence " + std::to_string(position + 1)).c_str(), group, "enum",
-                filter.Psequence[position].nvowel, 0, FF_MAX_VOWELS - 1, 0,
-                "Vowel 1,Vowel 2,Vowel 3,Vowel 4,Vowel 5,Vowel 6");
-        }
+        addFormantParameters(prefix, group, filter, add);
     };
     auto lfoValue = [&](const char *prefix, const char *group, const zyn::LFOParams &lfo) {
         const int frequency = std::clamp(static_cast<int>(std::lround(
@@ -1080,31 +1467,7 @@ std::string ZynAndroidEngine::parameterSnapshot(int partIndex, int kitIndex) con
             "Sine,Triangle,Square,Ramp up,Ramp down,Exp down 1,Exp down 2,Random");
     };
     auto filterValue = [&](const std::string &prefix, const std::string &group, const zyn::FilterParams &filter) {
-        const int cutoff = std::clamp(static_cast<int>(std::lround(
-            ((std::log2(filter.basefreq) - 9.96578428f) / 5.0f + 1.0f) * 64.0f)), 0, 127);
-        const int q = std::clamp(static_cast<int>(std::lround(
-            127.0f * std::sqrt(std::log(0.9f + filter.baseq) / std::log(1000.0f)))), 0, 127);
-        const int tracking = std::clamp(static_cast<int>(std::lround(filter.freqtracking / 100.0f * 64.0f + 64.0f)), 0, 127);
-        const int gain = std::clamp(static_cast<int>(std::lround((filter.gain / 30.0f + 1.0f) * 64.0f)), 0, 127);
-        add((prefix + "/category").c_str(), "Filter category", (group + " / Parameters").c_str(), "enum",
-            filter.Pcategory, 0, 4, 0, "Analog,Formant,State variable,Moog,Comb");
-        const auto &type = filterTypeControl(filter.Pcategory);
-        if (type.options)
-            add((prefix + "/type").c_str(), "Filter type", (group + " / Parameters").c_str(), "enum",
-                std::min<int>(filter.Ptype, type.maximum), 0, type.maximum, 0, type.options);
-        add((prefix + "/cutoff").c_str(), "Cutoff frequency", (group + " / Parameters").c_str(), "int", cutoff, 0, 127, 94);
-        add((prefix + "/q").c_str(), "Q", (group + " / Parameters").c_str(), "int", q, 0, 127, 40);
-        add((prefix + "/tracking").c_str(), "Frequency tracking", (group + " / Parameters").c_str(), "int", tracking, 0, 127, 64);
-        add((prefix + "/gain").c_str(), "Filter gain", (group + " / Parameters").c_str(), "int", gain, 0, 127, 64);
-        add((prefix + "/stages").c_str(), "Filter stages", (group + " / Parameters").c_str(), "int", filter.Pstages + 1, 1, 6, 1);
-        if (filter.Pcategory == 4) {
-            add((prefix + "/combHpf").c_str(), "Comb high pass", (group + " / Parameters").c_str(), "int",
-                filter.Phpf, 0, 127, 0);
-            add((prefix + "/combLpf").c_str(), "Comb low pass", (group + " / Parameters").c_str(), "int",
-                filter.Plpf, 0, 127, 127);
-        }
-        if (filter.Pcategory == 1)
-            formantValue(prefix.c_str(), (group + " / Formant").c_str(), filter);
+        addFilterParameters(prefix, group, filter, add);
     };
     add("part/enabled", "Enabled", "Part", "bool", part->Penabled, 0, 1, 1);
     add("part/volume", "Volume", "Part", "int", std::clamp(
@@ -1477,6 +1840,7 @@ float ZynAndroidEngine::fineDetuneCents(int type, int value) {
 }
 
 bool ZynAndroidEngine::setParameter(int partIndex, int kitIndex, const std::string &path, double value) {
+    EngineAccess engineLock(*this);
     if (!zynReady_.load() || !master_ || partIndex < 0 || partIndex >= NUM_MIDI_PARTS ||
         kitIndex < 0 || kitIndex >= NUM_KIT_ITEMS || !master_->part[partIndex]) return false;
     auto *part = master_->part[partIndex];
@@ -1603,37 +1967,7 @@ bool ZynAndroidEngine::setParameter(int partIndex, int kitIndex, const std::stri
         return true;
     };
     auto writeFormant = [&](zyn::FilterParams &filter, const std::string &field) {
-        if (field == "count") filter.Pnumformants = i(1, FF_MAX_FORMANTS);
-        else if (field == "slowness") filter.Pformantslowness = i(0, 127);
-        else if (field == "clearness") filter.Pvowelclearness = i(0, 127);
-        else if (field == "center") filter.Pcenterfreq = i(0, 127);
-        else if (field == "octaves") filter.Poctavesfreq = i(0, 127);
-        else if (field == "sequenceSize") filter.Psequencesize = i(1, FF_MAX_SEQUENCE);
-        else if (field == "sequenceStretch") filter.Psequencestretch = i(0, 127);
-        else if (field == "sequenceReversed") filter.Psequencereversed = b();
-        else if (field.rfind("vowel/", 0) == 0) {
-            const auto spec = field.substr(6);
-            const auto first = spec.find('/');
-            const auto second = first == std::string::npos ? std::string::npos : spec.find('/', first + 1);
-            if (second == std::string::npos) return false;
-            const int vowel = std::atoi(spec.substr(0, first).c_str());
-            const int formant = std::atoi(spec.substr(first + 1, second - first - 1).c_str());
-            if (vowel < 0 || vowel >= FF_MAX_VOWELS || formant < 0 || formant >= FF_MAX_FORMANTS) return false;
-            auto &item = filter.Pvowels[vowel].formants[formant];
-            const auto itemField = spec.substr(second + 1);
-            if (itemField == "frequency") item.freq = i(0, 127);
-            else if (itemField == "amplitude") item.amp = i(0, 127);
-            else if (itemField == "q") item.q = i(0, 127);
-            else return false;
-        }
-        else if (field.rfind("sequence/", 0) == 0) {
-            const int position = std::atoi(field.substr(9).c_str());
-            if (position < 0 || position >= FF_MAX_SEQUENCE) return false;
-            filter.Psequence[position].nvowel = i(0, FF_MAX_VOWELS - 1);
-        }
-        else return false;
-        filter.changed = true;
-        return true;
+        return writeFormantParameter(filter, field, value);
     };
     auto writeLfo = [&](zyn::LFOParams &lfo, const std::string &field) {
         if (field == "frequency") lfo.freq = (std::pow(2.0f, 10.0f * i(0, 127) / 127.0f) - 1.0f) / 12.0f;
@@ -1650,19 +1984,7 @@ bool ZynAndroidEngine::setParameter(int partIndex, int kitIndex, const std::stri
         return true;
     };
     auto writeFilter = [&](zyn::FilterParams &filter, const std::string &field) {
-        if (field.rfind("formant/", 0) == 0) return writeFormant(filter, field.substr(8));
-        else if (field == "category") filter.Pcategory = i(0, 4);
-        else if (field == "type") filter.Ptype = i(0, filterTypeControl(filter.Pcategory).maximum);
-        else if (field == "cutoff") filter.basefreq = zyn::FilterParams::basefreqFromOldPreq(i(0, 127));
-        else if (field == "q") filter.baseq = zyn::FilterParams::baseqFromOldPq(i(0, 127));
-        else if (field == "tracking") filter.freqtracking = 100.0f * (i(0, 127) - 64.0f) / 64.0f;
-        else if (field == "gain") filter.gain = zyn::FilterParams::gainFromOldPgain(i(0, 127));
-        else if (field == "stages") filter.Pstages = i(1, 6) - 1;
-        else if (field == "combHpf") filter.Phpf = i(0, 127);
-        else if (field == "combLpf") filter.Plpf = i(0, 127);
-        else return false;
-        filter.changed = true;
-        return true;
+        return writeFilterParameter(filter, field, value);
     };
     if (path.rfind("sub/", 0) == 0 || path.rfind("pad/", 0) == 0) {
         const int engine = path.rfind("sub/", 0) == 0 ? 1 : 2;
@@ -1987,6 +2309,7 @@ const char *moduleKindName(int kind) {
 }
 
 bool ZynAndroidEngine::copyModule(int partIndex, int kitIndex, int kind, int index, int role, int engine) {
+    EngineAccess engineLock(*this);
     if (!zynReady_.load() || !master_ || !presetsStore_ || partIndex < 0 || partIndex >= NUM_MIDI_PARTS ||
         kitIndex < 0 || kitIndex >= NUM_KIT_ITEMS || !master_->part[partIndex]) return false;
     auto &kit = master_->part[partIndex]->kit[kitIndex];
@@ -2051,11 +2374,13 @@ bool ZynAndroidEngine::copyModule(int partIndex, int kitIndex, int kind, int ind
 }
 
 bool ZynAndroidEngine::canPasteModule(int kind, int role, int engine) const {
+    EngineAccess engineLock(*this);
     return supportsModule(engine, kind, role) && kind != 8 && presetsStore_ &&
         !presetsStore_->clipboard.data.empty() && clipboardKind_ == moduleKindName(kind);
 }
 
 bool ZynAndroidEngine::pasteModule(int partIndex, int kitIndex, int kind, int index, int role, int engine) {
+    EngineAccess engineLock(*this);
     if (!canPasteModule(kind, role, engine) || !zynReady_.load() || !master_ || partIndex < 0 ||
         partIndex >= NUM_MIDI_PARTS || kitIndex < 0 || kitIndex >= NUM_KIT_ITEMS ||
         !master_->part[partIndex]) return false;
@@ -2126,12 +2451,14 @@ bool ZynAndroidEngine::pasteModule(int partIndex, int kitIndex, int kind, int in
 }
 
 std::string ZynAndroidEngine::clipboardType() const {
+    EngineAccess engineLock(*this);
     if (!presetsStore_ || presetsStore_->clipboard.data.empty()) return {};
     return clipboardKind_;
 }
 
 std::string ZynAndroidEngine::modulePreview(
         int partIndex, int kitIndex, int kind, int index, int role, int resolution, int engine, int referenceNote) {
+    EngineAccess engineLock(*this);
     if (!zynReady_.load() || !master_ || partIndex < 0 || partIndex >= NUM_MIDI_PARTS ||
         kitIndex < 0 || kitIndex >= NUM_KIT_ITEMS || !master_->part[partIndex]) return {};
     auto &kit = master_->part[partIndex]->kit[kitIndex];
@@ -2232,50 +2559,7 @@ std::string ZynAndroidEngine::modulePreview(
     } else if (kind == 4) {
         auto *filter = module.filter;
         if (!filter) return {};
-        for (int n = 0; n < count; ++n) {
-            const float x = n / static_cast<float>(count - 1);
-            if (filter->Pcategory == 1) {
-                // Match the original formant graph's logarithmic frequency scale and
-                // response in dB instead of plotting the raw formant parameter positions.
-                const float frequency = filter->getfreqx(x);
-                const float sampleRate = 48000.0f;
-                const float angle = static_cast<float>(kTwoPi) * frequency / sampleRate;
-                float response = 0.0f;
-                const int vowel = std::clamp(role, 0, FF_MAX_VOWELS - 1);
-                for (int f = 0; f < filter->Pnumformants; ++f) {
-                    const auto &formant = filter->Pvowels[vowel].formants[f];
-                    const float formantHz = filter->getformantfreq(formant.freq);
-                    if (formantHz >= sampleRate / 2.0f - 100.0f) continue;
-                    float q = filter->getformantq(formant.q) * filter->getq();
-                    if (filter->Pstages > 0 && q > 1.0f)
-                        q = std::pow(q, 1.0f / (filter->Pstages + 1));
-                    const float omega = static_cast<float>(kTwoPi) * formantHz / sampleRate;
-                    const float alpha = std::sin(omega) / (2.0f * std::max(q, .001f));
-                    const float scale = 1.0f / (1.0f + alpha);
-                    const float b0 = alpha * scale * std::sqrt(q + 1.0f);
-                    const float b2 = -b0;
-                    const float a1 = -2.0f * std::cos(omega) * scale;
-                    const float a2 = (1.0f - alpha) * scale;
-                    const float numerator = std::pow(b0 + b2 * std::cos(2.0f * angle), 2.0f) +
-                        std::pow(b2 * std::sin(2.0f * angle), 2.0f);
-                    const float denominator = std::pow(1.0f + a1 * std::cos(angle) +
-                        a2 * std::cos(2.0f * angle), 2.0f) +
-                        std::pow(a1 * std::sin(angle) + a2 * std::sin(2.0f * angle), 2.0f);
-                    const float amplitude = std::pow(.1f, (1.0f - formant.amp / 127.0f) * 4.0f);
-                    response += std::pow(numerator / std::max(denominator, 1e-12f),
-                        (filter->Pstages + 1.0f) / 2.0f) * amplitude;
-                }
-                const float decibels = response > 1e-9f ? 20.0f * std::log10(response) +
-                    filter->getgain() : -90.0f;
-                points[n] = std::clamp(decibels / 30.0f, -1.0f, 1.0f);
-            } else {
-                const float cutoff = std::clamp((std::log2(filter->basefreq) - 4.0f) / 11.0f, 0.0f, 1.0f);
-                const float slope = 8.0f + filter->Pstages * 4.0f;
-                const bool highPass = filter->Ptype == 1 || filter->Ptype == 3;
-                const float low = 1.0f / (1.0f + std::exp((x - cutoff) * slope));
-                points[n] = (highPass ? 1.0f - low : low) * 2.0f - 1.0f;
-            }
-        }
+        filterPreview(*filter, role, points, synth_->samplerate);
     } else if (kind == 5) {
         if (!module.resonance) return {};
         for (int n = 0; n < count; ++n)
@@ -2297,6 +2581,7 @@ bool ZynAndroidEngine::renameInstrument(int partIndex, const std::string &name) 
 }
 
 bool ZynAndroidEngine::exportInstrument(int partIndex, const std::string &path) {
+    EngineAccess engineLock(*this);
     if (!zynReady_.load() || !master_ || partIndex < 0 || partIndex >= NUM_MIDI_PARTS ||
         !master_->part[partIndex] || path.empty()) return false;
     return master_->part[partIndex]->saveXML(path.c_str()) == 0;
@@ -2506,6 +2791,36 @@ void ZynAndroidEngine::noteOff(int channel, int note) {
     (void) pushCommand(cmd);
 }
 
+bool ZynAndroidEngine::setPerformanceControl(int channel, int control, int value) {
+    if (!zynReady_.load() || channel < 0 || channel > 15) return false;
+    if (control == 0) {
+        if (value < 40 || value > 200) return false;
+        return pushCommand({CommandType::Tempo, channel, 0, value});
+    }
+    const int type = control == 1 ? zyn::C_pitchwheel : control == 2 ? zyn::C_modwheel : control == 3 ? zyn::C_sustain : -1;
+    if (type < 0 || value < (control == 1 ? -8192 : 0) || value > (control == 1 ? 8191 : 127)) return false;
+    return pushCommand({CommandType::Controller, channel, type, value});
+}
+
+std::string ZynAndroidEngine::performanceSnapshot(int channel) {
+    EngineAccess engineLock(*this);
+    if (!zynReady_.load() || !master_ || channel < 0 || channel > 15) return {};
+    // Flush accepted commands at this exclusive boundary, also while audio is stopped.
+    applyQueuedCommands();
+    int pitch = 0, modulation = 64, sustain = 0;
+    for (int p = 0; p < NUM_MIDI_PARTS; ++p) {
+        const auto *part = master_->part[p];
+        if (part->Penabled && part->Prcvchn == channel) {
+            pitch = part->ctl.pitchwheel.data;
+            modulation = part->ctl.modwheel.data;
+            sustain = part->ctl.sustain.sustain;
+            break;
+        }
+    }
+    return std::to_string(master_->time.tempo) + "|" + std::to_string(pitch) + "|" +
+        std::to_string(modulation) + "|" + std::to_string(sustain);
+}
+
 bool ZynAndroidEngine::pushCommand(const Command &cmd) {
     const uint32_t write = commandWriteIndex_.load(std::memory_order_relaxed);
     const uint32_t read = commandReadIndex_.load(std::memory_order_acquire);
@@ -2535,6 +2850,12 @@ void ZynAndroidEngine::applyQueuedCommands() {
     Command cmd{};
     while (popCommand(cmd)) {
         switch (cmd.type) {
+            case CommandType::Controller:
+                if (zynReady_.load() && master_) master_->setController(cmd.channel, cmd.note, cmd.velocity);
+                break;
+            case CommandType::Tempo:
+                if (zynReady_.load() && master_) master_->setTempo(cmd.velocity);
+                break;
             case CommandType::NoteOn:
                 activeNote_.store(cmd.note);
                 activeVelocity_.store(cmd.velocity);
@@ -2618,6 +2939,13 @@ void ZynAndroidEngine::renderInterleavedFloat(
         return;
     }
 
+    std::unique_lock<std::recursive_mutex> engineLock(engineMutex_, std::try_to_lock);
+    if (editorWaiting_.load(std::memory_order_acquire) || !engineLock) {
+        editorRenderSkips_.fetch_add(1, std::memory_order_relaxed);
+        recentOutputPeak_.store(0.f, std::memory_order_relaxed);
+        std::fill(out, out + static_cast<size_t>(numFrames) * channelCount, 0.0f);
+        return;
+    }
     servicePadGeneration();
     applyQueuedCommands();
     float blockPeak = 0.0f;

@@ -551,13 +551,10 @@ private fun PartEditorCard(
             )
         }
         Spacer(modifier = Modifier.height(4.dp))
-        ZynModuleRow(
-            title = "FX",
-            count = part.partFxActiveCount,
-            active = part.partFxActiveCount > 0,
-            onOpen = { onOpenModule("FX", 0) },
-            onToggle = { onOpenModule("FX", 0) },
-        )
+        SectionBanner("FX")
+        FxSlotRows(engine, FxScope.PART, part.partIndex,
+            onOpen = { onOpenModule("FX:${it.slot}", 0) }, onChanged = onPartChanged)
+
         Spacer(Modifier.height(12.dp))
         SectionBanner("To system FX")
         Spacer(Modifier.height(4.dp))

@@ -94,9 +94,10 @@ fun DenseKnobCard(
     modifier: Modifier = Modifier,
     labelColor: Color = Color(0xFF1C474B),
     onValueChangeFinished: () -> Unit = {},
+    accent: Color = Color(0xFF33C8C8),
 ) {
     DenseControlCard(label, labelColor, modifier) {
-        TinyKnob("", value, min, max, accessibilityLabel = label,
+        TinyKnob("", value, min, max, accessibilityLabel = label, accent = accent,
             onValueChangeFinished = onValueChangeFinished,
             onValueChange = onValueChange)
     }
@@ -116,6 +117,8 @@ fun TinyKnob(
     enabled: Boolean = true,
     accessibilityLabel: String = label,
     accent: Color = Color(0xFF33C8C8),
+    onDoubleTap: (() -> Unit)? = null,
+    onLongPress: (() -> Unit)? = null,
     onValueChange: (Float) -> Unit,
 ) {
     val screenHeightPx = with(androidx.compose.ui.platform.LocalDensity.current) {
@@ -133,6 +136,8 @@ fun TinyKnob(
     val currentValue by rememberUpdatedState(value)
     val currentOnValueChange by rememberUpdatedState(onValueChange)
     val currentOnValueChangeFinished by rememberUpdatedState(onValueChangeFinished)
+    val currentDoubleTap by rememberUpdatedState(onDoubleTap)
+    val currentLongPress by rememberUpdatedState(onLongPress)
     var dragNormalized by remember { mutableFloatStateOf(normalized) }
     var isDragging by remember { mutableStateOf(false) }
 
@@ -165,6 +170,12 @@ fun TinyKnob(
                         }
                     }
                 }
+                .then(if (onDoubleTap != null) Modifier.pointerInput(enabled) {
+                    if (enabled) detectTapGestures(
+                        onDoubleTap = { currentDoubleTap?.invoke() },
+                        onLongPress = { currentLongPress?.invoke() },
+                    )
+                } else Modifier)
                 .pointerInput(min, max, effectiveDragRangePx, requestedDragRangePx, sensitivity, enabled) {
                     if (!enabled) return@pointerInput
                     try {

@@ -14,6 +14,7 @@ class Config;
 class Master;
 class PresetsStore;
 class XMLwrapper;
+class EffectMgr;
 }
 
 class ZynAndroidEngine {
@@ -45,6 +46,11 @@ public:
     std::string partsSummary() const;
     std::string mixerSummary() const;
     std::string parameterSnapshot(int partIndex, int kitIndex) const;
+    // FX scopes: Part=0, Master Insert=1, Master System=2. No kit ownership.
+    std::string fxSnapshot(int scope, int part, int slot) const;
+    bool writeFx(int scope, int part, int slot, int expectedType, const std::string &path, double value);
+    bool fxAction(int scope, int part, int slot, int expectedType, const std::string &action, int vowel = 0);
+    std::string fxPreview(int scope, int part, int slot, int vowel, int resolution);
     static float fineDetuneCents(int type, int value);
     bool startPadGeneration(int part, int kit);
     void cancelPadGeneration();
@@ -82,18 +88,35 @@ public:
     void panic();
     void noteOn(int channel, int note, int velocity);
     void noteOff(int channel, int note);
+    bool setPerformanceControl(int channel, int control, int value);
+    std::string performanceSnapshot(int channel);
 
     // Render interleaved float PCM (stereo/mono depending on channelCount).
     // This is the seam that will later call into ZynAddSubFX core render code.
     void renderInterleavedFloat(float *out, int32_t numFrames, int32_t channelCount, int32_t streamSampleRate);
 
 private:
+    zyn::EffectMgr *resolveFx(int scope, int part, int slot) const;
+    // Renderer never waits on editor work. Exclusive access also protects the RT allocator.
+    mutable std::recursive_mutex engineMutex_;
+    mutable std::atomic<unsigned> editorWaiting_{0};
+    struct EngineAccess {
+        std::unique_lock<std::recursive_mutex> lock;
+        explicit EngineAccess(const ZynAndroidEngine &engine) : lock(engine.engineMutex_, std::defer_lock) {
+            engine.editorWaiting_.fetch_add(1, std::memory_order_acq_rel);
+            lock.lock();
+            engine.editorWaiting_.fetch_sub(1, std::memory_order_release);
+        }
+    };
+    uint64_t fxRevision_ = 0;
     struct PadGeneration;
     std::unique_ptr<PadGeneration> padGeneration_;
     std::mutex padGenerationMutex_;
     void resetPadGeneration();
     void invalidatePadStructure(int part, int kit);
     enum class CommandType : uint8_t {
+        Controller,
+        Tempo,
         NoteOn,
         NoteOff,
         Panic,
@@ -131,6 +154,7 @@ private:
     std::atomic<float> recentOutputPeak_{0.0f};
     std::atomic<uint32_t> queueDrops_{0};
     std::atomic<uint32_t> fallbackRenderCalls_{0};
+    std::atomic<uint32_t> editorRenderSkips_{0};
     std::atomic<uint32_t> presetLoadCount_{0};
     std::atomic<uint32_t> presetLoadFailCount_{0};
     std::atomic<uint32_t> presetLoadTimeoutCount_{0};

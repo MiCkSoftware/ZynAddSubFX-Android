@@ -1,5 +1,48 @@
 # 019 — Terminer les routages FX Part et Master
 
+## Avancement — navigation révisée le 14 novembre 2026
+
+À la demande explicite de Mick : trois lignes FX ON/OFF dans la Part, entrée FX
+à droite de Performance vers Master/System (4) et Insert (8), et Edit à droite
+de Part controls. Éditeur commun sans combo Scope ; bypass Master natif conservant
+les paramètres et enregistré en session. [Bilan](../qa_fx_016_018.md#itération-navigation-demandée-par-mick).
+Le lot reste ouvert pour les chaînes, assignations, sends et retours éditables ;
+leur conception complète demeure à valider. Cette itération ne les implémente pas.
+
+
+### Assignation des Inserts — 15 novembre 2026
+
+Proposition du knob Source (Off, Master, Part 1..16), avec popup sur appui long,
+acceptée explicitement par Mick (« ok vas y »), puis implémentée dans le panneau
+Routing de chaque Insert, même Off. L'affectation est appliquée au relâchement,
+via Master::setInsertionFxSource, et conservée en session/XMZ. Le clipboard et
+Restore ne changent pas la source de destination. Contrat natif d'isolation,
+domaines/indices, lecture et persistance réussi ; builds Android/JVM réussis.
+Les chaînes Part et sends/retours System restent ouverts ; cette approbation ne
+vaut pas validation de leur nouvelle UX.
+
+
+### Envois System → System — 15 novembre 2026
+
+Mick a retenu leur placement dans Routing : knobs To Master N uniquement vers
+les slots suivants, numérotation visible 1..4. Les six liaisons 1→2/3/4,
+2→3/4 et 3→4 sont exposées ; System 4 ne propose pas d'envoi sortant.
+Primitive propriétaire Master::setPsysefxsend existante, bornes/indices validés
+par l'adaptateur, gains dérivés préservés et sauvegarde XMZ existante.
+Contrat natif (six liens, bornes, invalides/boucles, isolation et persistance),
+38 tests JVM et builds Android réussis. Ajustement visuel RECP : 5 dp entre boutons.
+Les routages de chaîne Part restent ouverts ; la qualification audio/appareil
+reste à faire.
+
+
+### Presets EQ propres à l’application
+
+- [ ] Créer une banque de presets EQ utiles et distincts, avec des noms explicites, à la place du choix actuel EQ1/EQ2 identique.
+- Définir les courbes avec Mick et les valider à l’écoute avant intégration.
+- Conserver la compatibilité des presets et sessions existants, ainsi que le reset vers le preset choisi.
+
+Demande de Mick du 15 novembre 2026. Feature à concevoir ; non implémentée.
+
 ## Conception UX avec Mick avant implementation
 
 - **Passe de design/conception obligatoire avec Mick avant de coder la nouvelle UX.** Perimetre : Presentation et manipulation des chaines Part, assignations Insert, sends/retours System et passage entre scopes.

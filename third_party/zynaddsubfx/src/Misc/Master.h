@@ -109,6 +109,8 @@ class Master
         void noteOff(char chan, note_t note);
         void polyphonicAftertouch(char chan, note_t note, char velocity);
         void setController(char chan, int type, int par);
+        void setTempo(int bpm);
+        bool setInsertionFxSource(int slot, int source);
         void setController(char chan, int type, note_t note, float value);
         //void NRPN...
 

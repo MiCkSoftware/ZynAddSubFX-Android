@@ -277,6 +277,21 @@ fun ZynAddSubFXApp(
     var shouldResumeAudioAfterPause by rememberSaveable { mutableStateOf(false) }
     var shouldResumeToneAfterPause by rememberSaveable { mutableStateOf(false) }
 
+    val performanceChannel = if (keyboardChannel < 0)
+        partInspectors.firstOrNull { it.partIndex == selectedPlayPartIndex }?.receiveChannel?.coerceIn(0, 15) ?: 0
+        else keyboardChannel
+    var performance by remember(engine, performanceChannel) { mutableStateOf(PerformanceControls()) }
+    fun refreshPerformance() { performance = engine.performanceSnapshot(performanceChannel) }
+    fun releasePerformance(channel: Int) {
+        engine.setPerformanceControl(channel, PerformanceControl.PITCH, 0)
+        engine.setPerformanceControl(channel, PerformanceControl.SUSTAIN, 0)
+        engine.performanceSnapshot(channel)
+    }
+    LaunchedEffect(engine, performanceChannel, inspectorRefreshToken, nativeStatus.initOk) { refreshPerformance() }
+    DisposableEffect(engine, performanceChannel) {
+        onDispose { releasePerformance(performanceChannel) }
+    }
+
     fun pressNote(effectiveNote: Int) {
         if (!heldNotes.contains(effectiveNote)) {
             val channel = if (keyboardChannel < 0) partInspectors.firstOrNull { it.partIndex == selectedPlayPartIndex }?.receiveChannel?.coerceIn(0, 15) ?: 0 else keyboardChannel
@@ -298,6 +313,8 @@ fun ZynAddSubFXApp(
     }
 
     fun releaseAllHeldNotes() {
+        (heldNoteChannels.values.toSet() + performanceChannel).forEach { releasePerformance(it) }
+        performance = performance.copy(pitch = 0, sustain = false)
         heldNotes.distinct().forEach { note ->
             heldNoteChannels[note]?.let { channel -> runCatching { engine.noteOff(channel, note) } }
         }
@@ -607,6 +624,18 @@ fun ZynAddSubFXApp(
         }
     }
 
+    if (currentDestination == AppDestinations.FX) {
+        BackHandler { currentDestination = AppDestinations.HOME }
+        Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
+            MasterFxScreen(engine, selectedPlayPartIndex, heldNotes.toSet(), keyboardOctaveShift,
+                onBack = { currentDestination = AppDestinations.HOME },
+                onPress = { pressNote((it + keyboardOctaveShift * 12).coerceIn(0, 127)) },
+                onRelease = { releaseNote((it + keyboardOctaveShift * 12).coerceIn(0, 127)) },
+                modifier = Modifier.padding(innerPadding))
+        }
+        return
+    }
+
     if (currentDestination == AppDestinations.EDITOR) {
         Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
             PresetEditorScreen(
@@ -760,6 +789,7 @@ fun ZynAddSubFXApp(
                         parts = partInspectors,
                         selectedPartIndex = selectedPlayPartIndex,
                         loadedPartIndices = presetPathsByPart.keys.toSet(),
+                        performance = performance,
                     ),
                     onOpenBanks = { currentDestination = AppDestinations.BANKS },
                     onPreviousPreset = { if (bankIndex > 0) handleLoadPreset(bankPresets[bankIndex - 1], false) },
@@ -781,7 +811,9 @@ fun ZynAddSubFXApp(
                         releaseAllHeldNotes()
                     },
                     onPanic = {
+                        releasePerformance(performanceChannel)
                         runCatching { engine.panic() }
+                        refreshPerformance()
                         heldNotes.clear()
                         heldNoteChannels.clear()
                         heldNote = null
@@ -838,6 +870,19 @@ fun ZynAddSubFXApp(
                         }
                     },
                     onKeyboardOctaveShiftChange = { keyboardOctaveShift = it.coerceIn(-2, 2) },
+                    onPerformanceChange = { control, value ->
+                        if (engine.setPerformanceControl(performanceChannel, control, value)) {
+                            performance = when (control) {
+                                PerformanceControl.TEMPO -> performance.copy(tempo = value)
+                                PerformanceControl.PITCH -> performance.copy(pitch = value)
+                                PerformanceControl.MODULATION -> performance.copy(modulation = value)
+                                PerformanceControl.SUSTAIN -> performance.copy(sustain = value >= 64)
+                            }
+                        }
+                    },
+                    onPerformanceCommit = { refreshPerformance() },
+                    onOpenFx = { currentDestination = AppDestinations.FX },
+                    onEditPart = { inspectorRefreshToken += 1; currentDestination = AppDestinations.EDITOR },
                     onPartTapped = { partIndex, wasSelected ->
                         if (wasSelected) {
                             inspectorRefreshToken += 1
@@ -890,6 +935,7 @@ enum class AppDestinations(
     BANKS("Banks", Icons.Default.Favorite),
     DEBUG("Debug", Icons.Default.AccountBox),
     EDITOR("Editor", Icons.Default.AccountBox),
+    FX("FX", Icons.Default.AccountBox),
 }
 
 @Composable

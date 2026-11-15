@@ -40,7 +40,6 @@ class InstrumentEditorViewModel(private val engine: InstrumentEditorEngine) : Vi
             "ADD" -> listOf("Frequency", "Amp", "Filter", "Resonance", "Voices")
             "SUB" -> listOf("Amp", "Harmonics", "Frequency", "Bandwidth", "Filter")
             "PAD" -> listOf("Amp", "PAD", "Frequency", "Filter")
-            "FX" -> listOf("Routing", "FX 1", "FX 2", "FX 3")
             else -> listOf("Global")
         }
     }

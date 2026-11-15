@@ -9,7 +9,7 @@ import java.util.Locale
 import java.util.zip.GZIPInputStream
 import kotlin.system.measureNanoTime
 
-class SynthEngine(private val context: Context) : InstrumentEditorEngine {
+class SynthEngine(private val context: Context) : InstrumentEditorEngine, FxEngine {
     private val instrumentRevisions = mutableStateMapOf<Int, Long>()
     private val savedInstrumentRevisions = mutableStateMapOf<Int, Long>()
 
@@ -192,6 +192,15 @@ class SynthEngine(private val context: Context) : InstrumentEditorEngine {
     fun noteOff(channel: Int, note: Int) =
         NativeSynthBridge.nativeNoteOff(channel, note)
 
+    fun performanceSnapshot(channel: Int): PerformanceControls = runCatching {
+        val values = NativeSynthBridge.nativeGetPerformanceSnapshot(channel).split('|').map(String::toInt)
+        PerformanceControls(values[0], values[1], values[2], values[3] != 0)
+    }.getOrDefault(PerformanceControls())
+
+    fun setPerformanceControl(channel: Int, control: PerformanceControl, value: Int): Boolean = runCatching {
+        NativeSynthBridge.nativeSetPerformanceControl(channel, control.code, value)
+    }.getOrDefault(false)
+
     fun panic() = NativeSynthBridge.nativePanic()
 
     fun setTestToneEnabled(enabled: Boolean) =
@@ -315,10 +324,7 @@ class SynthEngine(private val context: Context) : InstrumentEditorEngine {
     fun soloPart(partIndex: Int): Boolean =
         runCatching { NativeSynthBridge.nativeSoloPart(partIndex) }.getOrDefault(false)
 
-    override fun parameterSnapshot(partIndex: Int, kitIndex: Int): ParameterSnapshot {
-        val values = runCatching {
-            NativeSynthBridge.nativeGetParameterSnapshot(partIndex, kitIndex)
-        }.getOrDefault("").lineSequence().mapNotNull { line ->
+    private fun parseParameterValues(raw: String): List<ParameterValue> = raw.lineSequence().mapNotNull { line ->
             val fields = line.split('|')
             if (fields.size < 9) return@mapNotNull null
             val type = when (fields[3]) {
@@ -353,8 +359,37 @@ class SynthEngine(private val context: Context) : InstrumentEditorEngine {
             )
             ParameterValue(descriptor, fields[4].toDoubleOrNull() ?: descriptor.defaultValue)
         }.toList()
-        return ParameterSnapshot(partIndex, kitIndex, values)
+
+    override fun parameterSnapshot(partIndex: Int, kitIndex: Int): ParameterSnapshot = ParameterSnapshot(
+        partIndex, kitIndex, parseParameterValues(runCatching {
+            NativeSynthBridge.nativeGetParameterSnapshot(partIndex, kitIndex)
+        }.getOrDefault(""))
+    )
+
+    override fun fxSnapshot(address: FxAddress): FxSnapshot? {
+        val raw = runCatching { NativeSynthBridge.nativeGetFxSnapshot(address.scope.code, address.nativePart, address.slot) }.getOrDefault("")
+        val header = raw.lineSequence().firstOrNull()?.split('|') ?: return null
+        if (header.size != 6 || header[0] != "@") return null
+        return FxSnapshot(address, header[1].toIntOrNull() ?: return null,
+            header[2].toIntOrNull() ?: 0, header[3].toLongOrNull() ?: 0,
+            header[4].toIntOrNull() ?: -1, header[5].toDoubleOrNull() ?: 0.0,
+            parseParameterValues(raw.substringAfter('\n', "")))
     }
+
+    override fun writeFx(snapshot: FxSnapshot, parameter: ParameterValue, value: Double): Boolean = runCatching {
+        NativeSynthBridge.nativeWriteFx(snapshot.address.scope.code, snapshot.address.nativePart,
+            snapshot.address.slot, snapshot.type, parameter.descriptor.path, value)
+    }.getOrDefault(false).also { if (it && snapshot.address.scope == FxScope.PART) instrumentChanged(snapshot.address.part) }
+
+    override fun fxAction(snapshot: FxSnapshot, action: String, vowel: Int): Boolean = runCatching {
+        NativeSynthBridge.nativeFxAction(snapshot.address.scope.code, snapshot.address.nativePart,
+            snapshot.address.slot, snapshot.type, action, vowel)
+    }.getOrDefault(false).also { if (it && !action.startsWith("copy") && snapshot.address.scope == FxScope.PART) instrumentChanged(snapshot.address.part) }
+
+    override fun fxPreview(address: FxAddress, vowel: Int): PreviewSeries = runCatching {
+        PreviewSeries(NativeSynthBridge.nativeGetFxPreview(address.scope.code, address.nativePart,
+            address.slot, vowel, 256).split(',').mapNotNull(String::toFloatOrNull))
+    }.getOrDefault(PreviewSeries.Empty)
 
     override fun writeParameter(partIndex: Int, kitIndex: Int, write: ParameterWrite): Boolean =
         runCatching {
@@ -393,7 +428,7 @@ class SynthEngine(private val context: Context) : InstrumentEditorEngine {
         NativeSynthBridge.nativePasteModule(partIndex, kitIndex, address.kind, address.index, address.role, address.engine.code)
     }.getOrDefault(false).also { if (it) instrumentChanged(partIndex) }
 
-    fun clipboardType(): String = runCatching { NativeSynthBridge.nativeGetClipboardType() }.getOrDefault("")
+    override fun clipboardType(): String = runCatching { NativeSynthBridge.nativeGetClipboardType() }.getOrDefault("")
 
     fun renameInstrument(partIndex: Int, name: String): Boolean =
         runCatching { NativeSynthBridge.nativeRenameInstrument(partIndex, name) }.getOrDefault(false)

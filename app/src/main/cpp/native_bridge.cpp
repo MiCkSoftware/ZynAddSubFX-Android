@@ -402,6 +402,41 @@ Java_com_mick_zynaddsubfx_NativeSynthBridge_nativeGetParameterSnapshot(
     return env->NewStringUTF(value.c_str());
 }
 
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_mick_zynaddsubfx_NativeSynthBridge_nativeGetFxSnapshot(JNIEnv *env, jobject, jint scope, jint part, jint slot) {
+    const auto value = gEngine.fxSnapshot(scope, part, slot);
+    return env->NewStringUTF(value.c_str());
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_mick_zynaddsubfx_NativeSynthBridge_nativeWriteFx(JNIEnv *env, jobject, jint scope, jint part, jint slot,
+                                                       jint expectedType, jstring path, jdouble value) {
+    if (!path) return JNI_FALSE;
+    const char *raw = env->GetStringUTFChars(path, nullptr);
+    if (!raw) return JNI_FALSE;
+    const std::string key(raw);
+    env->ReleaseStringUTFChars(path, raw);
+    return gEngine.writeFx(scope, part, slot, expectedType, key, value) ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_mick_zynaddsubfx_NativeSynthBridge_nativeFxAction(JNIEnv *env, jobject, jint scope, jint part, jint slot,
+                                                        jint expectedType, jstring action, jint vowel) {
+    if (!action) return JNI_FALSE;
+    const char *raw = env->GetStringUTFChars(action, nullptr);
+    if (!raw) return JNI_FALSE;
+    const std::string key(raw);
+    env->ReleaseStringUTFChars(action, raw);
+    return gEngine.fxAction(scope, part, slot, expectedType, key, vowel) ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_mick_zynaddsubfx_NativeSynthBridge_nativeGetFxPreview(JNIEnv *env, jobject, jint scope, jint part, jint slot,
+                                                            jint vowel, jint resolution) {
+    const auto value = gEngine.fxPreview(scope, part, slot, vowel, resolution);
+    return env->NewStringUTF(value.c_str());
+}
+
 extern "C" JNIEXPORT jfloat JNICALL
 Java_com_mick_zynaddsubfx_NativeSynthBridge_nativeFineDetuneCents(
         JNIEnv *, jobject, jint type, jint value) {
@@ -698,4 +733,14 @@ Java_com_mick_zynaddsubfx_NativeSynthBridge_nativeGetPadGenerationStatus(JNIEnv 
     if (!gStream) gEngine.servicePadGeneration();
     const auto status = gEngine.padGenerationStatus(part, kit);
     return env->NewStringUTF(status.c_str());
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_mick_zynaddsubfx_NativeSynthBridge_nativeSetPerformanceControl(JNIEnv *, jobject, jint channel, jint control, jint value) {
+    return gEngine.setPerformanceControl(channel, control, value) ? JNI_TRUE : JNI_FALSE;
+}
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_mick_zynaddsubfx_NativeSynthBridge_nativeGetPerformanceSnapshot(JNIEnv *env, jobject, jint channel) {
+    const auto value = gEngine.performanceSnapshot(channel);
+    return env->NewStringUTF(value.c_str());
 }

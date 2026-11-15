@@ -44,7 +44,7 @@ sealed interface ModuleAddress {
         override val role = lfoRole.code
     }
 
-    data class Filter(override val index: Int = -1, val vowel: Int = 0, override val engine: ModuleEngine = ModuleEngine.ADD) : ModuleAddress {
+    data class Filter(override val index: Int = -1, val vowel: Int = 0, override val engine: ModuleEngine = ModuleEngine.ADD, val fx: FxAddress? = null) : ModuleAddress {
         override val kind = 4
         override val role = vowel.coerceIn(0, FORMANT_VOWEL_SLOTS - 1)
     }
@@ -254,7 +254,7 @@ data class FilterModel(
     companion object {
         fun from(values: List<SynthEngine.ParameterValue>, address: ModuleAddress.Filter): FilterModel? {
             if (address.index >= 0 && address.engine != ModuleEngine.ADD) return null
-            val prefix = if (address.index < 0) "${address.engine.path}/filter" else "add/voice/${address.index}/filter"
+            val prefix = if (address.fx != null) "fx/filter" else if (address.index < 0) "${address.engine.path}/filter" else "add/voice/${address.index}/filter"
             val voiceFilterFields = setOf(
                 "filter", "bypassGlobalFilter", "filterCategory", "filterType", "filterCutoff",
                 "filterQ", "filterStages", "filterTracking", "filterGain", "filterCombHpf",

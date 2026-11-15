@@ -139,7 +139,17 @@ ADsynth est termine fonctionnellement dans le perimetre Android retenu. Les vali
 
 Contexte, dependances et criteres detailles : [index du backlog](docs/backlog/README.md). Les tests locaux restent propres a chaque lot ; seule la campagne finale globale est differee. Les numeros ordonnent le travail sans exiger une nouvelle analyse generale.
 
-**Conception UX avec Mick requise avant implementation** pour les nouveaux composants des lots 016, 018 (EQ) et 019 (designs 014/015 valides puis implementes le 8 novembre) : proposition concrete, echange et validation explicite. Les prompts precisent le perimetre ; reutiliser le design ADD existant.
+**Conception UX avec Mick requise avant implementation** pour le lot 019. Les designs 014/015 puis le prototype FX 016/018 ont été validés explicitement ; réutiliser les composants ADD existants.
+
+FX 016–018 : prototype accepté par Mick puis implémenté le 14 novembre. [Design et accord](docs/fx_design_proposal.md), [mapping](docs/fx_parameter_contract.md), [tests et limites](docs/qa_fx_016_018.md). 38 tests JVM, contrat natif hôte et builds ARM64/x86_64/AndroidTest réussis ; aucun essai appareil. Les éventuelles coupures pendant édition (`editorSkips`) restent à qualifier sur appareil.
+
+Navigation FX révisée à la demande de Mick : trois lignes ON/OFF dans la Part ; boutons Edit (Part controls) et FX (Performance) dans Play ; deux encarts Master/System et Insert, sans combo Scope. Bypass Master natif persistant. [Détails et validation locale](docs/qa_fx_016_018.md#itération-navigation-demandée-par-mick).
+
+Assignation Insert ajoutée après accord de Mick le 15 novembre : knob Source Off/Master/Part 1..16, commit au relâchement, propriétaire Master et persistance session ; tests natifs/JVM et builds réussis. Routages Part/System restants au lot 019.
+
+Routing System → System ajouté avec accord de Mick : six envois vers les slots suivants, 0..127, setter Master existant et persistance XMZ. Tests natifs/JVM et builds réussis ; espacement RECP rétabli. Chaînes Part et QA audio/appareil restent ouvertes.
+
+Performance A/B implémenté le 15 novembre à la demande de Mick : A Master/Channel/Velocity/Octave ; B Tempo/Pitch/Modulation/Sustain. File de commandes native, tempo global persistant, contrôleurs sur le canal Play. [Vérifications et limites](docs/qa_performance_ab.md).
 
 - [x] 010 — Modules communs SUB/PAD implementes : adressage moteur, enveloppes (dont bandwidth), filtres, LFO PAD, previews et clipboard natifs ; activation des parametres par Part. 27 tests JVM et contrat natif hote OK, builds Android ARM64/x86_64 OK. [Rapport et limites](docs/qa_common_modules_sub_pad.md) ; audio/appareil differe au lot 021, persistance transverse au lot 020.
 - [x] 011 — Mapping SUB complet Amp/Frequency/Bandwidth/Filter, controles ADD et enums knob/popup ; 29 tests JVM, contrat natif hote et builds ARM64/x86_64 OK. [Rapport et limites](docs/qa_subsynth_011_012.md). QA appareil/audio differee (021).
@@ -152,9 +162,9 @@ Cloture de la serie SUBsynth 010–012 acceptee par Mick le 8 novembre 2026, apr
 - [x] 015 — qualite et regeneration PAD asynchrone avec Apply/annulation ; [rapport, tests ADB et limites](docs/qa_padsynth_013_015.md).
 
 Iteration UX PAD : Amp / PAD / Frequency / Filter ; Spectrum puis Quality dans PAD, sans sous-onglets ; Oscillator/Resonance/Overtones/Profile en cartes graphiques compactes apres les trois knobs Spectrum. Apply commun colore/clignotant a droite de l’entete PAD ; fonds harmonises. 32 tests JVM et parcours Compose Nokia passes ; Pixel conserve pendant les essais de Mick. [Details](docs/qa_padsynth_013_015.md#regroupement-des-parametres-pad--8-novembre-2026).
-- [ ] [016 — Brancher les slots FX et leur contrat natif](docs/backlog/016_feat_fx_contrat_slots.md)
-- [ ] [017 — Porter les effets Reverb, Echo, Chorus, Phaser, Alienwah et Distortion](docs/backlog/017_feat_fx_parametres.md)
-- [ ] [018 — Porter EQ, Dynamic Filter, Sympathetic et Reverse](docs/backlog/018_feat_fx_avances.md)
+- [x] 016 — Contrat et éditeur de slot communs Part/Insert/System, Off, type/preset/bypass Part/reset/clipboard ; [rapport et limites](docs/qa_fx_016_018.md).
+- [x] 017 — Six effets courants, contrôles/presets natifs, modes et temps/tempo ; [mapping](docs/fx_parameter_contract.md) et [vérifications](docs/qa_fx_016_018.md).
+- [x] 018 — EQ huit bandes/courbe native, Dynamic Filter/Formant, Sympathetic/Reverse complets dans le prototype ; [rapport](docs/qa_fx_016_018.md). Ajustements sur pièce et écoute comparative 021 conservés.
 - [ ] [019 — Terminer les routages FX Part et Master](docs/backlog/019_feat_fx_routages_master_part.md)
 - [ ] [020 — Valider les contrats et la persistance SUB, PAD et FX](docs/backlog/020_test_persistance_sub_pad_fx.md)
 - [ ] [021 — Executer la validation finale audio/appareil ADD, SUB, PAD et FX](docs/backlog/021_qa_finale_audio_appareil.md)
@@ -201,16 +211,16 @@ Chaque lot termine met a jour TASKS.md, TODO.md et l'index, conserve les preuves
 
 | Surface native | Nature Android | Ecran parent Android | Chemin Android | Etat | Suite logique |
 |---|---|---|---|---|---|
-| EffUI - Reverb | Section FX | `Main.Part.Part[1..16].Fx` | `/Fx[1..3]/Reverb` | **Partiel** | Lots 016/017 : contrat slot, controles et presets |
-| EffUI - Echo | Section FX | `Main.Part.Part[1..16].Fx` | `/Fx[1..3]/Echo` | **Partiel** | Lots 016/017 : contrat slot, controles et presets |
-| EffUI - Chorus/Flange | Section FX | `Main.Part.Part[1..16].Fx` | `/Fx[1..3]/Chorus` | **Partiel** | Lots 016/017 : contrat slot, controles et presets |
-| EffUI - Phaser | Section FX | `Main.Part.Part[1..16].Fx` | `/Fx[1..3]/Phaser` | **Partiel** | Lots 016/017 : contrat slot, controles et presets |
-| EffUI - Alienwah | Section FX | `Main.Part.Part[1..16].Fx` | `/Fx[1..3]/Alienwah` | **Partiel** | Lots 016/017 : contrat slot, controles et presets |
-| EffUI - Distortion/Overdrive | Section FX | `Main.Part.Part[1..16].Fx` | `/Fx[1..3]/Distortion` | **Partiel** | Lots 016/017 : contrat slot, controles et presets |
-| EffUI - EQ | Section + controleur | `Main.Part.Part[1..16].Fx` | `/Fx[1..3]/Eq` | **Partiel** | Lot 018 : huit bandes et courbe native |
-| EffUI - Dynamic Filter | Section FX | `Main.Part.Part[1..16].Fx` | `/Fx[1..3]/DynamicFilter` | **Partiel** | Lot 018 : filtre et modulation adresses FX |
-| EffUI - Sympathetic strings | Section FX | `Main.Part.Part[1..16].Fx` | `/Fx[1..3]/Sympathetic` | **Partiel** | Lot 018 : UI specialisee et presets |
-| EffUI - Reverse | Section FX | Main / Part selon scope | `/Fx/Reverse` | **Absent** | Type natif 10 ; lot 018 |
+| EffUI - Reverb | Section FX | `Main.Part.Part[1..16].Fx` | `/Fx[1..3]/Reverb` | **Implemente** | Prototype 016–018 ; Part/Insert/System, [rapport et limites](docs/qa_fx_016_018.md) ; routages 019 et QA 021 ouverts |
+| EffUI - Echo | Section FX | `Main.Part.Part[1..16].Fx` | `/Fx[1..3]/Echo` | **Implemente** | Prototype 016–018 ; Part/Insert/System, [rapport et limites](docs/qa_fx_016_018.md) ; routages 019 et QA 021 ouverts |
+| EffUI - Chorus/Flange | Section FX | `Main.Part.Part[1..16].Fx` | `/Fx[1..3]/Chorus` | **Implemente** | Prototype 016–018 ; Part/Insert/System, [rapport et limites](docs/qa_fx_016_018.md) ; routages 019 et QA 021 ouverts |
+| EffUI - Phaser | Section FX | `Main.Part.Part[1..16].Fx` | `/Fx[1..3]/Phaser` | **Implemente** | Prototype 016–018 ; Part/Insert/System, [rapport et limites](docs/qa_fx_016_018.md) ; routages 019 et QA 021 ouverts |
+| EffUI - Alienwah | Section FX | `Main.Part.Part[1..16].Fx` | `/Fx[1..3]/Alienwah` | **Implemente** | Prototype 016–018 ; Part/Insert/System, [rapport et limites](docs/qa_fx_016_018.md) ; routages 019 et QA 021 ouverts |
+| EffUI - Distortion/Overdrive | Section FX | `Main.Part.Part[1..16].Fx` | `/Fx[1..3]/Distortion` | **Implemente** | Prototype 016–018 ; Part/Insert/System, [rapport et limites](docs/qa_fx_016_018.md) ; routages 019 et QA 021 ouverts |
+| EffUI - EQ | Section + controleur | `Main.Part.Part[1..16].Fx` | `/Fx[1..3]/Eq` | **Implemente** | Prototype 016–018 ; Part/Insert/System, [rapport et limites](docs/qa_fx_016_018.md) ; routages 019 et QA 021 ouverts |
+| EffUI - Dynamic Filter | Section FX | `Main.Part.Part[1..16].Fx` | `/Fx[1..3]/DynamicFilter` | **Implemente** | Prototype 016–018 ; Part/Insert/System, [rapport et limites](docs/qa_fx_016_018.md) ; routages 019 et QA 021 ouverts |
+| EffUI - Sympathetic strings | Section FX | `Main.Part.Part[1..16].Fx` | `/Fx[1..3]/Sympathetic` | **Implemente** | Prototype 016–018 ; Part/Insert/System, [rapport et limites](docs/qa_fx_016_018.md) ; routages 019 et QA 021 ouverts |
+| EffUI - Reverse | Section FX | Main / Part selon scope | `/Fx/Reverse` | **Implemente** | Prototype 016–018 ; Part/Insert/System, [rapport et limites](docs/qa_fx_016_018.md) ; routages 019 et QA 021 ouverts |
 | Formant Filter window | Editeur integre | Ecran Filter concerne | `/Formant` | **Implemente** | Voyelles, formants et sequence presents ; QA audio et gestes restante |
 | PAD harmonic profile / overtone graph | Controleur graphique | `Main.Part.Part[1..16].Pad` | `/Profile`, `/Spectrum` | **Implemente** | Lot 014 : profil/positions natifs, sous-ecrans avec preview reduite au scroll ; [QA](docs/qa_padsynth_013_015.md) |
 
