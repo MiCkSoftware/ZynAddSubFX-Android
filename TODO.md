@@ -32,14 +32,15 @@ Iteration UX PAD : Amp / PAD / Frequency / Filter ; Spectrum puis Quality dans P
 - [x] 016 — Contrat et éditeur de slot communs Part/Insert/System, Off, type/preset/bypass Part/reset/clipboard ; [rapport et limites](docs/qa_fx_016_018.md).
 - [x] 017 — Six effets courants, contrôles/presets natifs, modes et temps/tempo ; [mapping](docs/fx_parameter_contract.md) et [vérifications](docs/qa_fx_016_018.md).
 - [x] 018 — EQ huit bandes/courbe native, Dynamic Filter/Formant, Sympathetic/Reverse complets dans le prototype ; [rapport](docs/qa_fx_016_018.md). Ajustements sur pièce et écoute comparative 021 conservés.
-- [ ] [019 — Terminer les routages FX Part et Master](docs/backlog/019_feat_fx_routages_master_part.md)
+- [ ] [019 — Terminer les routages FX Part et Master](docs/backlog/019_feat_fx_routages_master_part.md) — prototype Part FX / Kit branché, essai sur appareil attendu
 - [ ] [020 — Valider les contrats et la persistance SUB, PAD et FX](docs/backlog/020_test_persistance_sub_pad_fx.md)
 - [ ] [021 — Executer la validation finale audio/appareil ADD, SUB, PAD et FX](docs/backlog/021_qa_finale_audio_appareil.md)
 
 A la fin de chaque implementation, mettre a jour TODO.md, TASKS.md et l'index, retirer les liens vers le prompt puis supprimer son fichier. Conserver les validations differees dans un rapport durable.
 
 ## Bug fix
-    - EQ FX Curve sometimes not refreshing when adjusting frequency
+- [x] Courbe EQ après changement de fréquence. Corrigée et testée sans moteur audio actif dans les trois scopes.
+- [ ] Mesurer les coupures audio sur appareil après sortie du calcul des aperçus FX du verrou moteur. Suivre xruns et editorSkips au lot 021.
 
 
 ## Small issues

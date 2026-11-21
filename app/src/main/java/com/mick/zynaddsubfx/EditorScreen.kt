@@ -478,12 +478,34 @@ private fun PartEditorCard(
             },
         )
         Spacer(Modifier.height(12.dp))
-        SectionBanner("Instrument kits")
-        Spacer(Modifier.height(4.dp))
-        if (structural("part/kitMode", "Off") == "Off" && kitSnapshots.drop(1).any { bool(it, "kit/enabled") }) {
-            Text("Kit mode is off: only Kit 1 plays", color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.labelSmall)
+        val kitMode = structure.values.firstOrNull { it.descriptor.path == "part/kitMode" }
+        val kitModeEnabled = kitMode != null && kitMode.value != 0.0
+        SectionBanner("Instrument kits") {
+            kitMode?.let { mode ->
+                val options = mode.descriptor.options
+                val current = mode.value.toInt()
+                val label = options.getOrNull(current) ?: return@let
+                LedButton(
+                    label = "Kit mode: $label. Cycle mode",
+                    lit = kitModeEnabled,
+                    onClick = {
+                        val value = ((current + 1) % options.size).toDouble()
+                        if (engine.writeParameter(
+                                part.partIndex, 0, SynthEngine.ParameterWrite(mode.descriptor.path, value)
+                            )) {
+                            updateStructureValue(mode, value)
+                            onPartChanged()
+                        }
+                    },
+                    modifier = Modifier.width(72.dp),
+                    action = true,
+                    hue = if (current == 2) subHarmonicHue(2) else 192f,
+                    displayLabel = label.uppercase(Locale.ROOT),
+                    compact = true,
+                )
+            }
         }
+        Spacer(Modifier.height(4.dp))
         kitSnapshots.filter { bool(it, "kit/enabled") }.forEach { kit ->
             val index = kit.kitIndex
             val muted = bool(kit, "kit/muted")
@@ -526,6 +548,32 @@ private fun PartEditorCard(
                                     modifier = Modifier.width(22.dp).clickable { onOpenModule(module, index) }.padding(5.dp))
                             } else {
                                 Spacer(Modifier.width(22.dp))
+                            }
+                        }
+                    }
+                    kit.values.firstOrNull { it.descriptor.path == "kit/sendFx" }?.let { route ->
+                        val selected = if (kitModeEnabled) route.value.toInt() else 0
+                        Row(
+                            Modifier.fillMaxWidth().padding(top = 8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(5.dp),
+                        ) {
+                            route.descriptor.options.forEachIndexed { destination, label ->
+                                LedButton(
+                                    label = "Kit ${index + 1} to $label",
+                                    lit = selected == destination,
+                                    onClick = {
+                                        if (selected != destination && engine.writeParameter(
+                                                part.partIndex, index,
+                                                SynthEngine.ParameterWrite(route.descriptor.path, destination.toDouble()),
+                                            )) {
+                                            refreshKits()
+                                            onPartChanged()
+                                        }
+                                    },
+                                    modifier = Modifier.weight(1f),
+                                    displayLabel = label,
+                                    enabled = kitModeEnabled,
+                                )
                             }
                         }
                     }

@@ -8,6 +8,7 @@
 #include <chrono>
 #include <string_view>
 #include <variant>
+#include <optional>
 #include <thread>
 #include <stdexcept>
 #ifdef __ANDROID__
@@ -23,6 +24,7 @@
 #include "Misc/XMLwrapper.h"
 #include "Effects/EffectMgr.h"
 #include "Effects/Effect.h"
+#include "Effects/EQ.h"
 #include "DSP/Filter.h"
 #include "Misc/Allocator.h"
 #include "Params/ADnoteParameters.h"
@@ -1213,6 +1215,12 @@ std::string ZynAndroidEngine::fxSnapshot(int scope, int part, int slot) const {
     };
     add("fx/type", "Type", "Slot", "enum", type, 0, 10, 0, kFxTypes);
     add("fx/bypass", "Bypass", "Slot", "bool", scope == 0 ? master_->part[part]->Pefxbypass[slot] : effect->bypassed, 0, 1, 0);
+    if (scope == 0 && slot + 1 < NUM_PART_EFX) {
+        add("fx/destination", "Destination", "Routing", "enum",
+            master_->part[part]->Pefxroute[slot], 0, 2, 0, "Next FX,Part Out,Dry Out");
+    } else if (scope == 0) {
+        add("fx/destination", "Destination", "Routing", "enum", 0, 0, 0, 0, "Part Out");
+    }
     if (scope == 1) {
         const int source = master_->Pinsparts[slot];
         add("fx/source", "Source", "Routing", "enum", source == -1 ? 0 : source == -2 ? 1 : source + 2,
@@ -1259,6 +1267,9 @@ bool ZynAndroidEngine::writeFx(int scope, int part, int slot, int expectedType, 
         effect->setTempoRatio(0, 4);
         effect->changeeffectrt(v);
         if (v && !effect->efx) { effect->changeeffectrt(0); return false; }
+    } else if (path == "fx/destination") {
+        if (scope != 0 || slot + 1 >= NUM_PART_EFX || !master_->part[part]->setEffectRoute(slot, v))
+            return false;
     } else if (path == "fx/source") {
         if (scope != 1 || v < 0 || v > NUM_MIDI_PARTS + 1) return false;
         if (!master_->setInsertionFxSource(slot, v == 0 ? -1 : v == 1 ? -2 : v - 2)) return false;
@@ -1347,25 +1358,39 @@ bool ZynAndroidEngine::fxAction(int scope, int part, int slot, int expectedType,
 }
 
 std::string ZynAndroidEngine::fxPreview(int scope, int part, int slot, int vowel, int resolution) {
-    EngineAccess engineLock(*this);
-    auto *effect = resolveFx(scope, part, slot);
-    if (!effect || !effect->efx || vowel < 0 || vowel >= FF_MAX_VOWELS) return {};
+    std::optional<zyn::EQ::Response> eqResponse;
+    std::optional<zyn::FilterParams> filterParams;
+    unsigned sampleRate;
+    int block;
+    {
+        EngineAccess engineLock(*this);
+        auto *effect = resolveFx(scope, part, slot);
+        if (!effect || !effect->efx || vowel < 0 || vowel >= FF_MAX_VOWELS) return {};
+        if (const auto *eq = dynamic_cast<const zyn::EQ *>(effect->efx))
+            eqResponse = eq->targetResponse();
+        else if (effect->geteffect() == 8 && effect->filterpars)
+            filterParams = *effect->filterpars;
+        else return {};
+        sampleRate = synth_->samplerate;
+        block = synth_->buffersize;
+    }
+
     const int count = std::clamp(resolution, 16, 512);
     std::vector<float> points(count);
-    if (effect->geteffect() == 7) {
+    if (eqResponse) {
         for (int n = 0; n < count; ++n)
-            points[n] = effect->getEQfreqresponse(20.f * std::pow(1000.f, n / float(count - 1)));
-    } else if (effect->geteffect() == 8 && effect->filterpars) {
-        if (effect->filterpars->Pcategory == 1) {
-            filterPreview(*effect->filterpars, vowel, points, synth_->samplerate);
+            points[n] = eqResponse->decibels(20.f * std::pow(1000.f, n / float(count - 1)));
+    } else if (filterParams) {
+        if (filterParams->Pcategory == 1) {
+            filterPreview(*filterParams, vowel, points, sampleRate);
         } else {
-            // Static small-signal response of an isolated native filter; no live DSP state is consumed.
-            const auto dispose = [&](zyn::Filter *filter) { master_->memory->dealloc(filter); };
+            // Keep preview allocations and processing separate from the audio engine.
             try {
+                zyn::Alloc previewMemory;
+                const auto dispose = [&](zyn::Filter *filter) { previewMemory.dealloc(filter); };
                 std::unique_ptr<zyn::Filter, decltype(dispose)> filter(
-                    zyn::Filter::generate(*master_->memory, effect->filterpars, synth_->samplerate, synth_->buffersize), dispose);
-                filter->setfreq_and_q(effect->filterpars->basefreq, effect->filterpars->baseq);
-                const int block = synth_->buffersize;
+                    zyn::Filter::generate(previewMemory, &*filterParams, sampleRate, block), dispose);
+                filter->setfreq_and_q(filterParams->basefreq, filterParams->baseq);
                 const int frames = ((8192 + block - 1) / block) * block;
                 std::vector<float> impulse(frames, 0.f), warmup(block, 0.f);
                 for (int n = 0; n < 4; ++n) filter->filterout(warmup.data());
@@ -1374,7 +1399,7 @@ std::string ZynAndroidEngine::fxPreview(int scope, int part, int slot, int vowel
                 for (int offset = 0; offset < frames; offset += block) filter->filterout(impulse.data() + offset);
                 for (int n = 0; n < count; ++n) {
                     const double hz = 20.0 * std::pow(1000.0, n / double(count - 1));
-                    const double omega = kTwoPi * hz / synth_->samplerate;
+                    const double omega = kTwoPi * hz / sampleRate;
                     const double cosine = std::cos(omega), sine = std::sin(omega);
                     double real = 0, imaginary = 0, x = 1, y = 0;
                     for (float sample : impulse) {
@@ -1387,7 +1412,7 @@ std::string ZynAndroidEngine::fxPreview(int scope, int part, int slot, int vowel
                 }
             } catch (const std::bad_alloc &) { return {}; }
         }
-    } else return {};
+    }
     std::ostringstream out;
     for (int n = 0; n < count; ++n) { if (n) out << ','; out << points[n]; }
     return out.str();
@@ -1493,7 +1518,7 @@ std::string ZynAndroidEngine::parameterSnapshot(int partIndex, int kitIndex) con
     add("kit/muted", "Muted", "Kit", "bool", kit.Pmuted, 0, 1, 0);
     add("kit/minKey", "Minimum key", "Kit", "int", kit.Pminkey, 0, 127, 0);
     add("kit/maxKey", "Maximum key", "Kit", "int", kit.Pmaxkey, 0, 127, 127);
-    add("kit/sendFx", "Send to effect", "Kit", "enum", kit.Psendtoparteffect, 0, 3, 0, "FX 1,FX 2,FX 3,Off");
+    add("kit/sendFx", "To Part FX", "Kit", "enum", kit.sendto(), 0, 3, 0, "FX 1,FX 2,FX 3,Part Out");
     add("kit/addEnabled", "ADsynth enabled", "Kit", "bool", kit.Padenabled, 0, 1, kitIndex == 0);
     add("kit/subEnabled", "SUBsynth enabled", "Kit", "bool", kit.Psubenabled, 0, 1, 0);
     add("kit/padEnabled", "PADsynth enabled", "Kit", "bool", kit.Ppadenabled, 0, 1, 0);

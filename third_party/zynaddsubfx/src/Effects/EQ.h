@@ -14,7 +14,9 @@
 #ifndef EQ_H
 #define EQ_H
 
+#include <array>
 #include "Effect.h"
+#include "../DSP/AnalogFilter.h"
 
 namespace zyn {
 
@@ -30,7 +32,14 @@ class EQ final:public Effect
         void changepar(int npar, unsigned char value);
         unsigned char getpar(int npar) const;
         void cleanup(void);
-        float getfreqresponse(float freq);
+        float getfreqresponse(float freq) override;
+        struct Response {
+            std::array<AnalogFilter::Response, MAX_EQ_BANDS> bands{};
+            int count = 0;
+            float volume = 0.0f;
+            float decibels(float frequency) const;
+        };
+        Response targetResponse() const;
 
         void getFilter(float *a/*[MAX_EQ_BANDS*MAX_FILTER_STAGES*3]*/,
                        float *b/*[MAX_EQ_BANDS*MAX_FILTER_STAGES*3]*/) const;

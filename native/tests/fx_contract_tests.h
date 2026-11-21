@@ -65,6 +65,20 @@ static void testFxContract(ZynAndroidEngine &engine) {
     write(2, -1, 0, "fx/send/2", 83);
     assert(readFx(engine, 2, -1, 0, "fx/send/1") == 0);
     assert(readFx(engine, 2, -1, 1, "fx/send/2") == 0);
+    for (int route = 0; route <= 2; ++route) {
+        write(0, 1, 0, "fx/destination", route);
+        assert(readFx(engine, 0, 1, 0, "fx/destination") == route);
+    }
+    assert(readFx(engine, 0, 1, 1, "fx/destination") == 0);
+    assert(readFx(engine, 0, 0, 0, "fx/destination") == 0);
+    assert(!engine.writeFx(0, 1, 0, 0, "fx/destination", 3));
+    assert(!engine.writeFx(0, 1, 2, 0, "fx/destination", 1));
+    assert(!engine.writeFx(1, -1, 0, 0, "fx/destination", 1));
+    assert(!engine.writeFx(2, -1, 0, 0, "fx/destination", 1));
+    assert(engine.setParameter(1, 0, "part/kitMode", 1));
+    assert(engine.setParameter(1, 0, "kit/sendFx", 3));
+    assert(read(engine, 1, 0, "kit/sendFx") == 3);
+    assert(read(engine, 0, 0, "kit/sendFx") == 0);
     write(0, 0, 1, "fx/type", 2);
     write(0, 0, 1, "fx/parameter/5", 33);
     // Exercise each real effect and every advertised field at both bounds in all owners.
@@ -117,6 +131,12 @@ static void testFxContract(ZynAndroidEngine &engine) {
                 write(scope, part, 0, "fx/parameter/12", 96);
                 const auto boosted = engine.fxPreview(scope, part, 0, 0, 128);
                 assert(!boosted.empty() && flat != boosted);
+                // Frequency changes must update the response without running the audio renderer.
+                write(scope, part, 0, "fx/parameter/11", 100);
+                const auto shifted = engine.fxPreview(scope, part, 0, 0, 128);
+                assert(!shifted.empty() && boosted != shifted);
+                write(scope, part, 0, "fx/parameter/11", 64);
+                assert(engine.fxPreview(scope, part, 0, 0, 128) == boosted);
             }
             if (type == 8) {
                 const double addCutoff = read(engine, 0, 0, "add/filter/cutoff");
@@ -207,6 +227,8 @@ static void testFxContract(ZynAndroidEngine &engine) {
     std::cerr << "FX export" << std::endl;
     assert(engine.exportInstrument(1, "fx-part.xiz"));
     assert(engine.loadPresetFile("fx-part.xiz", 2));
+    assert(readFx(engine, 0, 2, 0, "fx/destination") == 2);
+    assert(read(engine, 2, 0, "kit/sendFx") == 3);
     assert(readFx(engine, 0, 2, 2, "fx/type") == 8);
     assert(readFx(engine, 0, 2, 2, "fx/preset") == 2);
     assert(readFx(engine, 0, 2, 2, "fx/bypass") == 1);

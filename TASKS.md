@@ -165,7 +165,7 @@ Iteration UX PAD : Amp / PAD / Frequency / Filter ; Spectrum puis Quality dans P
 - [x] 016 — Contrat et éditeur de slot communs Part/Insert/System, Off, type/preset/bypass Part/reset/clipboard ; [rapport et limites](docs/qa_fx_016_018.md).
 - [x] 017 — Six effets courants, contrôles/presets natifs, modes et temps/tempo ; [mapping](docs/fx_parameter_contract.md) et [vérifications](docs/qa_fx_016_018.md).
 - [x] 018 — EQ huit bandes/courbe native, Dynamic Filter/Formant, Sympathetic/Reverse complets dans le prototype ; [rapport](docs/qa_fx_016_018.md). Ajustements sur pièce et écoute comparative 021 conservés.
-- [ ] [019 — Terminer les routages FX Part et Master](docs/backlog/019_feat_fx_routages_master_part.md)
+- [ ] [019 — Terminer les routages FX Part et Master](docs/backlog/019_feat_fx_routages_master_part.md) — prototype Part FX / Kit branché, essai sur appareil attendu
 - [ ] [020 — Valider les contrats et la persistance SUB, PAD et FX](docs/backlog/020_test_persistance_sub_pad_fx.md)
 - [ ] [021 — Executer la validation finale audio/appareil ADD, SUB, PAD et FX](docs/backlog/021_qa_finale_audio_appareil.md)
 

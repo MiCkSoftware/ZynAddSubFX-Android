@@ -98,7 +98,7 @@ fun FxEditor(
         } else {
             val groups = remember(snapshot) {
                 snapshot.parameters.groupBy {
-                    if (address.scope == FxScope.INSERT && it.descriptor.group in setOf("Routing", "Mix"))
+                    if (address.scope != FxScope.SYSTEM && it.descriptor.group in setOf("Routing", "Mix"))
                         "Routing / Mix" else it.descriptor.group
                 }
             }
@@ -134,6 +134,17 @@ fun FxEditor(
                         if (group == "Timing") Text("Reference: ${snapshot.tempo.roundToInt()} BPM · numerator 0 = free",
                             style = MaterialTheme.typography.labelSmall)
                         FxParameterGrid(model, parameters)
+                        if (group == "Routing / Mix" && snapshot.parameter("fx/destination")?.value == 2.0) {
+                            Text(
+                                when {
+                                    snapshot.type == 0 || snapshot.parameter("fx/bypass")?.value == 1.0 ->
+                                        "Signal goes straight to Part Out while this effect is off or bypassed."
+                                    snapshot.type == 7 -> "EQ sends the equalized signal to both destinations."
+                                    else -> "Dry signal to Part Out, wet signal to the next FX."
+                                },
+                                style = MaterialTheme.typography.labelSmall,
+                            )
+                        }
                     }
                 }
                 if (snapshot.type == 8) {
@@ -158,7 +169,7 @@ private fun FxParameterGrid(model: FxEditorModel, parameters: List<SynthEngine.P
         onWrite = { p, v -> model.write(p, v) },
         onDrag = { p, v -> model.write(p, v, continuous = true) }, onCommit = model::commit,
         verticalLabels = true, onLongPress = {}, enumContext = snapshot.address,
-        enabled = { fxControlEnabled(snapshot.type, it, snapshot.parameters) },
+        enabled = { it.descriptor.minimum < it.descriptor.maximum && fxControlEnabled(snapshot.type, it, snapshot.parameters) },
         valueText = { fxValueText(snapshot.type, it) },
         onReset = { model.write(it, it.descriptor.defaultValue) })
 }

@@ -79,7 +79,7 @@ class FxEditorModel(private val engine: FxEngine, initial: FxAddress) {
         val current = snapshot ?: return
         val normalized = value.roundToInt().toDouble().coerceIn(parameter.descriptor.minimum, parameter.descriptor.maximum)
         if (this.value(parameter) == normalized) { if (!continuous) commit(); return }
-        if (continuous && parameter.descriptor.path in setOf("fx/type", "fx/preset", "fx/source")) {
+        if (continuous && parameter.descriptor.path in setOf("fx/type", "fx/preset", "fx/source", "fx/destination")) {
             pendingChoice = parameter.copy(value = normalized)
             drafts[parameter.descriptor.path] = normalized
             return

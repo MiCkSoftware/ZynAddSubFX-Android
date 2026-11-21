@@ -43,6 +43,42 @@ reste à faire.
 
 Demande de Mick du 15 novembre 2026. Feature à concevoir ; non implémentée.
 
+## Prototype du routage Part à essayer
+
+- Dans chaque **Part FX**, réutiliser la section **Routing** avec un knob
+  **Destination** et son popup sur appui long. Pour FX 1 et FX 2, proposer
+  **Next FX**, **Part Out** et **Dry Out**. **Dry Out** envoie le signal sec
+  vers la sortie Part et le signal traité vers l'effet suivant, pour les
+  effets qui séparent ces deux signaux. Indiquer l'exception de l'EQ, qui
+  transmet son signal égalisé. Le dernier slot aboutit à la sortie Part.
+- Dans chaque carte **Kit**, ajouter un knob **To Part FX**. Choix proposés
+  **FX 1**, **FX 2**, **FX 3** et **Part Out**. Griser ce réglage hors mode kit,
+  puisque le moteur démarre alors à FX 1. En mode kit, la destination choisie
+  s'applique aux nouvelles notes.
+- Conserver les lignes des slots et leur bypass. Mettre à jour la destination
+  au relâchement du knob ou au choix dans le popup.
+
+Mick a donné son accord pour essayer cette disposition le 21 novembre 2026.
+Le prototype est implémenté. Le contrat natif vérifie les trois destinations,
+les écritures refusées sur les autres scopes et le dernier slot, l’isolation,
+puis la relecture des deux réglages dans un XIZ. Build Android debug et tests
+JVM réussis. L’essai ergonomique et l’écoute du chaînage restent à faire sur
+appareil avant de clore le lot.
+
+Suite à l’essai sur alpha.27, les FX Part regroupent les réglages dans
+**Routing / Mix**. FX 3 y affiche **Destination · Part Out** en lecture seule.
+La section **Instrument kits** expose désormais **Kit mode** (Off, Multi, Single).
+Choisir Multi ou Single suffit pour dégriser **To Part FX**, même avec un seul
+kit. Le réglage **Kit count** continue d’activer ou de désactiver le mode selon
+le nombre de kits lorsque ce nombre change.
+
+Après retour de Mick, **To Part FX** prend la forme de quatre boutons LED sous
+PADsynth dans chaque kit. **Off** affiche l’entrée native FX 1 et désactive la
+rangée. **Multi** ou **Single** permet de choisir l’entrée, même avec un seul kit.
+
+Le mode Kit se règle avec un bouton d’état dans le bandeau **Instrument kits**.
+Chaque appui passe au mode suivant dans l’ordre Off, Multi, Single.
+
 ## Conception UX avec Mick avant implementation
 
 - **Passe de design/conception obligatoire avec Mick avant de coder la nouvelle UX.** Perimetre : Presentation et manipulation des chaines Part, assignations Insert, sends/retours System et passage entre scopes.

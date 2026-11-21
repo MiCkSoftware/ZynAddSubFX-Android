@@ -41,13 +41,18 @@ class AnalogFilter:public Filter
         void setstages(int stages_);
         void cleanup();
 
-        float H(float freq); //Obtains the response for a given frequency
-
-
         struct Coeff {
             float c[3], //Feed Forward
                   d[3];    //Feed Back
         } coeff, oldCoeff;
+
+        struct Response {
+            Coeff coeff;
+            float sampleRate;
+            int stages;
+            float magnitude(float frequency) const;
+        };
+        Response targetResponse() const;
 
         static Coeff computeCoeff(int type, float cutoff, float q, int stages,
                 float gain, float fs, int &order);

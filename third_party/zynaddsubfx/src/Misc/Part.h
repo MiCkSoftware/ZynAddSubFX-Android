@@ -125,6 +125,7 @@ class Part
         void setkeylimit(unsigned char Pkeylimit);
         void setvoicelimit(unsigned char Pvoicelimit);
         void setkititemstatus(unsigned kititem, bool Penabled_);
+        bool setEffectRoute(int slot, int route);
         bool setKitSynthEnabled(unsigned kititem, int engine, bool enabled);
         bool hasActivePadNotes(unsigned kititem);
 

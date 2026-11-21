@@ -15,7 +15,6 @@
 #include <rtosc/ports.h>
 #include <rtosc/port-sugar.h>
 #include "EQ.h"
-#include "../DSP/AnalogFilter.h"
 #include "../Misc/Allocator.h"
 
 namespace zyn {
@@ -276,15 +275,27 @@ unsigned char EQ::getpar(int npar) const
 }
 
 
+EQ::Response EQ::targetResponse() const
+{
+    Response response;
+    response.volume = outvolume;
+    for (const auto &band : filter)
+        if (band.Ptype != 0)
+            response.bands[response.count++] = band.l->targetResponse();
+    return response;
+}
+
+float EQ::Response::decibels(float frequency) const
+{
+    float magnitude = volume;
+    for (int i = 0; i < count; ++i)
+        magnitude *= bands[i].magnitude(frequency);
+    return rap2dB(magnitude);
+}
+
 float EQ::getfreqresponse(float freq)
 {
-    float resp = 1.0f;
-    for(int i = 0; i < MAX_EQ_BANDS; ++i) {
-        if(filter[i].Ptype == 0)
-            continue;
-        resp *= filter[i].l->H(freq);
-    }
-    return rap2dB(resp * outvolume);
+    return targetResponse().decibels(freq);
 }
 
 //Not exactly the most efficient manner to derive the total taps, but it should

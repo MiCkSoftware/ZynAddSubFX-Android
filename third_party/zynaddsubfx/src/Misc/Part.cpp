@@ -120,10 +120,14 @@ static const Ports partPorts = {
     rString(info.Pcomments, MAX_INFO_TEXT_SIZE, rDefault(""),
         "Instrument comments"),
     rString(Pname, PART_MAX_NAME_LEN, rDefault(""), "User specified label"),
+#undef rChangeCb
+#define rChangeCb obj->setEffectRoute(idx, limit<int>(obj->Pefxroute[idx], 0, 2));
     rArrayOption(Pefxroute, NUM_PART_EFX,
         rOptions(Next Effect,Part Out,Dry Out),
         ":default\0=[\"Next Effect\"S...]\0",
         "Effect Routing"),
+#undef rChangeCb
+#define rChangeCb
     rArrayT(Pefxbypass, NUM_PART_EFX, rDefault([false...]),
         "If an effect is bypassed"),
     {"captureMin:", rDoc("Capture minimum valid note"), NULL,
@@ -448,7 +452,7 @@ void Part::defaultsinstrument()
 
     for(int nefx = 0; nefx < NUM_PART_EFX; ++nefx) {
         partefx[nefx]->defaults();
-        Pefxroute[nefx] = 0; //route to next effect
+        setEffectRoute(nefx, 0);
     }
 }
 
@@ -1350,7 +1354,6 @@ void Part::add2XMLinstrument(XMLwrapper& xml)
         xml.endbranch();
 
         xml.addpar("route", Pefxroute[nefx]);
-        partefx[nefx]->setdryonly(Pefxroute[nefx] == 2);
         xml.addparbool("bypass", Pefxbypass[nefx]);
         xml.endbranch();
     }
@@ -1574,13 +1577,7 @@ void Part::getfromXMLinstrument(XMLwrapper& xml)
                 xml.exitbranch();
             }
 
-            Pefxroute[nefx] = xml.getpar("route",
-                                          Pefxroute[nefx],
-                                          0,
-                                          NUM_PART_EFX);
-            if(Pefxroute[nefx]>2) // fix for broken savefiles
-                Pefxroute[nefx]=2;
-            partefx[nefx]->setdryonly(Pefxroute[nefx] == 2);
+            setEffectRoute(nefx, xml.getpar("route", Pefxroute[nefx], 0, 2));
             Pefxbypass[nefx] = xml.getparbool("bypass", Pefxbypass[nefx]);
             xml.exitbranch();
         }
@@ -1639,6 +1636,15 @@ void Part::getfromXML(XMLwrapper& xml)
 bool Part::Kit::active(void) const
 {
     return Padenabled || Psubenabled || Ppadenabled;
+}
+
+bool Part::setEffectRoute(int slot, int route)
+{
+    if (slot < 0 || slot >= NUM_PART_EFX || route < 0 || route > 2)
+        return false;
+    Pefxroute[slot] = route;
+    partefx[slot]->setdryonly(route == 2);
+    return true;
 }
 
 uint8_t Part::Kit::sendto(void) const

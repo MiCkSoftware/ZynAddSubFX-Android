@@ -70,7 +70,7 @@ void AnalogFilter::cleanup()
 AnalogFilter::Coeff AnalogFilter::computeCoeff(int type, float cutoff, float q,
         int stages, float gain, float fs, int &order)
 {
-    AnalogFilter::Coeff coeff;
+    AnalogFilter::Coeff coeff{};
     bool  zerocoefs = false; //this is used if the freq is too high
 
     const float samplerate_f = fs;
@@ -447,9 +447,15 @@ void AnalogFilter::filterout(float *smp)
         smp[i] *= outgain;
 }
 
-float AnalogFilter::H(float freq)
+AnalogFilter::Response AnalogFilter::targetResponse() const
 {
-    float fr = freq / samplerate_f * PI * 2.0f;
+    int targetOrder;
+    return {computeCoeff(type, freq, q, stages, gain, samplerate_f, targetOrder), samplerate_f, stages};
+}
+
+float AnalogFilter::Response::magnitude(float frequency) const
+{
+    float fr = frequency / sampleRate * PI * 2.0f;
     float x  = coeff.c[0], y = 0.0f;
     for(int n = 1; n < 3; ++n) {
         x += cosf(n * fr) * coeff.c[n];
