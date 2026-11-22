@@ -173,6 +173,8 @@ Chaque lot termine met a jour TASKS.md, TODO.md et l'index, conserve les preuves
 
 ### Navigation principale et performance
 
+- [x] Clôturé le 22 novembre 2026 avec l’accord de Mick. Le glissé joue les notes successives sur les deux claviers et le tap ouvre les menus de knobs. Les tests instrumentés clavier, FX et PAD passent sur émulateur Pixel 8a. L’option de geste reste suivie dans [TODO.md](TODO.md#feature-à-prévoir) et le rendu audio sur appareil au lot 021.
+
 | Surface native | Nature Android | Ecran parent Android | Chemin Android | Etat | Suite logique |
 |---|---|---|---|---|---|
 | Master / Main window | Ecran | Application | `Main` | **Partiel** | Completer effets, sends, meters, menus et etat global |

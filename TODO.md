@@ -39,11 +39,14 @@ Iteration UX PAD : Amp / PAD / Frequency / Filter ; Spectrum puis Quality dans P
 A la fin de chaque implementation, mettre a jour TODO.md, TASKS.md et l'index, retirer les liens vers le prompt puis supprimer son fichier. Conserver les validations differees dans un rapport durable.
 
 ## Bug fix
+- [x] Jeu au glissé sur les claviers hexa et classique. Les knobs avec popup ouvrent le menu au tap et se règlent au glissé. Clôture confirmée par Mick après trois tests instrumentés réussis sur émulateur Pixel 8a.
 - [x] Courbe EQ après changement de fréquence. Corrigée et testée sans moteur audio actif dans les trois scopes. Essai utilisateur validé.
 - [ ] Mesurer les coupures audio sur appareil après sortie du calcul des aperçus FX du verrou moteur. Suivre xruns et editorSkips au lot 021.
 
 
 ## Feature à prévoir
+
+- [ ] Ajouter l’option utilisateur pour choisir le geste d’ouverture des menus de knobs. Le tap est actif par défaut.
 
 - [ ] Valider à l’écoute les presets EQ intégrés. Les courbes disponibles sont Low Cut, Warm, Clarity, Telephone, Bass Boost, Mid Scoop, Air et Dark. Flat et Flat Legacy conservent les réglages des deux anciens indices.
 
