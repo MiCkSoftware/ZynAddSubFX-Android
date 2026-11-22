@@ -26,8 +26,12 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -2932,17 +2936,38 @@ internal fun DenseControlCard(
     verticalLabel: Boolean = true,
     unit: String = "",
     onClick: () -> Unit = {},
-    onLongClick: () -> Unit = {},
+    onLongClick: (() -> Unit)? = null,
     longClickLabel: String? = null,
+    tapOnly: Boolean = false,
     content: @Composable () -> Unit,
 ) {
-    Surface(
-        modifier = modifier.fillMaxWidth().alpha(if (enabled) 1f else .45f).combinedClickable(
+    val currentClick by rememberUpdatedState(onClick)
+    val interaction = if (tapOnly && enabled) {
+        Modifier.semantics {
+            onClick(label = longClickLabel) {
+                currentClick()
+                true
+            }
+        }.pointerInput(Unit) {
+            awaitEachGesture {
+                val down = awaitFirstDown()
+                val up = waitForUpOrCancellation()
+                if (up != null && up.uptimeMillis - down.uptimeMillis < viewConfiguration.longPressTimeoutMillis) {
+                    up.consume()
+                    currentClick()
+                }
+            }
+        }
+    } else {
+        Modifier.combinedClickable(
             enabled = enabled,
             onClick = onClick,
             onLongClick = onLongClick,
             onLongClickLabel = longClickLabel,
-        ),
+        )
+    }
+    Surface(
+        modifier = modifier.fillMaxWidth().alpha(if (enabled) 1f else .45f).then(interaction),
         color = Color(0xFF202020),
         shape = RoundedCornerShape(7.dp),
         border = BorderStroke(1.dp, androidx.compose.ui.graphics.lerp(labelColor, Color.White, .14f)),
@@ -3036,6 +3061,12 @@ internal fun DenseParameterControl(
         }
     }
     val fxReset = if (descriptor.path.startsWith("fx/") && onReset != null) ({ onReset(parameter) }) else null
+    val isKnob = descriptor.path.endsWith("/volumeMinus") ||
+        descriptor.type == SynthEngine.ParameterType.INTEGER ||
+        descriptor.type == SynthEngine.ParameterType.ENUM && verticalLabel
+    val popupOnTap = KNOB_POPUP_ON_TAP && isKnob
+    val knobLongPress = if (isKnob && !popupOnTap && fxReset != null) openValueMenu else null
+    val knobDoubleTap = if (popupOnTap) null else fxReset
     Box {
     DenseControlCard(
         label = if (descriptor.path.endsWith("/volumeMinus")) "Polarity" else if (verticalLabel) compactAddLabel(descriptor) else descriptor.label,
@@ -3049,15 +3080,18 @@ internal fun DenseParameterControl(
             else -> ""
         },
         onClick = {
-            if (descriptor.type == SynthEngine.ParameterType.BOOLEAN && !descriptor.path.endsWith("/volumeMinus")) {
-                onWrite(parameter, if (parameter.value >= .5) 0.0 else 1.0)
+            when {
+                popupOnTap -> openValueMenu()
+                descriptor.type == SynthEngine.ParameterType.BOOLEAN && !isKnob ->
+                    onWrite(parameter, if (parameter.value >= .5) 0.0 else 1.0)
             }
         },
-        onLongClick = openValueMenu,
+        onLongClick = if (popupOnTap) null else openValueMenu,
+        tapOnly = popupOnTap,
     ) {
         when {
                 descriptor.path.endsWith("/volumeMinus") -> TinyKnob(
-                    onDoubleTap = fxReset, onLongPress = openValueMenu,
+                    onDoubleTap = knobDoubleTap, onLongPress = knobLongPress,
                     label = "", value = parameter.value.toFloat(), min = 0f, max = 1f,
                     accessibilityLabel = "Polarity",
                     accent = Color.hsv(labelHue, .65f, .90f),
@@ -3078,7 +3112,7 @@ internal fun DenseParameterControl(
                 )
                 descriptor.type == SynthEngine.ParameterType.ENUM -> if (verticalLabel) {
                     TinyKnob(
-                        onDoubleTap = fxReset, onLongPress = openValueMenu,
+                        onDoubleTap = knobDoubleTap, onLongPress = knobLongPress,
                         label = "",
                         accessibilityLabel = descriptor.label,
                         accent = Color.hsv(labelHue, .65f, .90f),
@@ -3107,7 +3141,7 @@ internal fun DenseParameterControl(
                     )
                 }
                 else -> TinyKnob(
-                    onDoubleTap = fxReset, onLongPress = openValueMenu,
+                    onDoubleTap = knobDoubleTap, onLongPress = knobLongPress,
                     label = "",
                     accessibilityLabel = descriptor.label,
                     accent = Color.hsv(labelHue, .65f, .90f),
@@ -3142,6 +3176,7 @@ internal fun DenseParameterControl(
         } else descriptor.options[it] },
         onDismiss = { enumOpen = false },
         onSelect = { onWrite(parameter, it.toDouble()); enumOpen = false },
+        onReset = if (popupOnTap && fxReset != null) ({ fxReset(); enumOpen = false }) else null,
     )
     ControlPopup(numberOpen && enabled, descriptor.label, { numberOpen = false }) {
         Text(draft.roundToInt().toString(), color = Color(0xFFFF9A16),
@@ -3169,6 +3204,7 @@ internal fun EnumChoiceMenu(
     selectedIndex: Int,
     label: (Int) -> String,
     onDismiss: () -> Unit,
+    onReset: (() -> Unit)? = null,
     onSelect: (Int) -> Unit,
 ) {
     ControlPopup(expanded, title, onDismiss) {
@@ -3182,6 +3218,9 @@ internal fun EnumChoiceMenu(
                                 }.semantics { stateDescription = if (selected) "Selected" else "Not selected" }
                                 .padding(horizontal = 8.dp, vertical = 5.dp))
                 }
+        if (onReset != null) TextButton(onClick = onReset) {
+            Text("Reset", fontFamily = FontFamily(Font(R.font.vt323regular)))
+        }
     }
 }
 
@@ -3323,26 +3362,5 @@ private fun ComplexEditorSheet(name: String) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(Modifier.width(1.dp))
-    }
-}
-
-@Composable
-private fun KeyboardOverlay(
-    heldNotes: Set<Int>,
-    keyboardOctaveShift: Int,
-    onPress: (Int) -> Unit,
-    onRelease: (Int) -> Unit,
-) {
-    Row(Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        listOf(60, 62, 64, 65, 67, 69, 71).forEach { note ->
-            val effective = (note + keyboardOctaveShift * 12).coerceIn(0, 127)
-            TactileKey(
-                note = note,
-                labelNote = effective,
-                active = effective in heldNotes,
-                onPress = { onPress(note) },
-                onRelease = { onRelease(note) },
-            )
-        }
     }
 }

@@ -155,7 +155,7 @@ Performance A/B implémenté le 15 novembre à la demande de Mick : A Master/Cha
 - [x] 011 — Mapping SUB complet Amp/Frequency/Bandwidth/Filter, controles ADD et enums knob/popup ; 29 tests JVM, contrat natif hote et builds ARM64/x86_64 OK. [Rapport et limites](docs/qa_subsynth_011_012.md). QA appareil/audio differee (021).
 - [x] 012 — UX harmonique ADD adaptee aux 64 rangs SUB, magnitude/largeur, Overtones complet, preview natif, Clear et clipboard isole ; proposition validee par Mick le 8 novembre avec knobs/popup pour les enums. [Preuves et limites](docs/qa_subsynth_011_012.md).
 
-Cloture de la serie SUBsynth 010–012 acceptee par Mick le 8 novembre 2026, apres les iterations UX. [Bilan final et limites](docs/qa_subsynth_011_012.md). PADsynth 013–015 est implemente et teste localement sur ADB ; suite fonctionnelle : FX ; persistance transverse 020 et campagne finale audio/appareil 021 restent ouvertes.
+Cloture de la serie SUBsynth 010–012 acceptee par Mick le 8 novembre 2026, apres les iterations UX. [Bilan final et limites](docs/qa_subsynth_011_012.md). PADsynth 013–015 a été testé sur Android. La persistance transverse 020 est validée et la campagne audio/appareil 021 reste ouverte.
 
 - [x] 013 — parametres de jeu PAD complets ; [rapport, tests ADB et limites](docs/qa_padsynth_013_015.md).
 - [x] 014 — profil, positions, oscillateur et resonance PAD ; [rapport, tests ADB et limites](docs/qa_padsynth_013_015.md).
@@ -165,8 +165,8 @@ Iteration UX PAD : Amp / PAD / Frequency / Filter ; Spectrum puis Quality dans P
 - [x] 016 — Contrat et éditeur de slot communs Part/Insert/System, Off, type/preset/bypass Part/reset/clipboard ; [rapport et limites](docs/qa_fx_016_018.md).
 - [x] 017 — Six effets courants, contrôles/presets natifs, modes et temps/tempo ; [mapping](docs/fx_parameter_contract.md) et [vérifications](docs/qa_fx_016_018.md).
 - [x] 018 — EQ huit bandes/courbe native, Dynamic Filter/Formant, Sympathetic/Reverse complets dans le prototype ; [rapport](docs/qa_fx_016_018.md). Ajustements sur pièce et écoute comparative 021 conservés.
-- [ ] [019 — Terminer les routages FX Part et Master](docs/backlog/019_feat_fx_routages_master_part.md) — prototype Part FX / Kit branché, essai sur appareil attendu
-- [ ] [020 — Valider les contrats et la persistance SUB, PAD et FX](docs/backlog/020_test_persistance_sub_pad_fx.md)
+- [x] 019 — Routages FX Part / Kit, Insert et System. Essais fonctionnels validés par Mick. [Bilan](docs/qa_fx_016_018.md#validation-utilisateur-des-routages-fx).
+- [x] 020 — Contrats et persistance XIZ/XMZ SUB, PAD et FX validés sur émulateur Android. [Rapport des tests](docs/qa_persistence_sub_pad_fx.md).
 - [ ] [021 — Executer la validation finale audio/appareil ADD, SUB, PAD et FX](docs/backlog/021_qa_finale_audio_appareil.md)
 
 Chaque lot termine met a jour TASKS.md, TODO.md et l'index, conserve les preuves utiles, retire les references vers son prompt puis supprime ce fichier. Les archives ADD sont des traces, pas de nouveaux chantiers a relancer.
@@ -229,11 +229,8 @@ Chaque lot termine met a jour TASKS.md, TODO.md et l'index, conserve les preuves
 
 Priorites suivantes :
 
-1. SUB et PAD termines fonctionnellement (010 a 015) ; conserver persistance transverse 020 et QA finale 021.
-2. Poursuivre les FX (016 a 019), puis validations transverses 020/021.
-3. Terminer les dix effets et leurs routages Part/Insert/System (016 a 019).
-4. Verifier automatiquement contrats, clipboard et persistance (020), puis executer la validation finale audio/appareil commune (021).
-5. Reprendre les autres sujets M5 : adaptations ecrans, Settings, About/Licences, microtonalite et banques. MIDI reste reporte a M7.
+1. Exécuter la validation finale audio et appareil ADD, SUB, PAD et FX (021).
+2. Reprendre les autres sujets M5 : adaptations ecrans, Settings, About/Licences, microtonalite et banques. MIDI reste reporte a M7.
 
 ### M6 - Presets historiques (compatibilite)
 - [ ] Inventorier formats historiques supportes upstream

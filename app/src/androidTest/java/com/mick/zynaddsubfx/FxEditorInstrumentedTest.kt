@@ -31,7 +31,13 @@ class FxEditorInstrumentedTest {
         compose.onNodeWithText("Scope").assertDoesNotExist()
         compose.onNodeWithText("FX 1").assertDoesNotExist()
         compose.onNodeWithText("FX 4").assertDoesNotExist()
-        compose.onNodeWithContentDescription("Type").performScrollTo().performTouchInput { longClick() }
+        val typeKnob = compose.onNodeWithContentDescription("Type").performScrollTo()
+        typeKnob.performTouchInput { longClick() }
+        compose.onNodeWithText("Reverse").assertDoesNotExist()
+        typeKnob.performTouchInput { swipeUp(startY = centerY, endY = -70f) }
+        compose.waitUntil(10_000) { engine.fxSnapshot(FxAddress(FxScope.SYSTEM))?.type != 0 }
+        compose.onNodeWithText("Reverse").assertDoesNotExist()
+        typeKnob.performTouchInput { click() }
         compose.onNodeWithText("Reverse").performClick()
         compose.runOnIdle {
             assertEquals(7, engine.fxSnapshot(part)!!.type)

@@ -157,29 +157,45 @@ void EQ::setvolume(unsigned char _Pvolume)
     volume    = (!insertion) ? 1.0f : outvolume;
 }
 
+namespace {
+using EqBand = std::array<unsigned char, 5>;
+constexpr EqBand neutralBand{0, 64, 64, 64, 0};
+
+// Native values: type, logarithmic frequency, gain, Q, additional stages.
+// Indices 0 and 1 retain their original defaults for existing patches.
+constexpr EqBand presetBands[][2]{
+    {neutralBand, neutralBand},           // Flat
+    {neutralBand, neutralBand},           // Flat (legacy)
+    {{4, 26, 64, 57, 0}, neutralBand},    // Low Cut: ~80 Hz high-pass
+    {{8, 39, 70, 64, 0}, {9, 104, 60, 64, 0}}, // Warm: +3 dB at ~160 Hz, -2 dB at ~5 kHz
+    {{7, 52, 58, 60, 0}, {9, 100, 70, 64, 0}}, // Clarity: -3 dB at ~320 Hz, +3 dB at ~4 kHz
+    {{4, 54, 64, 57, 0}, {3, 96, 64, 57, 0}},  // Telephone: ~350 Hz to ~3.3 kHz
+    {{8, 30, 73, 64, 0}, neutralBand},    // Bass Boost: +4 dB below ~100 Hz
+    {{7, 61, 55, 62, 0}, neutralBand},    // Mid Scoop: -4 dB near ~500 Hz
+    {{9, 114, 70, 64, 0}, neutralBand},   // Air: +3 dB above ~8.5 kHz
+    {{3, 100, 64, 57, 0}, neutralBand},   // Dark: ~4 kHz low-pass
+};
+}
+
 unsigned char EQ::getpresetpar(unsigned char npreset, unsigned int npar)
 {
-#define PRESET_SIZE 1
-#define NUM_PRESETS 2
-    static const unsigned char presets[NUM_PRESETS][PRESET_SIZE] = {
-        {67}, //EQ 1
-        {67}  //EQ 2
-    };
-    if(npreset < NUM_PRESETS && npar < PRESET_SIZE) {
-        return presets[npreset][npar];
-    } else if (npar >= 10 && npar < (10 + MAX_EQ_BANDS * 5)) {
-        static const unsigned char bp_preset[5] = { 0, 64, 64, 64, 0 };
-        return bp_preset[npar % 5];
-    }
-    return 0;
+    if (npar == 0)
+        return 67;
+    if (npar < 10 || npar >= 10 + MAX_EQ_BANDS * 5)
+        return 0;
+
+    const auto band = (npar - 10) / 5;
+    const auto field = npar % 5;
+    if (npreset < std::size(presetBands) && band < std::size(presetBands[0]))
+        return presetBands[npreset][band][field];
+    return neutralBand[field];
 }
 
 void EQ::setpreset(unsigned char npreset)
 {
-
-    if(npreset >= NUM_PRESETS)
-        npreset = NUM_PRESETS - 1;
-    for(int n = 0; n != 128; n++)
+    if (npreset >= std::size(presetBands))
+        npreset = 0;
+    for (int n = 0; n < 128; ++n)
         changepar(n, getpresetpar(npreset, n));
     Ppreset = npreset;
 }

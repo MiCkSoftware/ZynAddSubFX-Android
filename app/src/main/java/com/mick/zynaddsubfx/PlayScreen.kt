@@ -78,8 +78,13 @@ private fun PlayChoiceKnob(
 ) {
     var open by remember(context) { mutableStateOf(false) }
     Box {
-        DenseControlCard(label, labelColor, onLongClick = { open = true },
-            longClickLabel = "Choose $title") {
+        DenseControlCard(
+            label, labelColor,
+            onClick = { if (KNOB_POPUP_ON_TAP) open = true },
+            onLongClick = if (KNOB_POPUP_ON_TAP) null else ({ open = true }),
+            longClickLabel = "Choose $title",
+            tapOnly = KNOB_POPUP_ON_TAP,
+        ) {
             TinyKnob("", value.toFloat(), range.first.toFloat(), range.last.toFloat(),
                 accessibilityLabel = title, accent = accent,
                 valueText = { knobLabel(it.roundToInt()) },

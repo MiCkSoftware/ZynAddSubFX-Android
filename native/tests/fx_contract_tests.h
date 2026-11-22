@@ -127,6 +127,20 @@ static void testFxContract(ZynAndroidEngine &engine) {
             assert(engine.fxAction(scope, part, 0, type, "cleanup"));
             if (type == 7) {
                 const auto flat = engine.fxPreview(scope, part, 0, 0, 128);
+                write(scope, part, 0, "fx/preset", 1);
+                assert(engine.fxPreview(scope, part, 0, 0, 128) == flat);
+                std::vector<std::string> curves{flat};
+                for (int preset = 2; preset <= lastPreset; ++preset) {
+                    write(scope, part, 0, "fx/preset", preset);
+                    const auto curve = engine.fxPreview(scope, part, 0, 0, 128);
+                    assert(!curve.empty());
+                    for (const auto &previous : curves) assert(curve != previous);
+                    curves.push_back(curve);
+                    write(scope, part, 0, "fx/parameter/10", 0);
+                    assert(engine.fxAction(scope, part, 0, type, "reset"));
+                    assert(engine.fxPreview(scope, part, 0, 0, 128) == curve);
+                }
+                write(scope, part, 0, "fx/preset", 0);
                 write(scope, part, 0, "fx/parameter/10", 7);
                 write(scope, part, 0, "fx/parameter/12", 96);
                 const auto boosted = engine.fxPreview(scope, part, 0, 0, 128);
@@ -224,10 +238,19 @@ static void testFxContract(ZynAndroidEngine &engine) {
     assert(engine.fxAction(1, -1, 7, 8, "copy"));
     assert(engine.fxAction(2, -1, 3, 0, "paste"));
     assert(readFx(engine, 2, -1, 3, "fx/bypass") == 0);
+    write(0, 1, 0, "fx/type", 7);
+    write(0, 1, 0, "fx/preset", 3);
+    write(0, 1, 0, "fx/parameter/12", 74); // Preserve edits relative to the selected preset.
+    const auto warmEdited = engine.fxPreview(0, 1, 0, 0, 128);
+    write(1, -1, 6, "fx/type", 7);
+    write(1, -1, 6, "fx/preset", 5);
+    const auto telephone = engine.fxPreview(1, -1, 6, 0, 128);
     std::cerr << "FX export" << std::endl;
     assert(engine.exportInstrument(1, "fx-part.xiz"));
     assert(engine.loadPresetFile("fx-part.xiz", 2));
     assert(readFx(engine, 0, 2, 0, "fx/destination") == 2);
+    assert(readFx(engine, 0, 2, 0, "fx/preset") == 3);
+    assert(engine.fxPreview(0, 2, 0, 0, 128) == warmEdited);
     assert(read(engine, 2, 0, "kit/sendFx") == 3);
     assert(readFx(engine, 0, 2, 2, "fx/type") == 8);
     assert(readFx(engine, 0, 2, 2, "fx/preset") == 2);
@@ -241,6 +264,8 @@ static void testFxContract(ZynAndroidEngine &engine) {
     write(2, -1, 3, "fx/type", 0);
     std::cerr << "FX load session" << std::endl;
     assert(engine.loadMasterXml("fx-session.xmz"));
+    assert(readFx(engine, 1, -1, 6, "fx/preset") == 5);
+    assert(engine.fxPreview(1, -1, 6, 0, 128) == telephone);
     assert(readFx(engine, 1, -1, 7, "fx/type") == 8);
     assert(readFx(engine, 2, -1, 0, "fx/send/2") == 83);
     assert(readFx(engine, 1, -1, 7, "fx/preset") == 2);

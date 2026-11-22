@@ -1399,6 +1399,7 @@ int Part::saveXML(const char *filename)
     // An instrument export must preserve edits in disabled voices/modules too.
     // Minimal XML omits them and a later load replaces them with defaults.
     xml.minimal = false;
+    xml.SaveFullXml = true;
 
     xml.beginbranch("INSTRUMENT");
     add2XMLinstrument(xml);

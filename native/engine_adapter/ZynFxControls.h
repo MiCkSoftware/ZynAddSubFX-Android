@@ -169,7 +169,7 @@ const FxType kFxDescriptors[] = {
     {kFx4, std::size(kFx4), "Phaser 1,Phaser 2,Phaser 3,Phaser 4,Phaser 5,Phaser 6,APhaser 1,APhaser 2,APhaser 3,APhaser 4,APhaser 5,APhaser 6"},
     {kFx5, std::size(kFx5), "wah 1,wah 2,wah 3,wah 4"},
     {kFx6, std::size(kFx6), "Overdrive 1,Overdrive 2,A. Exciter 1,A. Exciter 2,Guitar Amp,Quantisize"},
-    {kFx7, std::size(kFx7), "EQ 1,EQ 2"},
+    {kFx7, std::size(kFx7), "Flat,Flat Legacy,Low Cut,Warm,Clarity,Telephone,Bass Boost,Mid Scoop,Air,Dark"},
     {kFx8, std::size(kFx8), "WahWah,AutoWah,Sweep,VocalMorph1,VocalMorph2"},
     {kFx9, std::size(kFx9), "Generic,Piano,Grand,Guitar,12-String"},
     {kFx10, std::size(kFx10), "noteon,noteonoff,auto"},

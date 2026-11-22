@@ -79,6 +79,9 @@ internal fun knobDragRangePx(valueRange: Float, requestedRangePx: Float, pixelsP
 
 const val LedSlotWidth = 53
 
+// TODO: Expose the knob popup gesture as a user setting.
+internal const val KNOB_POPUP_ON_TAP = true
+
 @Composable
 fun EditorSectionHeader(title: String) {
     SectionBanner(title, gradient = false)
@@ -422,82 +425,89 @@ fun ZynClassicKeyboardStrip(
             }
             BoxWithConstraints(Modifier.fillMaxWidth().height(76.dp).padding(horizontal = 3.dp)) {
                 val whiteKeyWidth = maxWidth / whiteNotes.size
-                Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(1.dp)) {
-                    whiteNotes.forEach { note ->
+                val blackKeyWidth = whiteKeyWidth * 0.61f
+                val blackKeyHeight = 47.dp
+                val keyGap = 1.dp
+                val density = androidx.compose.ui.platform.LocalDensity.current
+                Box(Modifier.fillMaxSize().keyboardGlissando(onPress, onRelease) { position ->
+                    with(density) {
+                        if (position.y < blackKeyHeight.roundToPx()) {
+                            for ((note, offset) in blackNotes) {
+                                val left = (whiteKeyWidth * offset).roundToPx()
+                                if (position.x >= left && position.x < left + blackKeyWidth.roundToPx()) {
+                                    return@keyboardGlissando note
+                                }
+                            }
+                        }
+                        // Row distributes the available width after subtracting the gaps.
+                        val stride = whiteKeyWidth.toPx() + keyGap.roundToPx().toFloat() / whiteNotes.size
+                        whiteNotes[(position.x / stride).toInt().coerceIn(0, whiteNotes.lastIndex)]
+                    }
+                }) {
+                    Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(keyGap)) {
+                        whiteNotes.forEach { note ->
+                            val effective = (note + octaveShift * 12).coerceIn(0, 127)
+                            val active = effective in heldNotes
+                            Surface(
+                                modifier = Modifier.weight(1f).fillMaxSize(),
+                                color = if (active) Color(0xFF65D5D0) else Color(0xFFDCE7E8),
+                                border = androidx.compose.foundation.BorderStroke(
+                                    1.dp,
+                                    if (active) Color(0xFFA8FFF8) else Color(0xFF71868A),
+                                ),
+                                shape = RoundedCornerShape(bottomStart = 4.dp, bottomEnd = 4.dp),
+                            ) {
+                                Box(contentAlignment = Alignment.BottomCenter) {
+                                    Text(
+                                        noteName(effective),
+                                        color = Color(0xFF243439),
+                                        fontFamily = FontFamily.Monospace,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 9.sp,
+                                        modifier = Modifier.padding(bottom = 5.dp),
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    blackNotes.forEach { (note, position) ->
                         val effective = (note + octaveShift * 12).coerceIn(0, 127)
                         val active = effective in heldNotes
                         Surface(
-                            modifier = Modifier.weight(1f).fillMaxSize().pointerInput(note) {
-                                detectTapGestures(onPress = {
-                                    onPress(note)
-                                    tryAwaitRelease()
-                                    onRelease(note)
-                                })
-                            },
-                            color = if (active) Color(0xFF65D5D0) else Color(0xFFDCE7E8),
+                            modifier = Modifier
+                                .offset(x = whiteKeyWidth * position)
+                                .width(blackKeyWidth)
+                                .height(blackKeyHeight),
+                            color = if (active) Color(0xFFFFB84D) else Color(0xFF101A1D),
                             border = androidx.compose.foundation.BorderStroke(
                                 1.dp,
-                                if (active) Color(0xFFA8FFF8) else Color(0xFF71868A),
+                                if (active) Color(0xFFFFE0A3) else Color(0xFF486066),
                             ),
                             shape = RoundedCornerShape(bottomStart = 4.dp, bottomEnd = 4.dp),
+                            shadowElevation = 4.dp,
                         ) {
                             Box(contentAlignment = Alignment.BottomCenter) {
                                 Text(
                                     noteName(effective),
-                                    color = Color(0xFF243439),
+                                    color = if (active) Color(0xFF2A1A08) else Color(0xFF8EA8AA),
                                     fontFamily = FontFamily.Monospace,
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 9.sp,
-                                    modifier = Modifier.padding(bottom = 5.dp),
+                                    fontSize = 7.sp,
+                                    modifier = Modifier.padding(bottom = 3.dp),
                                 )
                             }
                         }
                     }
-                }
-                blackNotes.forEach { (note, position) ->
-                    val effective = (note + octaveShift * 12).coerceIn(0, 127)
-                    val active = effective in heldNotes
-                    Surface(
-                        modifier = Modifier
-                            .offset(x = whiteKeyWidth * position)
-                            .width(whiteKeyWidth * 0.61f)
-                            .height(47.dp)
-                            .pointerInput(note) {
-                                detectTapGestures(onPress = {
-                                    onPress(note)
-                                    tryAwaitRelease()
-                                    onRelease(note)
-                                })
-                            },
-                        color = if (active) Color(0xFFFFB84D) else Color(0xFF101A1D),
-                        border = androidx.compose.foundation.BorderStroke(
-                            1.dp,
-                            if (active) Color(0xFFFFE0A3) else Color(0xFF486066),
-                        ),
-                        shape = RoundedCornerShape(bottomStart = 4.dp, bottomEnd = 4.dp),
-                        shadowElevation = 4.dp,
-                    ) {
-                        Box(contentAlignment = Alignment.BottomCenter) {
-                            Text(
-                                noteName(effective),
-                                color = if (active) Color(0xFF2A1A08) else Color(0xFF8EA8AA),
-                                fontFamily = FontFamily.Monospace,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 7.sp,
-                                modifier = Modifier.padding(bottom = 3.dp),
+                    Canvas(Modifier.fillMaxSize()) {
+                        var y = 2f
+                        while (y < size.height) {
+                            drawLine(
+                                Color(0x14071114),
+                                androidx.compose.ui.geometry.Offset(0f, y),
+                                androidx.compose.ui.geometry.Offset(size.width, y),
                             )
+                            y += 5f
                         }
-                    }
-                }
-                Canvas(Modifier.fillMaxSize()) {
-                    var y = 2f
-                    while (y < size.height) {
-                        drawLine(
-                            Color(0x14071114),
-                            androidx.compose.ui.geometry.Offset(0f, y),
-                            androidx.compose.ui.geometry.Offset(size.width, y),
-                        )
-                        y += 5f
                     }
                 }
             }

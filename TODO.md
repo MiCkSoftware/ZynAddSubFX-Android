@@ -22,7 +22,7 @@ Performance A/B implémenté le 15 novembre à la demande de Mick : A Master/Cha
 - [x] 011 — Mapping SUB complet Amp/Frequency/Bandwidth/Filter, controles ADD et enums knob/popup ; 29 tests JVM, contrat natif hote et builds ARM64/x86_64 OK. [Rapport et limites](docs/qa_subsynth_011_012.md). QA appareil/audio differee (021).
 - [x] 012 — UX harmonique ADD adaptee aux 64 rangs SUB, magnitude/largeur, Overtones complet, preview natif, Clear et clipboard isole ; proposition validee par Mick le 8 novembre avec knobs/popup pour les enums. [Preuves et limites](docs/qa_subsynth_011_012.md).
 
-Cloture de la serie SUBsynth 010–012 acceptee par Mick le 8 novembre 2026, apres les iterations UX. [Bilan final et limites](docs/qa_subsynth_011_012.md). PADsynth 013–015 est implemente et teste localement sur ADB ; suite fonctionnelle : FX ; persistance transverse 020 et campagne finale audio/appareil 021 restent ouvertes.
+Cloture de la serie SUBsynth 010–012 acceptee par Mick le 8 novembre 2026, apres les iterations UX. [Bilan final et limites](docs/qa_subsynth_011_012.md). PADsynth 013–015 a été testé sur Android. La persistance transverse 020 est validée et la campagne audio/appareil 021 reste ouverte.
 
 - [x] 013 — parametres de jeu PAD complets ; [rapport, tests ADB et limites](docs/qa_padsynth_013_015.md).
 - [x] 014 — profil, positions, oscillateur et resonance PAD ; [rapport, tests ADB et limites](docs/qa_padsynth_013_015.md).
@@ -32,16 +32,20 @@ Iteration UX PAD : Amp / PAD / Frequency / Filter ; Spectrum puis Quality dans P
 - [x] 016 — Contrat et éditeur de slot communs Part/Insert/System, Off, type/preset/bypass Part/reset/clipboard ; [rapport et limites](docs/qa_fx_016_018.md).
 - [x] 017 — Six effets courants, contrôles/presets natifs, modes et temps/tempo ; [mapping](docs/fx_parameter_contract.md) et [vérifications](docs/qa_fx_016_018.md).
 - [x] 018 — EQ huit bandes/courbe native, Dynamic Filter/Formant, Sympathetic/Reverse complets dans le prototype ; [rapport](docs/qa_fx_016_018.md). Ajustements sur pièce et écoute comparative 021 conservés.
-- [ ] [019 — Terminer les routages FX Part et Master](docs/backlog/019_feat_fx_routages_master_part.md) — prototype Part FX / Kit branché, essai sur appareil attendu
-- [ ] [020 — Valider les contrats et la persistance SUB, PAD et FX](docs/backlog/020_test_persistance_sub_pad_fx.md)
+- [x] 019 — Routages FX Part / Kit, Insert et System. Essais fonctionnels validés par Mick. [Bilan](docs/qa_fx_016_018.md#validation-utilisateur-des-routages-fx).
+- [x] 020 — Contrats et persistance XIZ/XMZ SUB, PAD et FX validés sur émulateur Android. [Rapport des tests](docs/qa_persistence_sub_pad_fx.md).
 - [ ] [021 — Executer la validation finale audio/appareil ADD, SUB, PAD et FX](docs/backlog/021_qa_finale_audio_appareil.md)
 
 A la fin de chaque implementation, mettre a jour TODO.md, TASKS.md et l'index, retirer les liens vers le prompt puis supprimer son fichier. Conserver les validations differees dans un rapport durable.
 
 ## Bug fix
-- [x] Courbe EQ après changement de fréquence. Corrigée et testée sans moteur audio actif dans les trois scopes.
+- [x] Courbe EQ après changement de fréquence. Corrigée et testée sans moteur audio actif dans les trois scopes. Essai utilisateur validé.
 - [ ] Mesurer les coupures audio sur appareil après sortie du calcul des aperçus FX du verrou moteur. Suivre xruns et editorSkips au lot 021.
 
+
+## Feature à prévoir
+
+- [ ] Valider à l’écoute les presets EQ intégrés. Les courbes disponibles sont Low Cut, Warm, Clarity, Telephone, Bass Boost, Mid Scoop, Air et Dark. Flat et Flat Legacy conservent les réglages des deux anciens indices.
 
 ## Small issues
  - what is the correct naming of Instru, Instru Set, Babnk (XIZ, XMZ)

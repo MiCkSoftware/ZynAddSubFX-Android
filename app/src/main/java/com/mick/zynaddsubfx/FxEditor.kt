@@ -134,17 +134,17 @@ fun FxEditor(
                         if (group == "Timing") Text("Reference: ${snapshot.tempo.roundToInt()} BPM · numerator 0 = free",
                             style = MaterialTheme.typography.labelSmall)
                         FxParameterGrid(model, parameters)
-                        if (group == "Routing / Mix" && snapshot.parameter("fx/destination")?.value == 2.0) {
-                            Text(
-                                when {
-                                    snapshot.type == 0 || snapshot.parameter("fx/bypass")?.value == 1.0 ->
-                                        "Signal goes straight to Part Out while this effect is off or bypassed."
-                                    snapshot.type == 7 -> "EQ sends the equalized signal to both destinations."
-                                    else -> "Dry signal to Part Out, wet signal to the next FX."
-                                },
-                                style = MaterialTheme.typography.labelSmall,
-                            )
-                        }
+//                        if (group == "Routing / Mix" && snapshot.parameter("fx/destination")?.value == 2.0) {
+//                            Text(
+//                                when {
+//                                    snapshot.type == 0 || snapshot.parameter("fx/bypass")?.value == 1.0 ->
+//                                        "Signal goes straight to Part Out while this effect is off or bypassed."
+//                                    snapshot.type == 7 -> "EQ sends the equalized signal to both destinations."
+//                                    else -> "Dry signal to Part Out, wet signal to the next FX."
+//                                },
+//                                style = MaterialTheme.typography.labelSmall,
+//                            )
+//                        }
                     }
                 }
                 if (snapshot.type == 8) {
