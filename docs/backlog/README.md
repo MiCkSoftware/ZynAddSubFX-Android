@@ -26,7 +26,7 @@ Serie SUBsynth 010–012 close avec l’accord de Mick le 8 novembre 2026 apres 
 | 018 | Terminé — EQ, Dynamic Filter/Formant, Sympathetic et Reverse ; [rapport](../qa_fx_016_018.md) | Prototype validé ; ajustements sur pièce et 020/021 conservés |
 | 019 | Terminé — routages FX Part / Kit, Insert et System, validés par Mick. [Bilan](../qa_fx_016_018.md#validation-utilisateur-des-routages-fx) | 016 à 018 |
 | 020 | Terminé — contrats et persistance SUB, PAD et FX ; [rapport](../qa_persistence_sub_pad_fx.md) | 010 à 019 |
-| 021 | [Executer la validation finale audio/appareil ADD, SUB, PAD et FX](021_qa_finale_audio_appareil.md) | 010 a 020 termines |
+| 021 | En cours sur Nokia X20. [Lot](021_qa_finale_audio_appareil.md) · [Rapport et cas restants](../qa_finale_audio_appareil.md) | 010 à 020 terminés |
 
 ## Conception des nouvelles UX avec Mick
 

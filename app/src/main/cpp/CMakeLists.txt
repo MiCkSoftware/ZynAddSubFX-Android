@@ -7,6 +7,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(ZYN_FFT_BACKEND "LIGHT_SHIM" CACHE STRING "FFT backend for Zyn port (LIGHT_SHIM, PROD_CANDIDATE, FFTW3F_NATIVE)")
 set_property(CACHE ZYN_FFT_BACKEND PROPERTY STRINGS LIGHT_SHIM PROD_CANDIDATE FFTW3F_NATIVE)
+set(ZYN_AAUDIO_MIN_BUFFER_MS "0" CACHE STRING "Minimum AAudio output buffer duration in milliseconds")
 
 get_filename_component(REPO_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../../.." ABSOLUTE)
 set(ZYN_UPSTREAM_DIR "${REPO_ROOT}/third_party/zynaddsubfx")
@@ -211,6 +212,7 @@ target_compile_definitions(
     PRIVATE
     HAVE_CPP_STD_COMPLEX=1
     ZYN_FFT_BACKEND_NAME=\"${ZYN_FFT_BACKEND_NAME}\"
+    ZYN_AAUDIO_MIN_BUFFER_MS=${ZYN_AAUDIO_MIN_BUFFER_MS}
 )
 
 # Android 15+/Play requirement for 16 KB page-size compatibility.

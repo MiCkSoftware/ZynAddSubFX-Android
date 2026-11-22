@@ -7,7 +7,12 @@ object NativeSynthBridge {
 
     external fun nativeGetVersion(): String
     external fun nativeGetZynProbeSummary(): String
-    external fun nativeInit(sampleRate: Int, framesPerBurst: Int): Boolean
+    external fun nativeInit(
+        sampleRate: Int,
+        framesPerBurst: Int,
+        synthBlockFrames: Int = framesPerBurst,
+        outputBufferFrames: Int = 0,
+    ): Boolean
     external fun nativeStartAudio(): Boolean
     external fun nativeStopAudio()
     external fun nativeSetTestToneEnabled(enabled: Boolean)

@@ -4,6 +4,10 @@
 
 Ce lot est volontairement differe par Mick le 7 novembre 2026. Ne le lancer qu'apres achevement fonctionnel de SUBsynth, PADsynth et FX (lots 010 a 020). ADD n'est pas a rouvrir pour cette seule attente.
 
+## État du 22 novembre 2026
+
+Campagne lancée sur Nokia X20. Le [rapport 021](../qa_finale_audio_appareil.md) conserve le corpus, les vérifications FFTW et JNI, les mesures PAD et Play, les corrections de reprise audio et du test FX. L’essai de polyphonie sous charge compare les xruns et les `editorSkips` avec et sans optimisation native. Mick confirme que `beepB` joue correctement. Le lot reste ouvert pour l’écoute comparative XIZ/XMZ et FX, les coupures audibles sous charge, la couverture tactile et l’accessibilité.
+
 ## Contexte et references
 
 - docs/qa_addsynth_audio_xiz.md conserve la checklist ADD : ecoute comparative avant/apres export, tous modes de modulation/routages, partage de sources, notes fantomes, clipboard croise, gestes/annulation et navigation.

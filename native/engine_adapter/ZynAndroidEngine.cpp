@@ -733,7 +733,7 @@ std::string ZynAndroidEngine::padGenerationStatus(int part, int kit) {
 ZynAndroidEngine::ZynAndroidEngine() = default;
 ZynAndroidEngine::~ZynAndroidEngine() { resetPadGeneration(); }
 
-bool ZynAndroidEngine::initialize(int sampleRate, int framesPerBurst) {
+bool ZynAndroidEngine::initialize(int sampleRate, int framesPerBurst, int synthBlockFrames) {
     resetPadGeneration();
     if (sampleRate <= 0 || framesPerBurst <= 0) {
         initialized_.store(false);
@@ -761,7 +761,7 @@ bool ZynAndroidEngine::initialize(int sampleRate, int framesPerBurst) {
     try {
         auto synth = std::make_unique<zyn::SYNTH_T>();
         synth->samplerate = static_cast<unsigned int>(sampleRate);
-        synth->buffersize = framesPerBurst > 0 ? framesPerBurst : 256;
+        synth->buffersize = synthBlockFrames > 0 ? synthBlockFrames : framesPerBurst;
         // Keep upstream default oscilsize unless we need to tune it later.
         synth->alias(false);
 

@@ -70,6 +70,11 @@ android {
         }
         release {
             isMinifyEnabled = false
+            externalNativeBuild {
+                cmake {
+                    arguments += "-DZYN_AAUDIO_MIN_BUFFER_MS=16"
+                }
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

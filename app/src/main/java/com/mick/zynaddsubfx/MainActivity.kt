@@ -67,6 +67,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -333,10 +334,9 @@ fun ZynAddSubFXApp(
         Log.d(APP_LOG_TAG, "catalog loaded: ${packagedPresets.size} presets")
     }
     LaunchedEffect(engine, nativeStatus.loaded, nativeStatus.initOk,
-        startupPresetRestoreAttempted, presetLoading, autoStartAttempted) {
+        startupPresetRestoreAttempted, presetLoading) {
         if (!nativeStatus.loaded || !nativeStatus.initOk || !startupPresetRestoreAttempted ||
             presetLoading || autoStartAttempted) return@LaunchedEffect
-        autoStartAttempted = true
         val previousVolume = masterVolume
         val (running, volume, diagnostics) = withContext(Dispatchers.Default) {
             val ok = runCatching { engine.startAudio() }.getOrDefault(false)
@@ -346,6 +346,7 @@ fun ZynAddSubFXApp(
                 engine.runtimeDiagnostics(),
             )
         }
+        autoStartAttempted = true
         audioRunning = running
         masterVolume = volume
         Log.d(APP_LOG_TAG, "diag: $diagnostics")
@@ -571,22 +572,26 @@ fun ZynAddSubFXApp(
         }
     }
 
-    DisposableEffect(lifecycleOwner, audioRunning, toneEnabled) {
+    val releaseNotesOnPause by rememberUpdatedState(::releaseAllHeldNotes)
+    DisposableEffect(lifecycleOwner, engine) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_PAUSE -> {
-                    shouldResumeAudioAfterPause = audioRunning
-                    shouldResumeToneAfterPause = audioRunning && toneEnabled
+                    // A preset load can briefly close AAudio while Play still intends to keep it running.
+                    shouldResumeAudioAfterPause = audioRunning ||
+                        runCatching { engine.isAudioRunning() }.getOrDefault(false)
+                    shouldResumeToneAfterPause = shouldResumeAudioAfterPause && toneEnabled
                     if (toneEnabled) {
                         runCatching { engine.setTestToneEnabled(false) }
                         toneEnabled = false
                     }
-                    if (audioRunning) {
+                    if (shouldResumeAudioAfterPause) {
+                        releaseNotesOnPause()
                         runCatching { engine.stopAudio() }
-                        audioRunning = false
                         Log.d(APP_LOG_TAG, "diag: ${engine.runtimeDiagnostics()}")
                         actionStatus = "Audio paused (lifecycle)"
                     }
+                    audioRunning = false
                 }
                 Lifecycle.Event.ON_RESUME -> {
                     if (shouldResumeAudioAfterPause) {

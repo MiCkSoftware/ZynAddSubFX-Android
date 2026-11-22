@@ -38,7 +38,7 @@ class FxEditorInstrumentedTest {
         compose.waitUntil(10_000) { engine.fxSnapshot(FxAddress(FxScope.SYSTEM))?.type != 0 }
         compose.onNodeWithText("Reverse").assertDoesNotExist()
         typeKnob.performTouchInput { click() }
-        compose.onNodeWithText("Reverse").performClick()
+        compose.onNodeWithText("Reverse").performScrollTo().assertIsDisplayed().performClick()
         compose.runOnIdle {
             assertEquals(7, engine.fxSnapshot(part)!!.type)
             assertEquals(10, engine.fxSnapshot(FxAddress(FxScope.SYSTEM))!!.type)

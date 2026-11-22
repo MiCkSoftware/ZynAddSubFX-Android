@@ -1,6 +1,7 @@
 #include <aaudio/AAudio.h>
 #include <jni.h>
 #include <android/log.h>
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include "Misc/XMLwrapper.h"
@@ -14,11 +15,12 @@ constexpr const char *kLogTag = "zynbridge";
 constexpr int32_t kStartWaitTimeoutNanos = 200 * 1000 * 1000; // 200ms
 int gSampleRate = 0;
 int gFramesPerBurst = 0;
+int gOutputBufferFrames = 0;
 bool gInitialized = false;
 
 std::mutex gAudioMutex;
 AAudioStream *gStream = nullptr;
-bool gAudioRunning = false;
+std::atomic<bool> gAudioRunning{false};
 std::atomic<bool> gAudioNeedsRecreate{false};
 std::atomic<uint32_t> gAudioStartCount{0};
 std::atomic<uint32_t> gAudioStartFailCount{0};
@@ -127,13 +129,16 @@ bool startAudioLocked() {
     const int32_t actualBurst = AAudioStream_getFramesPerBurst(gStream);
     gAudioLastOpenedSampleRate.store(actualSampleRate, std::memory_order_relaxed);
     gAudioLastOpenedBurst.store(actualBurst, std::memory_order_relaxed);
-    const int32_t targetBufferFrames = std::max(actualBurst * 2, gFramesPerBurst * 2);
+    const int32_t minimumBufferFrames = actualSampleRate * ZYN_AAUDIO_MIN_BUFFER_MS / 1000;
+    const int32_t targetBufferFrames = gOutputBufferFrames > 0
+        ? gOutputBufferFrames : std::max({actualBurst * 2, gFramesPerBurst * 2, minimumBufferFrames});
     if (targetBufferFrames > 0) {
         const int32_t applied = AAudioStream_setBufferSizeInFrames(gStream, targetBufferFrames);
-        gAudioLastOpenedBuffer.store(applied, std::memory_order_relaxed);
+        const int32_t actualBufferFrames = applied > 0 ? applied : AAudioStream_getBufferSizeInFrames(gStream);
+        gAudioLastOpenedBuffer.store(actualBufferFrames, std::memory_order_relaxed);
         __android_log_print(ANDROID_LOG_INFO, kLogTag,
                             "AAudio opened: sr=%d burst=%d targetBuf=%d appliedBuf=%d",
-                            actualSampleRate, actualBurst, targetBufferFrames, applied);
+                            actualSampleRate, actualBurst, targetBufferFrames, actualBufferFrames);
     } else {
         gAudioLastOpenedBuffer.store(AAudioStream_getBufferSizeInFrames(gStream), std::memory_order_relaxed);
     }
@@ -193,15 +198,18 @@ Java_com_mick_zynaddsubfx_NativeSynthBridge_nativeInit(
         JNIEnv * /* env */,
         jobject /* thiz */,
         jint sampleRate,
-        jint framesPerBurst) {
-    if (sampleRate <= 0 || framesPerBurst <= 0) {
+        jint framesPerBurst,
+        jint synthBlockFrames,
+        jint outputBufferFrames) {
+    if (sampleRate <= 0 || framesPerBurst <= 0 || synthBlockFrames <= 0 || outputBufferFrames < 0) {
         gInitialized = false;
         return JNI_FALSE;
     }
 
     gSampleRate = sampleRate;
     gFramesPerBurst = framesPerBurst;
-    gInitialized = gEngine.initialize(sampleRate, framesPerBurst);
+    gOutputBufferFrames = outputBufferFrames;
+    gInitialized = gEngine.initialize(sampleRate, framesPerBurst, synthBlockFrames);
     return gInitialized ? JNI_TRUE : JNI_FALSE;
 }
 
@@ -335,6 +343,10 @@ extern "C" JNIEXPORT jstring JNICALL
 Java_com_mick_zynaddsubfx_NativeSynthBridge_nativeGetRuntimeDiagnostics(
         JNIEnv *env,
         jobject /* thiz */) {
+    {
+        std::unique_lock lock(gAudioMutex, std::try_to_lock);
+        if (lock.owns_lock()) refreshXRunCounter();
+    }
     std::string diag = gEngine.diagnosticsSummary();
     diag += " aaudioRunning=";
     diag += (gAudioRunning ? "1" : "0");

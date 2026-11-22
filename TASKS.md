@@ -167,7 +167,7 @@ Iteration UX PAD : Amp / PAD / Frequency / Filter ; Spectrum puis Quality dans P
 - [x] 018 — EQ huit bandes/courbe native, Dynamic Filter/Formant, Sympathetic/Reverse complets dans le prototype ; [rapport](docs/qa_fx_016_018.md). Ajustements sur pièce et écoute comparative 021 conservés.
 - [x] 019 — Routages FX Part / Kit, Insert et System. Essais fonctionnels validés par Mick. [Bilan](docs/qa_fx_016_018.md#validation-utilisateur-des-routages-fx).
 - [x] 020 — Contrats et persistance XIZ/XMZ SUB, PAD et FX validés sur émulateur Android. [Rapport des tests](docs/qa_persistence_sub_pad_fx.md).
-- [ ] [021 — Executer la validation finale audio/appareil ADD, SUB, PAD et FX](docs/backlog/021_qa_finale_audio_appareil.md)
+- [ ] [021 — Validation finale audio/appareil ADD, SUB, PAD et FX](docs/backlog/021_qa_finale_audio_appareil.md) en cours sur Nokia X20. [Mesures, reprise audio corrigée et cas restants](docs/qa_finale_audio_appareil.md).
 
 Chaque lot termine met a jour TASKS.md, TODO.md et l'index, conserve les preuves utiles, retire les references vers son prompt puis supprime ce fichier. Les archives ADD sont des traces, pas de nouveaux chantiers a relancer.
 

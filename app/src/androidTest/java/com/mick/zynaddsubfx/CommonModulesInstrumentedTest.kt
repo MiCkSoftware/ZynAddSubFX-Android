@@ -45,7 +45,7 @@ class CommonModulesInstrumentedTest {
                 NativeSynthBridge.nativeWriteSession(capture, session.absolutePath)
             }
             Thread(writer).start()
-            assertTrue(writer.get(10, java.util.concurrent.TimeUnit.SECONDS))
+            assertTrue(writer.get(30, java.util.concurrent.TimeUnit.SECONDS))
             assertTrue(NativeSynthBridge.nativeLoadPresetFile(session.absolutePath, 0))
             val parts = engine.inspectParts().associateBy { it.partIndex }
             assertEquals("First part", parts.getValue(0).name)

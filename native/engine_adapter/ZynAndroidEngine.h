@@ -22,7 +22,7 @@ public:
     ZynAndroidEngine();
     ~ZynAndroidEngine();
 
-    bool initialize(int sampleRate, int framesPerBurst);
+    bool initialize(int sampleRate, int framesPerBurst, int synthBlockFrames = 0);
     void shutdown();
 
     bool isInitialized() const;
